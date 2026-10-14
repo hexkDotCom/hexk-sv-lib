@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 HEXK
+//
+// Lint waivers for Verilator (Gate 1). Every waiver names the rule and the reason.
+
+`verilator_config
+
+// DECLFILENAME: an example is one file; the small classes it needs are declared inside its
+// module and cannot have the name of the file.
+lint_off -rule DECLFILENAME -file "*examples/*"
+
+// DECLFILENAME: the benchmarks are one file for the same reason.
+lint_off -rule DECLFILENAME -file "*tests/bench/*"

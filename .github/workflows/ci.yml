@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# The static part of Gate 1 on every push to main, and by hand: 'make ci', with free tools
+# only and no simulation (format, Verible lint, style, version, docs, prefix rules, slang
+# elaboration against UVM 1.2 and 2020, FuseSoC cores). The Verilator lint, the unit tests
+# on Verilator and the rebranded copy need more memory than a small runner has; they run
+# with 'make pre_sim' before a release. Tool versions are pinned to the ones Gate 1 was last
+# run with locally; see tests/README.md.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Gate 1, static part
+    runs-on: ubuntu-24.04
+    # A run takes a few minutes; one that hangs stops here instead of at the 6 hours of GitHub.
+    timeout-minutes: 30
+    env:
+      VERIBLE_VERSION: v0.0-4296-g0f262651
+      SVUNIT_VERSION: v3.38.1
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install pyslang and FuseSoC
+        run: pip install pyslang==12.0.0 fusesoc==2.4.7
+
+      - name: Install Verible
+        run: |
+          mkdir -p "$HOME/verible"
+          curl -sSfL "https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz" \
+            | tar -xz -C "$HOME/verible" --strip-components=1
+          echo "$HOME/verible/bin" >> "$GITHUB_PATH"
+
+      # Sources only: the slang elaboration reads the unit tests, which include SVUnit.
+      - name: Fetch SVUnit
+        run: |
+          git clone --depth 1 --branch "$SVUNIT_VERSION" https://github.com/svunit/svunit.git "$HOME/svunit"
+          echo "SVUNIT_INSTALL=$HOME/svunit" >> "$GITHUB_ENV"
+
+      - name: Fetch UVM 1.2 and UVM 2020 sources
+        run: make uvm_fetch
+
+      - name: Gate 1, static part
+        run: make ci

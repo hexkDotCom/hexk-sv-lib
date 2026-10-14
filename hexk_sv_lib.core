@@ -1,0 +1,23 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_sv_lib.core - FuseSoC top core of hexk-sv-lib: depends on every layer.
+# The version in 'name' is written by 'make version'; do not edit it by hand.
+
+name: "hexkdotcom:hexk:sv_lib:0.7.0"
+description: "hexk-sv-lib: vendor-neutral SystemVerilog/UVM utility library"
+
+filesets:
+  sources:
+    depend:
+      - "hexkdotcom:hexk:core"
+      - "hexkdotcom:hexk:uvm"
+      - "hexkdotcom:hexk:clk_rst"
+      - "hexkdotcom:hexk:valid_ready"
+      - "hexkdotcom:hexk:pins"
+
+targets:
+  default:
+    filesets:
+      - sources

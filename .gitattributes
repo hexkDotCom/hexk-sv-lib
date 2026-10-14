@@ -1,0 +1,2 @@
+# LF line ends everywhere: the format and style checks of Gate 1 reject CR characters.
+* text=auto eol=lf

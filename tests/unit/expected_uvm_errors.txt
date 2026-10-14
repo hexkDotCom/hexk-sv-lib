@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# expected_uvm_errors.txt - the UVM errors and fatals that unit tests report on purpose.
+#
+# 'make test' fails when the UVM_ERROR and UVM_FATAL lines of a run differ from this list, for
+# the suites that ran, on the simulator that ran them: an error that no test expects fails
+# the run, and so does an expected one that did not come. Most negative tests demote the
+# errors they provoke with hexk_report_catcher and never get here; the suites below test
+# reporting itself, so their errors must reach the log.
+#
+# Columns: suite, simulators (all, or a comma-separated list of verilator, questa, vcs),
+# severity, message ID, count.
+
+# Messages that the catcher tests let through uncaught, and the catcher's own reports of
+# missing and excess messages.
+hexk_report_catcher  all  UVM_ERROR  UT_EXPECTED           3
+hexk_report_catcher  all  UVM_ERROR  UT_SOFT               1
+hexk_report_catcher  all  UVM_ERROR  UT_OTHER              1
+hexk_report_catcher  all  UVM_ERROR  HEXK_CATCHER_MISSING  3
+hexk_report_catcher  all  UVM_ERROR  HEXK_CATCHER_EXCESS   3
+
+# The registry runs the end-of-test checks of its objects, which report their leftovers.
+hexk_eot_registry    all  UVM_ERROR  UT_EOT_LEFTOVER       2
+
+# The static report macros at error severity.
+hexk_report_macros   all  UVM_ERROR  UT_STATIC_ERROR       1
+hexk_report_macros   all  UVM_ERROR  UT_STATIC_METHOD      1

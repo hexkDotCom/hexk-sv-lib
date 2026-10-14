@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+name: Bug report
+description: A problem you have reproduced in a simulation or with a tool.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Library version
+      description: From VERSION, or HEXK_VERSION_STR in your log.
+      placeholder: 0.7.0
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: Simulator and UVM version
+      placeholder: VCS X-2025.06, UVM 1.2
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Module
+      placeholder: hexk_scoreboard
+  - type: textarea
+    id: code
+    attributes:
+      label: Smallest code that shows the problem
+      description: Your own code only; please do not paste code from other libraries or from your employer.
+      render: systemverilog
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: seen
+    attributes:
+      label: What you saw
+      description: The relevant part of the log or the tool output.
+      render: text
+    validations:
+      required: true

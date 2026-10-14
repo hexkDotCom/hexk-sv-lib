@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# Issues are for reproduced bugs and requests; questions and unreproduced findings go to Discussions.
+blank_issues_enabled: false
+contact_links:
+  - name: Question, idea or finding not reproduced yet
+    url: https://github.com/hexkDotCom/hexk-sv-lib/discussions
+    about: Ask, discuss an idea, or post a suspected bug (for example from a code review or an AI assistant) before it is reproduced.

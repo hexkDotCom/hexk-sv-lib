@@ -1,0 +1,28 @@
+# Plusargs for hexk_plusarg_unit_test, one per line; 'make test' passes them to the simulation.
+# A backslash protects the quote of a Verilog literal from the shell that starts the simulation.
++hexk_ut_flag
++hexk_ut_int=42
++hexk_ut_neg=-17
++hexk_ut_hex=0x1F
++hexk_ut_bin=0b1010_0101
++hexk_ut_vhex=\'hFF
++hexk_ut_sized=8\'d200
++hexk_ut_octal=\'o17
++hexk_ut_big=0xFFFF_FFFF_FFFF_FFFF
++hexk_ut_max=9223372036854775807
++hexk_ut_over=9223372036854775808
++hexk_ut_min=-9223372036854775808
++hexk_ut_under=-9223372036854775809
++hexk_ut_too_big=0x1_0000_0000_0000_0000
++hexk_ut_bad_int=12abc
++hexk_ut_str=hello_world
++hexk_ut_zero=0
++hexk_ut_one=1
++hexk_ut_word=True
++hexk_ut_off=off
++hexk_ut_real=2.5
++hexk_ut_bad_real=fast
++hexk_ut_list=a,b,,c
++hexk_ut_colons=x:y
++hexk_ut_prefix_longer=5
++hexk_ut_empty=

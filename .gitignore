@@ -1,0 +1,47 @@
+# Gate 1 build area: downloaded UVM sources, tool output, logs
+/build/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Verilator
+obj_dir/
+
+# SVUnit
+.svunit.f
+.__svunit*
+.testsuite.sv
+.testrunner.sv
+run.log
+tests.xml
+
+# Simulators
+csrc/
+simv
+simv.daidir/
+ucli.key
+vc_hdrs.h
+work/
+transcript
+modelsim.ini
+vsim.wlf
+xcelium.d/
+xrun.history
+xrun.log
+*.vcd
+*.fst
+*.fsdb
+*.vpd
+*.wlf
+*.ucdb
+*.vdb/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

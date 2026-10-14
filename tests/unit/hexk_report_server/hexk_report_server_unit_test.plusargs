@@ -1,0 +1,7 @@
+# Plusargs for hexk_report_server_unit_test, one per line; read by hexk_report_cfg::apply_plusargs.
++hexk_report_style=custom
++hexk_report_fields=id,message
++hexk_report_time_unit=us
++hexk_report_color
++hexk_stacktrace=^SB_,my_driver.sv:12
++hexk_marker=WATCH_ME

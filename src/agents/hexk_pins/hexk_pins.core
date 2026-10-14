@@ -1,0 +1,23 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_pins.core - FuseSoC core of the pins interface hexk_pins_if. UVM itself comes from
+# the tool flow.
+# The version in 'name' is written by 'make version'; do not edit it by hand.
+
+name: "hexkdotcom:hexk:pins:0.7.0"
+description: "hexk-sv-lib pins interface: drive, pull, force and sample miscellaneous pins"
+
+filesets:
+  sources:
+    depend:
+      - "hexkdotcom:hexk:uvm"
+    files:
+      - hexk_pins_if.sv
+    file_type: systemVerilogSource
+
+targets:
+  default:
+    filesets:
+      - sources

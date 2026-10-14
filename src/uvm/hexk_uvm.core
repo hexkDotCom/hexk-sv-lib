@@ -1,0 +1,65 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_uvm.core - FuseSoC core of hexk_uvm_pkg. UVM itself comes from the tool flow.
+# The version in 'name' is written by 'make version'; do not edit it by hand.
+
+name: "hexkdotcom:hexk:uvm:0.7.0"
+description: "hexk-sv-lib UVM utility package: checks, reporting, end of test, scoreboard"
+
+filesets:
+  sources:
+    depend:
+      - "hexkdotcom:hexk:core"
+    files:
+      - hexk_uvm_compat.svh: {is_include_file: true}
+      - hexk_macros.svh: {is_include_file: true}
+      - hexk_report_macros.svh: {is_include_file: true}
+      - hexk_check_macros.svh: {is_include_file: true}
+      - hexk_wait_macros.svh: {is_include_file: true}
+      - hexk_rand_once_macros.svh: {is_include_file: true}
+      - hexk_util_macros.svh: {is_include_file: true}
+      - hexk_hdl_macros.svh: {is_include_file: true}
+      - hexk_coverage_macros.svh: {is_include_file: true}
+      - data/hexk_regex.sv: {is_include_file: true, include_path: "."}
+      - data/hexk_uid.sv: {is_include_file: true, include_path: "."}
+      - data/hexk_uid_pool.sv: {is_include_file: true, include_path: "."}
+      - report/hexk_msg_listener.sv: {is_include_file: true, include_path: "."}
+      - report/hexk_report_cfg.sv: {is_include_file: true, include_path: "."}
+      - report/hexk_report_server.sv: {is_include_file: true, include_path: "."}
+      - report/hexk_report_catcher_rule.sv: {is_include_file: true, include_path: "."}
+      - report/hexk_report_catcher.sv: {is_include_file: true, include_path: "."}
+      - report/hexk_check_stats.sv: {is_include_file: true, include_path: "."}
+      - data/hexk_value_wrapper.sv: {is_include_file: true, include_path: "."}
+      - data/hexk_meta_item.sv: {is_include_file: true, include_path: "."}
+      - stim/hexk_wait_util.sv: {is_include_file: true, include_path: "."}
+      - stim/hexk_clk_countable.sv: {is_include_file: true, include_path: "."}
+      - eot/hexk_objectable.sv: {is_include_file: true, include_path: "."}
+      - eot/hexk_objection_member.sv: {is_include_file: true, include_path: "."}
+      - eot/hexk_objection_aggregator.sv: {is_include_file: true, include_path: "."}
+      - eot/hexk_checkable.sv: {is_include_file: true, include_path: "."}
+      - eot/hexk_eot_registry.sv: {is_include_file: true, include_path: "."}
+      - eot/hexk_watchdog.sv: {is_include_file: true, include_path: "."}
+      - tlm/hexk_delay_analysis_fifo.sv: {is_include_file: true, include_path: "."}
+      - check/hexk_scoreboard_cfg.sv: {is_include_file: true, include_path: "."}
+      - check/hexk_sb_stats.sv: {is_include_file: true, include_path: "."}
+      - check/hexk_sb_stream.sv: {is_include_file: true, include_path: "."}
+      - check/hexk_scoreboard.sv: {is_include_file: true, include_path: "."}
+      - mem/hexk_mem_model.sv: {is_include_file: true, include_path: "."}
+      - config/hexk_knob.sv: {is_include_file: true, include_path: "."}
+      - config/hexk_knobs.sv: {is_include_file: true, include_path: "."}
+      - config/hexk_enum_knob.sv: {is_include_file: true, include_path: "."}
+      - cov/hexk_handshake_coverage.sv: {is_include_file: true, include_path: "."}
+      - stim/hexk_delay_cfg.sv: {is_include_file: true, include_path: "."}
+      - stim/hexk_delay.sv: {is_include_file: true, include_path: "."}
+      - stim/hexk_rand_once_guard.sv: {is_include_file: true, include_path: "."}
+      - base/hexk_base_test.sv: {is_include_file: true, include_path: "."}
+      - base/hexk_tb_top_inc.svh: {is_include_file: true, include_path: "."}
+      - hexk_uvm_pkg.sv
+    file_type: systemVerilogSource
+
+targets:
+  default:
+    filesets:
+      - sources

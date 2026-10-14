@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+name: Module or API request
+description: A module the library should have, or a change to an existing API.
+labels: [request]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The testbench problem, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: The API or behaviour you have in mind; a usage sketch helps. Please do not paste code from other libraries.
+  - type: input
+    id: tools
+    attributes:
+      label: Simulator and UVM version you use

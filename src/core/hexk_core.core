@@ -1,0 +1,30 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_core.core - FuseSoC core of hexk_core_pkg (pure SystemVerilog, no UVM).
+# The version in 'name' is written by 'make version'; do not edit it by hand.
+
+name: "hexkdotcom:hexk:core:0.7.0"
+description: "hexk-sv-lib core package: pure SystemVerilog utilities, no UVM"
+
+filesets:
+  sources:
+    files:
+      - hexk_version.svh: {is_include_file: true}
+      - hexk_sim_compat.svh: {is_include_file: true}
+      - hexk_str.sv: {is_include_file: true}
+      - hexk_math.sv: {is_include_file: true}
+      - hexk_enum_util.sv: {is_include_file: true}
+      - hexk_crc.sv: {is_include_file: true}
+      - hexk_lfsr.sv: {is_include_file: true}
+      - hexk_ecc.sv: {is_include_file: true}
+      - hexk_rand_stream.sv: {is_include_file: true}
+      - hexk_plusarg.sv: {is_include_file: true}
+      - hexk_core_pkg.sv
+    file_type: systemVerilogSource
+
+targets:
+  default:
+    filesets:
+      - sources

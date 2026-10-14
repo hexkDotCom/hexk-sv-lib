@@ -1,0 +1,34 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_clk_rst.core - FuseSoC core of the clock and reset agent: hexk_clk_rst_if and
+# hexk_clk_rst_pkg. UVM itself comes from the tool flow.
+# The version in 'name' is written by 'make version'; do not edit it by hand.
+
+name: "hexkdotcom:hexk:clk_rst:0.7.0"
+description: "hexk-sv-lib clock and reset agent"
+
+filesets:
+  sources:
+    depend:
+      - "hexkdotcom:hexk:uvm"
+    files:
+      - hexk_clk_rst_item.sv: {is_include_file: true}
+      - hexk_clk_rst_agent_cfg.sv: {is_include_file: true}
+      - hexk_clk_rst_status.sv: {is_include_file: true}
+      - hexk_clk_rst_driver.sv: {is_include_file: true}
+      - hexk_clk_rst_monitor.sv: {is_include_file: true}
+      - hexk_clk_rst_agent.sv: {is_include_file: true}
+      - sequences/hexk_clk_rst_reset_seq.sv: {is_include_file: true, include_path: "."}
+      - sequences/hexk_clk_rst_clock_seq.sv: {is_include_file: true, include_path: "."}
+      - sequences/hexk_clk_rst_stop_seq.sv: {is_include_file: true, include_path: "."}
+      - sequences/hexk_clk_rst_start_seq.sv: {is_include_file: true, include_path: "."}
+      - hexk_clk_rst_if.sv
+      - hexk_clk_rst_pkg.sv
+    file_type: systemVerilogSource
+
+targets:
+  default:
+    filesets:
+      - sources

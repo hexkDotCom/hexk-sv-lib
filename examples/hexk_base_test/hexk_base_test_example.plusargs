@@ -1,0 +1,2 @@
+# Plusargs for hexk_base_test_example, one per line; 'make examples' passes them to the simulation.
++UVM_TESTNAME=hexk_example_smoke_test

@@ -1,0 +1,5 @@
+# Waivers for scripts/hexk_style_check.py, one per line:
+#    <RULE> <path glob> <reason, mandatory>
+# An unused waiver is an error.
+LIB-PFX tests/unit/hexk_enum_util/hexk_enum_util_unit_test.sv the test of an enum without a common name prefix needs literals without the library prefix
+NAM-3 src/uvm/hexk_util_macros.svh m_if_mask is a member of UVM's uvm_port_base that every imp class has to set

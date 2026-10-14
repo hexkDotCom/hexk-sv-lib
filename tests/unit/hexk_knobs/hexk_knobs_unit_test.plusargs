@@ -1,0 +1,10 @@
+# Plusargs for hexk_knobs_unit_test, one per line; 'make test' passes them to the simulation.
+# Each is the plusarg of a knob that one of the tests defines.
++hexk_ut_knob_items=7
++hexk_ut_knob_fast
++hexk_ut_knob_slow=0
++hexk_ut_knob_label=from_cli
++hexk_ut_knob_mode=gate
++hexk_ut_knob_big=500
++hexk_ut_knob_bad_mode=fpga
++hexk_ut_knob_netlist=power

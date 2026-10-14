@@ -1,0 +1,3 @@
+# Flags for verible-verilog-format (Gate 1). Guide rules FMT-1 and FMT-3.
+--indentation_spaces=3
+--column_limit=120

@@ -1,0 +1,31 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_valid_ready.core - FuseSoC core of the valid/ready agent: hexk_valid_ready_if and
+# hexk_valid_ready_pkg. UVM itself comes from the tool flow.
+# The version in 'name' is written by 'make version'; do not edit it by hand.
+
+name: "hexkdotcom:hexk:valid_ready:0.7.0"
+description: "hexk-sv-lib valid/ready agent"
+
+filesets:
+  sources:
+    depend:
+      - "hexkdotcom:hexk:uvm"
+    files:
+      - hexk_valid_ready_item.sv: {is_include_file: true}
+      - hexk_valid_ready_agent_cfg.sv: {is_include_file: true}
+      - hexk_valid_ready_driver.sv: {is_include_file: true}
+      - hexk_valid_ready_monitor.sv: {is_include_file: true}
+      - hexk_valid_ready_agent.sv: {is_include_file: true}
+      - sequences/hexk_valid_ready_random_seq.sv: {is_include_file: true, include_path: "."}
+      - sequences/hexk_valid_ready_data_seq.sv: {is_include_file: true, include_path: "."}
+      - hexk_valid_ready_if.sv
+      - hexk_valid_ready_pkg.sv
+    file_type: systemVerilogSource
+
+targets:
+  default:
+    filesets:
+      - sources

@@ -1,0 +1,3 @@
+# Plusargs for hexk_rand_once_unit_test, one per line; 'make test' passes them to the simulation.
+# The object with this name is reported at its first randomization.
++hexk_rand_once_trap=hexk_ut_trapped_cfg
