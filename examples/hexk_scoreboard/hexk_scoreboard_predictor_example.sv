@@ -75,7 +75,15 @@ module hexk_scoreboard_predictor_example;
 
       function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_response other;
-         return $cast(other, rhs) && other.tag == tag && other.result == result;
+         bit                   same;
+         if (!$cast(other, rhs)) begin
+            return 0;
+         end
+         // Through the comparer, so that a mismatch names the fields that differ. compare_field_int() takes 64-bit
+         // values; both fields are compared.
+         same = comparer.compare_field_int("tag", 64'(tag), 64'(other.tag), $bits(tag));
+         same &= comparer.compare_field_int("result", 64'(result), 64'(other.result), $bits(result));
+         return same;
       endfunction : do_compare
    endclass : hexk_example_response
 

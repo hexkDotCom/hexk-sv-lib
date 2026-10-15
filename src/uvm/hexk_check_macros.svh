@@ -17,6 +17,8 @@
 // interface and a function call are fine as operands, a literal as the first operand is not.
 // Use them in classes that report through UVM and, with uvm_pkg imported, in modules and
 // interfaces. They do not compile in static methods of UVM classes.
+// The macros copy their operands into local variables whose names start with hexk_check_; an
+// operand that is a variable of such a name reads the local instead, so do not use those names.
 // Compile-time switch: HEXK_NO_CHECK_STATS removes the counting.
 // Include this file through hexk_macros.svh.
 //

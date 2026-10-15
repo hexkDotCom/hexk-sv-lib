@@ -84,7 +84,7 @@ module hexk_report_macros_unit_test;
    // Reports an info with the macro and returns how many infos with that ID the server has counted.
    function automatic string info_count(string id, int verbosity);
       `hexk_static_info(id, "an info", verbosity)
-      return $sformatf("%0d", server.get_count(UVM_INFO, id));
+      return $sformatf("%0d", server.get_count(id, UVM_INFO));
    endfunction : info_count
 
    // Reports a warning with the macro.

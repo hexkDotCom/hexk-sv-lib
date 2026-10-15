@@ -6,8 +6,9 @@
 // UVM report server with a configurable line layout, stack traces and marker lines on
 // selected messages, message listeners, and an end-of-test summary table per severity and ID.
 // Install it once, before run_test(), with hexk_report_server::install(cfg). Without a cfg
-// the lines look exactly as UVM prints them, so installing it changes nothing visible until
-// a cfg asks for it. Everything else in UVM reporting keeps working: verbosity, actions,
+// the message lines look exactly as UVM prints them; what the default cfg adds is a stack
+// trace for fatals and for warnings, errors and fatals of UVM itself, and the summary table
+// after UVM's summary. Everything else in UVM reporting keeps working: verbosity, actions,
 // severity and ID overrides, report catchers, log files.
 // Layouts: HEXK_FMT_UVM is UVM's own text; HEXK_FMT_COMPACT is severity, time, file:line,
 // ID, context and message in fixed-width columns; HEXK_FMT_CUSTOM takes the columns from
@@ -76,9 +77,10 @@ class hexk_report_server extends uvm_default_report_server;
    local string              severity_columns              [SEVERITIES];
    local bit                 has_severity_column           [SEVERITIES];
    local string              time_column;
-   local time                time_column_at;
+   local realtime            time_column_at;
    local bit                 has_time_column;
    local string              location_columns[string][int];
+   local int unsigned        location_count;
    local string              id_columns[string];
    local string              context_columns[string];
 
@@ -124,16 +126,17 @@ class hexk_report_server extends uvm_default_report_server;
       if (cfg == null || !$cast(taken, cfg.clone())) begin
          return;
       end
-      active_cfg = taken;
       unit = hexk_report_cfg::time_unit_text(taken.time_unit);
       // More digits would be below 1 fs, and the number of the time column would not fit 64 bits.
-      max_precision = $unsigned(unit_exponent(taken.time_unit) - FS_EXPONENT);
+      max_precision = $unsigned(hexk_report_cfg::unit_exponent(taken.time_unit) - FS_EXPONENT);
       if (taken.time_precision > max_precision) begin
          `uvm_warning("HEXK_REPORT_CFG", $sformatf(
                                              "time_precision %0d shows digits below 1 fs for time_unit %s; using %0d",
                                              taken.time_precision, unit, max_precision))
          taken.time_precision = max_precision;
       end
+      // Used from here on only, after the correction: the warning above is printed by the cfg in use until now.
+      active_cfg = taken;
       split_triggers(taken.stacktrace_triggers, stacktrace_filters, stacktrace_locations);
       split_triggers(taken.marker_triggers, marker_filters, marker_locations);
       prepare();
@@ -153,8 +156,8 @@ class hexk_report_server extends uvm_default_report_server;
       end
    endfunction : add_listener
 
-   // Number of messages of this severity and ID that were issued.
-   function int unsigned get_count(uvm_severity severity, string id);
+   // Number of messages of this ID and severity that were issued.
+   function int unsigned get_count(string id, uvm_severity severity);
       return id_counts.exists(id) ? id_counts[id][severity] : 0;
    endfunction : get_count
 
@@ -176,7 +179,7 @@ class hexk_report_server extends uvm_default_report_server;
          hexk_str::natural_sort(ids);
          foreach (ids[i]) begin
             line = hexk_str::pad(severity.name(), NAME_WIDTH, 1);
-            line = $sformatf("  %s %7d  %s", line, get_count(severity, ids[i]), ids[i]);
+            line = $sformatf("  %s %7d  %s", line, get_count(ids[i], severity), ids[i]);
             lines.push_back(line);
          end
       end
@@ -259,7 +262,7 @@ class hexk_report_server extends uvm_default_report_server;
 
    // Works out what follows from active_cfg alone: the columns of a line and the numbers of the time column.
    local function void prepare();
-      int shift = int'(active_cfg.time_precision) - unit_exponent(active_cfg.time_unit);
+      int shift = int'(active_cfg.time_precision) - hexk_report_cfg::unit_exponent(active_cfg.time_unit);
       if (active_cfg.style == HEXK_FMT_CUSTOM && active_cfg.fields.size() != 0) begin
          layout = active_cfg.fields;
       end else begin
@@ -279,6 +282,7 @@ class hexk_report_server extends uvm_default_report_server;
       has_severity_column = '{default: 0};
       has_time_column     = 0;
       location_columns.delete();
+      location_count = 0;
       id_columns.delete();
       context_columns.delete();
       marker_by_id.delete();
@@ -315,9 +319,10 @@ class hexk_report_server extends uvm_default_report_server;
 
    // Time column; built once per time step.
    local function string time_column_now();
-      if (!has_time_column || time_column_at != $time) begin
+      // $realtime and not $time: it tells time steps apart that are less than 1 ps apart.
+      if (!has_time_column || time_column_at != $realtime) begin
          time_column     = hexk_str::pad(time_text(), TIME_WIDTH);
-         time_column_at  = $time;
+         time_column_at  = $realtime;
          has_time_column = 1;
       end
       return time_column;
@@ -330,10 +335,12 @@ class hexk_report_server extends uvm_default_report_server;
       if (location_columns.exists(file) && location_columns[file].exists(line)) begin
          return location_columns[file][line];
       end
-      if (location_columns.size() >= STORE_LIMIT) begin
+      if (location_count >= STORE_LIMIT) begin
          location_columns.delete();
+         location_count = 0;
       end
       location_columns[file][line] = fit(location_of(report_message), active_cfg.file_line_width, 1);
+      location_count++;
       return location_columns[file][line];
    endfunction : location_column
 
@@ -416,18 +423,6 @@ class hexk_report_server extends uvm_default_report_server;
       fraction = hexk_str::pad($sformatf("%0d", ticks % ticks_per_unit), active_cfg.time_precision, 0, "0");
       return $sformatf("%0d.%s%s", ticks / ticks_per_unit, fraction, unit_text);
    endfunction : time_text
-
-   // Power of ten of a time unit in seconds: -9 for HEXK_TIME_NS.
-   local function int unit_exponent(hexk_time_unit_e unit);
-      case (unit)
-         HEXK_TIME_FS: return -15;
-         HEXK_TIME_PS: return -12;
-         HEXK_TIME_US: return -6;
-         HEXK_TIME_MS: return -3;
-         HEXK_TIME_S:  return 0;
-         default:      return -9;
-      endcase
-   endfunction : unit_exponent
 
    // "file:line" of a message without the directory, or "" when the message has no file.
    local function string location_of(uvm_report_message report_message);

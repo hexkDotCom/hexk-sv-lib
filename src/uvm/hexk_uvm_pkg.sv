@@ -58,6 +58,7 @@ package hexk_uvm_pkg;
    `include "check/hexk_sb_stream.sv"
    `include "check/hexk_scoreboard.sv"
    `include "mem/hexk_mem_model.sv"
+   `include "csr/hexk_csr_util.sv"
    `include "config/hexk_knob.sv"
    `include "config/hexk_knobs.sv"
    `include "config/hexk_enum_knob.sv"

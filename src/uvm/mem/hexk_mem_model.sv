@@ -23,7 +23,7 @@
 `define HEXK_MEM_MODEL_SV
 
 // What a read of a byte that was never written does.
-typedef enum {
+typedef enum bit [2:0] {
    // Reports an error and returns X.
    HEXK_MEM_UNINIT_ERROR,
    // Returns a random value that is the same at every read of that address.
@@ -313,7 +313,8 @@ class hexk_mem_model #(
 
    // What the memory holds, on one line.
    function string convert2string();
-      // A string variable: a conditional of two literals of different lengths is padded with NULs on one tool.
+      // A string variable and not ?: of two literals in the arguments, where the literals are packed values and the
+      // shorter one is padded with NULs.
       string order = "little";
       if (big_endian) begin
          order = "big";

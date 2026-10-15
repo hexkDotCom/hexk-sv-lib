@@ -52,8 +52,8 @@ function string convert2string();
 From `src/uvm/check/hexk_sb_stream.sv`:
 
 ```systemverilog
-// Creates an empty stream; without use_keys the key arguments of all functions are ignored.
-function new(bit use_keys = 1);
+// Creates an empty stream; without use_keys the key arguments of all functions are ignored. With keep_order the stream keeps the order of the writes for oldest_wait().
+function new(bit use_keys = 1, bit keep_order = 0);
 // Number of expected items that wait under this key.
 function int unsigned num_expected_for(KEY key);
 // Number of actual items that wait under this key.
@@ -62,27 +62,33 @@ function int unsigned num_actual_for(KEY key);
 function T peek_expected(KEY key, int unsigned position);
 // The waiting actual item at a position under a key, without taking it.
 function T peek_actual(KEY key, int unsigned position);
-// Adds an expected item as the newest one under its key.
+// Adds an expected item as the newest one under its key, with its latency stamp in picoseconds.
 function void store_expected(KEY key, T item, longint unsigned stamp_ps);
 // Adds an actual item as the newest one under its key.
 function void store_actual(KEY key, T item);
-// Removes and returns the expected item at a position under a key, with the time it was written.
+// Removes and returns the expected item at a position under a key, with its latency stamp in picoseconds.
 function T take_expected(KEY key, int unsigned position, output longint unsigned stamp_ps);
 // Removes and returns the actual item at a position under a key.
 function T take_actual(KEY key, int unsigned position);
 // Drops every waiting item and returns how many there were.
 function int unsigned clear();
-// Collects up to limit waiting expected items and the times they were written, key by key. It reads only the items it collects.
+// Collects up to limit waiting expected items and their latency stamps, key by key. It reads only the items it collects.
 function void list_expected(ref T items[$], ref longint unsigned stamps_ps[$], input int unsigned limit);
 // Collects up to limit waiting actual items, key by key. It reads only the items it collects.
 function void list_actual(ref T items[$], input int unsigned limit);
-// The earliest time in picoseconds at which a waiting expected item was written; found is 0 when none waits.
-function longint unsigned oldest_expected_time_ps(output bit found);
+// The latency stamp in picoseconds of the oldest waiting expected item, the earliest over the keys; found is 0 when none waits.
+function longint unsigned oldest_expected_stamp_ps(output bit found);
+// The waiting item that was written first: 1 with its key, side, position under its key and time of the write in picoseconds; 0 when no item waits or the stream was created without track_waits.
+function bit oldest_wait(output KEY key, output bit is_actual, output int unsigned position, output longint unsigned written_ps);
+// Number of entries in the order of the writes, those of items that were taken included; for tests.
+function int unsigned num_wait_entries();
 ```
 
 From `src/uvm/check/hexk_scoreboard.sv`:
 
 ```systemverilog
+// Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+virtual function string get_type_name();
 // Creates the scoreboard; streams and exports are created in build_phase.
 function new(string name, uvm_component parent);
 // Hook: the key of an item for the modes that match by key; the default gives every item the same key.
@@ -105,7 +111,7 @@ function void write_expected_idx(int idx, T t);
 function void write_actual_idx(int idx, T t);
 // Reset of the DUT: drops all waiting items when cfg.flush_on_reset is set.
 function void on_reset();
-// The counters of one stream, or of all streams together when stream is below 0. A stream that does not exist is an error and gives counters that are all 0.
+// A copy of the counters of one stream, or of all streams together when stream is below 0; later items do not change it. A stream that does not exist is an error and gives counters that are all 0.
 function hexk_sb_stats get_stats(int stream = -1);
 // hexk_objectable: 1 while items are waiting and cfg.hold_objection is set.
 virtual function bit is_busy();
@@ -115,6 +121,8 @@ virtual function string busy_reason();
 function void build_phase(uvm_phase phase);
 // UVM callback: registers with the aggregator when cfg.hold_objection is set.
 function void end_of_elaboration_phase(uvm_phase phase);
+// UVM callback: with cfg.max_wait_ps, drops every item when it has waited that long for its partner, with an error. It sleeps until the oldest waiting item reaches the limit, or until an item starts to wait.
+task run_phase(uvm_phase phase);
 // UVM callback: reports the items that were left over on either side, and the summary.
 function void check_phase(uvm_phase phase);
 ```
@@ -123,7 +131,7 @@ From `src/uvm/check/hexk_scoreboard_cfg.sv`:
 
 ```systemverilog
 // How a hexk_scoreboard pairs an actual item with an expected one.
-typedef enum { HEXK_SB_IN_ORDER, HEXK_SB_OUT_OF_ORDER, HEXK_SB_IN_ORDER_PER_KEY } hexk_sb_mode_e;
+typedef enum bit [1:0] { HEXK_SB_IN_ORDER, HEXK_SB_OUT_OF_ORDER, HEXK_SB_IN_ORDER_PER_KEY } hexk_sb_mode_e;
 // Creates a cfg with the defaults.
 function new(string name = "hexk_scoreboard_cfg");
 // All settings on one line.
@@ -148,8 +156,8 @@ Setting up:
   associative array: use a two-state type, a string or a class as `KEY`, or make sure that
   `get_key()` returns no such bit. Mode `HEXK_SB_IN_ORDER` does not use `KEY` at all.
 - Assign `cfg` before the build phase of the scoreboard; without one, a cfg with the
-  defaults is created. `cfg.mode` and `cfg.num_streams` are read in the build phase; a
-  later change of them has no effect. The build phase creates `cfg.num_streams` streams and, per stream,
+  defaults is created. `cfg.mode`, `cfg.num_streams` and `cfg.max_wait_ps` are read in the
+  build phase; a later change of them has no effect. The build phase creates `cfg.num_streams` streams and, per stream,
   the exports `expected_exports[i]` and `actual_exports[i]`. `expected_export` and
   `actual_export` are those of stream 0.
 - A write to an export of stream `i` calls `write_expected_idx(i, item)` or
@@ -168,7 +176,7 @@ Three questions are answered apart, each by its own hooks:
 |---|---|
 | `HEXK_SB_IN_ORDER` | the oldest waiting expected item |
 | `HEXK_SB_IN_ORDER_PER_KEY` | the oldest waiting expected item with the same key |
-| `HEXK_SB_OUT_OF_ORDER` | the oldest waiting expected item with the same key for which `is_partner()` is 1; if there is none, the oldest with that key |
+| `HEXK_SB_OUT_OF_ORDER` | the oldest waiting expected item with the same key for which `is_partner()` is 1; if there is none, the oldest with that key, or with `cfg.allow_unexpected` none: the actual item waits |
 
 - **Equality: whether the pair agrees.** `compare_items(expected, actual, diff)`. Equal: the
   pair is counted as matched and its latency is noted. Not equal: the error
@@ -195,6 +203,14 @@ Three questions are answered apart, each by its own hooks:
 - **An actual item without an expected item** to pair with is the error
   `HEXK_SB_UNEXPECTED` and is dropped. With `cfg.allow_unexpected` it waits instead, and an
   expected item that is written later is paired with it by the same rules.
+- **In mode `HEXK_SB_OUT_OF_ORDER` with `cfg.allow_unexpected`**, an actual item for which no
+  waiting expected item is a partner waits for one that comes later, instead of being
+  compared with the oldest one with its key: with early actual items allowed, a missing
+  partner may still come. So no mismatch is reported in that mode; an item that never gets
+  its partner is a leftover, or times out with `cfg.max_wait_ps`.
+- **An expected item** is paired with a waiting actual item only when that one is its
+  partner (in the two in-order modes: the oldest waiting actual item with its key); otherwise
+  it waits. It is never compared with an actual item that is not its partner.
 - Waiting items are stored in queues (CHK-4): one per side of a stream in mode
   `HEXK_SB_IN_ORDER`, one per key in the keyed modes.
 - Cost per item: in the two in-order modes a constant (one lookup of the key, one queue
@@ -219,8 +235,24 @@ Limits and reports:
 - **Latency** of a matched pair is the time from the timestamp of the expected item to the
   moment the pair is complete, in picoseconds; 0 when the actual item came first. With
   `cfg.max_latency_ps` above 0, a larger latency is the error `HEXK_SB_LATENCY`; the pair still counts as
-  matched. The limit is checked when the pair is complete, not while an item waits: an item
-  that never gets a partner is a leftover, and `busy_reason()` shows how long it has waited.
+  matched. The limit is checked when the pair is complete, not while an item waits.
+- **Waiting time.** With `cfg.max_wait_ps` above 0, an item may wait that long for its
+  partner, counted from its write to the scoreboard. One picosecond later it is overdue: it
+  is the error `HEXK_SB_TIMEOUT`, with the item, and is dropped. It no longer keeps the
+  scoreboard busy and is counted as `timed_out`; a partner that comes later is matched like
+  any other item, so it is unexpected, or waits itself with `cfg.allow_unexpected`, or meets
+  another waiting item. A partner that comes at the limit itself still matches. A time out
+  that would come after `hexk_wait_util::LAST_PS` (about 2.56 hours of simulation) never
+  comes, as for every wait of the library.
+- The limit applies to expected items and, with `cfg.allow_unexpected`, to actual items that
+  wait. Each item has its own limit from its own write; the items of a stream time out in the
+  order of their writes, over all keys. `run_phase` watches them: it sleeps until the oldest
+  waiting item is overdue, or until an item starts to wait, so it costs nothing while no item
+  waits. Every write also drops the overdue items of its stream before it is matched, so the
+  result does not depend on which of the two runs first in a time step. A derived class that
+  overrides `run_phase` calls `super.run_phase(phase)`.
+  Without the limit an item that never gets a partner waits until the check phase, where it
+  is a leftover; `busy_reason()` shows how long it has waited.
 - With `cfg.max_outstanding` above 0, more waiting items in one stream is the error
   `HEXK_SB_OUTSTANDING`, once each time the count goes above the limit.
 - The first `cfg.max_errors` errors with items are printed in full; later ones are one line
@@ -244,12 +276,13 @@ End of test and reset:
 
 Statistics:
 
-- `get_stats(i)` returns the counters of stream `i`, the object the scoreboard itself
-  updates; `get_stats()` returns a new object with the sum over all streams. A stream
+- `get_stats(i)` returns a copy of the counters of stream `i`, `get_stats()` a new object
+  with the sum over all streams; later items change neither, so call it again for newer
+  counts. A stream
   number of 0 or more that does not exist is the error `HEXK_SB_STREAM` and gives counters
   that are all 0.
   `hexk_sb_stats` has `expected_count`, `actual_count`, `matched`, `mismatched`,
-  `unexpected`, `dropped`, `late`, `leftover_expected`, `leftover_actual`, and
+  `unexpected`, `dropped`, `late`, `timed_out`, `leftover_expected`, `leftover_actual`, and
   `latency_min_ps`, `latency_max_ps`, `latency_sum_ps` and `latency_avg_ps()` (rounded down).
   The leftover counts are set in `check_phase`.
 
@@ -264,14 +297,15 @@ The members of `hexk_scoreboard_cfg`:
 | `max_errors` | 10 | Errors that are printed with their items. |
 | `max_outstanding` | 0 (no limit) | Largest number of waiting items per stream. |
 | `max_latency_ps` | 0 (no limit) | Longest latency of a matched pair in picoseconds; checked when the pair is matched. |
+| `max_wait_ps` | 0 (no limit) | Longest time in picoseconds an item may wait for its partner; a longer wait is an error and drops the item. |
 | `allow_unexpected` | 0 | An actual item may come before its expected item. |
 | `hold_objection` | 1 | Busy for the aggregator while items wait. |
 | `flush_on_reset` | 1 | `on_reset()` drops the waiting items. |
 | `leftover_print_limit` | 20 | Leftover items printed per stream and direction. |
 | `clone_expected` | 0 | Keep a clone of an expected item that has to wait instead of its handle. |
 
-`max_latency_ps` is a whole number of picoseconds (`docs/integration.md`, "Times"): write
-`` `hexk_ps(200ns) `` or `200_000`. There are no plusargs.
+`max_latency_ps` and `max_wait_ps` are whole numbers of picoseconds (`docs/integration.md`,
+"Times"): write `` `hexk_ps(200ns) `` or `200_000`. There are no plusargs.
 
 `clone_expected` is for a producer that reuses or changes an expected item after writing
 it. The scoreboard then clones every expected item that has to wait, at the cost of one
@@ -279,10 +313,13 @@ it. The scoreboard then clones every expected item that has to wait, at the cost
 cloned. A class that `clone()` cannot create is the error `HEXK_SB_CLONE`, and the item
 itself is kept.
 
-`max_latency_ps` is no deadline. An expected item whose actual item never comes is not
-reported when the limit has passed: it is a leftover in the check phase. A scoreboard that
-holds the phase through the aggregator keeps it alive while the item waits, so such a test
-needs `hexk_watchdog`, which ends it and names the scoreboard as busy.
+`max_latency_ps` is no deadline; `max_wait_ps` is. Without `max_wait_ps`, an expected item
+whose actual item never comes is reported only in the check phase, as a leftover, and a
+scoreboard that holds the phase through the aggregator keeps it alive while the item waits:
+such a test needs `hexk_watchdog`, which ends it and names the scoreboard as busy. With
+`max_wait_ps`, the item is reported when its limit has passed and the phase can end. Set
+`max_wait_ps` above the longest latency the DUT may have, with a margin; `max_latency_ps`
+can then stay 0 or be the tighter limit for the matched pairs.
 
 ## 6. Messages emitted
 
@@ -299,6 +336,7 @@ needs `hexk_watchdog`, which ends it and names the scoreboard as busy.
 | `HEXK_SB_OUTSTANDING` | error |  |
 | `HEXK_SB_STREAM` | error |  |
 | `HEXK_SB_SUMMARY` | info |  |
+| `HEXK_SB_TIMEOUT` | error |  |
 | `HEXK_SB_UNEXPECTED` | error |  |
 <!-- HEXK_GEN:END emits -->
 
@@ -319,8 +357,9 @@ needs `hexk_watchdog`, which ends it and names the scoreboard as busy.
 // matches by the tag of the response. The class derived from the scoreboard says what the
 // key of an item is and how an item is printed; everything else is the cfg. The test writes
 // four expected responses, then the actual ones in another order with some delay; the
-// scoreboard keeps the run phase alive until the last response has arrived, and check_phase
-// prints the summary. Needs UVM and src/uvm/hexk_uvm.f.
+// scoreboard keeps the run phase alive until the last response has arrived, or reports one
+// that is overdue. check_phase prints the summary, and the test checks that four pairs
+// matched. Needs UVM and src/uvm/hexk_uvm.f.
 
 `include "hexk_macros.svh"
 
@@ -330,6 +369,7 @@ module hexk_scoreboard_example;
    import uvm_pkg::*;
    import hexk_uvm_pkg::hexk_scoreboard;
    import hexk_uvm_pkg::hexk_scoreboard_cfg;
+   import hexk_uvm_pkg::hexk_sb_stats;
    import hexk_uvm_pkg::hexk_objection_aggregator;
    import hexk_uvm_pkg::HEXK_SB_OUT_OF_ORDER;
    `include "uvm_macros.svh"
@@ -359,11 +399,20 @@ module hexk_scoreboard_example;
 
       virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_response other;
-         return $cast(other, rhs) && other.tag == tag && other.data == data;
+         bit                   same;
+         if (!$cast(other, rhs)) begin
+            return 0;
+         end
+         // Through the comparer, so that a mismatch names the fields that differ. compare_field_int() takes 64-bit
+         // values; both fields are compared.
+         same = comparer.compare_field_int("tag", 64'(tag), 64'(other.tag), $bits(tag));
+         same &= comparer.compare_field_int("data", 64'(data), 64'(other.data), $bits(data));
+         return same;
       endfunction : do_compare
    endclass : hexk_example_response
 
-   // Scoreboard for responses: the key is the tag, and an item is printed on one line.
+   // Scoreboard for responses: the key is the tag. An item is printed on one line by the default item_text(), which
+   // calls convert2string() of the item.
    class hexk_example_scoreboard extends hexk_scoreboard #(
        .T  (hexk_example_response),
        .KEY(int unsigned)
@@ -377,10 +426,6 @@ module hexk_scoreboard_example;
       virtual function int unsigned get_key(hexk_example_response item);
          return item.get_tag();
       endfunction : get_key
-
-      virtual function string item_text(hexk_example_response item);
-         return item.convert2string();
-      endfunction : item_text
    endclass : hexk_example_scoreboard
 
    class hexk_example_test extends uvm_test;
@@ -402,6 +447,8 @@ module hexk_scoreboard_example;
          objections.poll_interval_ps = `hexk_ps(10ns);
          scoreboard_cfg              = hexk_scoreboard_cfg::type_id::create("scoreboard_cfg");
          scoreboard_cfg.mode         = HEXK_SB_OUT_OF_ORDER;
+         // A response that never comes is an error after 1 us, instead of a run phase that never ends.
+         scoreboard_cfg.max_wait_ps  = `hexk_ps(1us);
          scoreboard                  = hexk_example_scoreboard::type_id::create("scoreboard", this);
          scoreboard.cfg              = scoreboard_cfg;
          scoreboard.aggregator       = objections;
@@ -435,6 +482,13 @@ module hexk_scoreboard_example;
             monitor_port.write(response(answer_order[i]));
          end
       endtask : run_phase
+
+      // An empty scoreboard reports nothing either: the test checks that its four responses were compared.
+      function void check_phase(uvm_phase phase);
+         hexk_sb_stats stats = scoreboard.get_stats();
+         super.check_phase(phase);
+         `hexk_check_eq(stats.matched, 4, "EXAMPLE_MATCHED")
+      endfunction : check_phase
    endclass : hexk_example_test
 
    initial begin

@@ -117,10 +117,9 @@ class hexk_delay;
 
    // Waits for next() times unit_ps picoseconds; with a delay of 0 it returns at once.
    task wait_time(longint unsigned unit_ps);
-      longint unsigned delay_ps = 64'(next()) * unit_ps;
-      if (delay_ps != 0) begin
-         #(delay_ps);
-      end
+      longint unsigned count = 64'(next());
+      // A product past the largest number is the largest number, which hexk_wait_util never reaches.
+      hexk_wait_util::wait_ps((unit_ps != 0 && count > ~64'd0 / unit_ps) ? ~64'd0 : count * unit_ps);
    endtask : wait_time
 
    // The name of the generator and the settings of its cfg, on one line.

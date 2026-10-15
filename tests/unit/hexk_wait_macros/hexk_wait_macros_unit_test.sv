@@ -34,6 +34,26 @@ module hexk_wait_macros_ut_us_scope;
    endtask : timed_wait
 endmodule : hexk_wait_macros_ut_us_scope
 
+// A package with a time unit of 1 ps and a class with a type parameter that uses a wait macro: on VCS X-2025.06 a
+// delay written in such a class takes the time unit of the scope that declares the type argument.
+package hexk_wait_macros_ut_ps_pkg;
+   timeunit 1ps; timeprecision 1ps;
+   import uvm_pkg::*;
+
+   class hexk_ut_param_waiter #(
+       type T = int
+   );
+      // Waits with `hexk_wait_timeout for a bit that stays 0, with a timeout of 30 ns; gives the picoseconds that
+      // passed.
+      task wait_for_nothing(output longint unsigned waited_ps);
+         bit              never = 0;
+         longint unsigned start_ps = $time;
+         `hexk_wait_timeout(never, 30ns, "UT_WAIT_PARAM")
+         waited_ps = $time - start_ps;
+      endtask : wait_for_nothing
+   endclass : hexk_ut_param_waiter
+endpackage : hexk_wait_macros_ut_ps_pkg
+
 module hexk_wait_macros_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
@@ -54,6 +74,20 @@ module hexk_wait_macros_unit_test;
    int unsigned        scenario;
 
    hexk_wait_macros_ut_us_scope us_scope ();
+
+   // A class with an event of its own, triggered by a function.
+   class hexk_ut_event_owner;
+      event changed;
+
+      function void touch();
+         ->changed;
+      endfunction : touch
+   endclass : hexk_ut_event_owner
+
+   // A class of this module, whose time unit is 1 ns, as type argument of the waiter of the package.
+   class hexk_ut_module_item;
+      int unsigned value;
+   endclass : hexk_ut_module_item
 
    function automatic void build();
       svunit_ut = new(name);
@@ -104,6 +138,61 @@ module hexk_wait_macros_unit_test;
       us_scope.timed_wait(result);
    endtask : wait_in_us_scope
 
+   // A timed-out `hexk_wait_timeout of 30 ns inside a class with a type parameter given a class of this module:
+   // result is the picoseconds that passed.
+   task automatic wait_in_param_class();
+      hexk_wait_macros_ut_ps_pkg::hexk_ut_param_waiter #(hexk_ut_module_item) waiter = new();
+      longint unsigned waited_ps;
+      catcher.expect_msg("^UT_WAIT_PARAM$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      waiter.wait_for_nothing(waited_ps);
+      result = $sformatf("%0d", waited_ps);
+   endtask : wait_in_param_class
+
+   // An event of a class triggered while nobody waits, then wait_event_or_timeout() 5 ns later with 20 ns:
+   // result is "<nanoseconds that passed> timed_out=<bit>".
+   task automatic wait_after_an_earlier_trigger();
+      hexk_ut_event_owner owner = new();
+      bit                 timed_out;
+      start(0);
+      owner.touch();
+      #5ns;
+      start_time = $realtime;
+      hexk_wait_util::wait_event_or_timeout(owner.changed, `hexk_ps(20ns), timed_out);
+      result = $sformatf("%0dns timed_out=%0b", int'(($realtime - start_time) / 1ns), timed_out);
+   endtask : wait_after_an_earlier_trigger
+
+   // hexk_wait_util::ends_after_last() for durations and start times around LAST_PS.
+   function automatic string after_last();
+      longint unsigned last = hexk_wait_util::LAST_PS;
+      return $sformatf(
+          "%0b %0b %0b %0b %0b %0b %0b %0b",
+          hexk_wait_util::ends_after_last(
+              10, 0
+          ),
+          hexk_wait_util::ends_after_last(
+              last, 0
+          ),
+          hexk_wait_util::ends_after_last(
+              last + 1, 0
+          ),
+          hexk_wait_util::ends_after_last(
+              2, last - 1
+          ),
+          hexk_wait_util::ends_after_last(
+              1, last + 1
+          ),
+          hexk_wait_util::ends_after_last(
+              0, last + 1
+          ),
+          hexk_wait_util::ends_after_last(
+              '1, 5
+          ),
+          hexk_wait_util::ends_after_last(
+              1, last - 1
+          )
+      );
+   endfunction : after_last
+
    // "<nanoseconds since start> <errors caught> <fatals caught>".
    function automatic string report_line();
       int elapsed = int'(($realtime - start_time) / 1ns);
@@ -139,6 +228,25 @@ module hexk_wait_macros_unit_test;
    endtask : wait_for_ready
 
    // `hexk_wait_timeout_fatal on flag with a timeout of 20 ns.
+   // `hexk_wait_timeout(_fatal) of 20 ns on ready, which a thread sets with a nonblocking assignment after exactly
+   // 20 ns.
+   task automatic wait_for_nba_at_the_timeout(bit fatal);
+      start(0);
+      ready = 1'b0;
+      fork
+         begin
+            #20ns;
+            ready <= 1'b1;
+         end
+      join_none
+      if (fatal) begin
+         `hexk_wait_timeout_fatal(ready, 20ns, "UT_WAIT")
+      end else begin
+         `hexk_wait_timeout(ready, 20ns, "UT_WAIT")
+      end
+      result = report_line();
+   endtask : wait_for_nba_at_the_timeout
+
    task automatic wait_for_flag_fatal(realtime set_after);
       start(set_after);
       `hexk_wait_timeout_fatal(flag, 20ns, "UT_WAIT")
@@ -218,6 +326,13 @@ module hexk_wait_macros_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result, "20ns 1 0")
       wait_for_flag(35ns);
       `FAIL_UNLESS_STR_EQUAL(result, "20ns 1 0")
+   `SVTEST_END
+
+   `SVTEST(a_condition_set_by_a_nonblocking_assignment_at_the_timeout_counts)
+      wait_for_nba_at_the_timeout(0);
+      `FAIL_UNLESS_STR_EQUAL(result, "20ns 0 0")
+      wait_for_nba_at_the_timeout(1);
+      `FAIL_UNLESS_STR_EQUAL(result, "20ns 0 0")
    `SVTEST_END
 
    `SVTEST(wait_timeout_waits_for_a_signal_that_starts_unknown)
@@ -303,6 +418,20 @@ module hexk_wait_macros_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result, "5ns 0 0 timed_out=0")
       util_wait_event(0);
       `FAIL_UNLESS_STR_EQUAL(result, "20ns 0 0 timed_out=1")
+   `SVTEST_END
+
+   `SVTEST(a_wait_macro_in_a_class_with_a_type_parameter_times_out_at_its_time)
+      wait_in_param_class();
+      `FAIL_UNLESS_STR_EQUAL(result, "30000")
+   `SVTEST_END
+
+   `SVTEST(wait_event_or_timeout_does_not_see_a_trigger_from_before_the_call)
+      wait_after_an_earlier_trigger();
+      `FAIL_UNLESS_STR_EQUAL(result, "20ns timed_out=1")
+   `SVTEST_END
+
+   `SVTEST(a_wait_that_would_end_after_the_last_time_never_ends)
+      `FAIL_UNLESS_STR_EQUAL(after_last(), "0 0 1 1 1 0 1 0")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

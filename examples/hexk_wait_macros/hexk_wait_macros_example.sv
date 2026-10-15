@@ -37,7 +37,7 @@ module hexk_wait_macros_example;
       `hexk_spinwait(slow_handshake();, 200ns, "EXAMPLE_HANDSHAKE")
 
       ready = 0;
-      hexk_wait_util::wait_or_timeout(ready, 50ns, timed_out);
+      hexk_wait_util::wait_or_timeout(ready, `hexk_ps(50ns), timed_out);
       $info("second wait timed out: %0b", timed_out);
    end
 

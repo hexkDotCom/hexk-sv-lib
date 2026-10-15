@@ -55,6 +55,8 @@ is written by hand. `make pre_sim` fails when a generated block is out of date.
   by key or in order per key, streams, leftovers, latency, statistics, objection handling
 - [hexk_mem_model](hexk_mem_model.md): sparse memory with byte enables, endianness,
   policies for reads of unwritten bytes, address range, $readmemh files
+- [hexk_csr_util](hexk_csr_util.md): register accesses with the status checked, read
+  checks, spin-waits, reset value check, bit-bash and exclusions for any uvm_reg_block
 - [hexk_hdl_macros](hexk_hdl_macros.md): read, deposit, force and release of a signal
   by its HDL path, with the return code checked and reported
 - [hexk_coverage](hexk_coverage.md): coverage of a valid/ready handshake (states and

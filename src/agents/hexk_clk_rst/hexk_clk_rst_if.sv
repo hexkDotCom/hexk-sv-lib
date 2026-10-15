@@ -45,7 +45,7 @@ interface hexk_clk_rst_if;
 
    // Whether the clock is asked to run, and whether the generator is in a cycle.
    bit              run_request;
-   bit              running;
+   bit              generating;
 
    // Time from the first start to the first low time of the clock.
    longint unsigned start_delay_ps;
@@ -83,8 +83,10 @@ interface hexk_clk_rst_if;
       clk = 1'b0;
       forever begin
          wait (run_request);
-         running = 1'b1;
-         #(start_delay_ps * 1ps);
+         generating = 1'b1;
+         // The long waits through hexk_wait_util, where a time after hexk_wait_util::LAST_PS never comes; the half
+         // periods below are short and are delays of their own, the hottest path of a simulation.
+         hexk_uvm_pkg::hexk_wait_util::wait_ps(start_delay_ps);
          start_delay_ps     = 0;
          previous_jitter_ps = 0;
          period_ps          = next_period_ps;
@@ -118,7 +120,7 @@ interface hexk_clk_rst_if;
                break;
             end
          end
-         running = 1'b0;
+         generating = 1'b0;
       end
    end : clock_generator
 
@@ -156,15 +158,16 @@ interface hexk_clk_rst_if;
    endfunction : configure
 
    // Asks for a clock with this period, high time and jitter; it holds from the next rising edge.
-   function automatic void set_clock(longint unsigned period, longint unsigned high, longint unsigned jitter);
-      next_period_ps = period;
-      next_high_ps   = high;
-      next_jitter_ps = jitter;
+   function automatic void set_clock(longint unsigned new_period_ps, longint unsigned new_high_ps,
+                                     longint unsigned new_jitter_ps);
+      next_period_ps = new_period_ps;
+      next_high_ps   = new_high_ps;
+      next_jitter_ps = new_jitter_ps;
    endfunction : set_clock
 
    // Sets the time by which the first start of the clock is delayed.
-   function automatic void set_start_delay(longint unsigned delay);
-      start_delay_ps = delay;
+   function automatic void set_start_delay(longint unsigned delay_ps);
+      start_delay_ps = delay_ps;
    endfunction : set_start_delay
 
    // Starts the clock (1) or stops it after the high time that is going on (0).
@@ -172,14 +175,14 @@ interface hexk_clk_rst_if;
       run_request = run;
    endfunction : request_run
 
-   // 1 when the clock is asked to run.
-   function automatic bit is_running();
+   // 1 when the clock is asked to run; the generator may still finish a high time after a stop was asked for.
+   function automatic bit run_requested();
       return run_request;
-   endfunction : is_running
+   endfunction : run_requested
 
    // Waits until the generator has stopped; the clock is 0 then.
    task automatic wait_stopped();
-      wait (!running);
+      wait (!generating);
    endtask : wait_stopped
 
    // The value of the pin for an asserted (1) or a released (0) reset.
@@ -212,9 +215,9 @@ interface hexk_clk_rst_if;
       @(rst);
    endtask : wait_reset_change
 
-   // Waits for a time in picoseconds.
-   task automatic wait_ps(longint unsigned duration);
-      #(duration * 1ps);
+   // Waits for a time in picoseconds, through hexk_wait_util: a time after hexk_wait_util::LAST_PS never comes.
+   task automatic wait_ps(longint unsigned duration_ps);
+      hexk_uvm_pkg::hexk_wait_util::wait_ps(duration_ps);
    endtask : wait_ps
 
    // Number of rising edges of clk since the start of the simulation.

@@ -23,13 +23,13 @@
 `define HEXK_VERSION_MAJOR 0
 
 // Minor version number (SemVer): added functionality; may break APIs before 1.0.0.
-`define HEXK_VERSION_MINOR 7
+`define HEXK_VERSION_MINOR 8
 
 // Patch version number (SemVer): fixes only.
 `define HEXK_VERSION_PATCH 0
 
 // Full version as a string literal, for banners and log files.
-`define HEXK_VERSION_STR "0.7.0"
+`define HEXK_VERSION_STR "0.8.0"
 
 // Defined when hexk_base_test is part of this release.
 `define HEXK_HAS_BASE_TEST
@@ -45,6 +45,9 @@
 
 // Defined when hexk_crc is part of this release.
 `define HEXK_HAS_CRC
+
+// Defined when hexk_csr_util is part of this release.
+`define HEXK_HAS_CSR_UTIL
 
 // Defined when hexk_delay is part of this release.
 `define HEXK_HAS_DELAY

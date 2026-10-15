@@ -33,7 +33,7 @@ From `src/uvm/hexk_util_macros.svh`:
 ```systemverilog
 // Makes TYPE a singleton: declares the static functions get(), which creates the one object, and reset_for_test().
 `define hexk_singleton_decl(TYPE)
-// Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP.
+// Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP; get_index() gives the index.
 `define hexk_analysis_imp_indexed_decl(SUFFIX)
 // Puts virtual interface VIF of interface type TYPE into uvm_config_db under NAME, for the components that match PATH.
 `define hexk_vif_set(TYPE, PATH, NAME, VIF)
@@ -64,8 +64,8 @@ All four are included through `hexk_macros.svh`. None needs a semicolon after it
 - Written where a class may be declared, usually in the package of the component, once per
   suffix. `SUFFIX` is written without an underscore; the macro adds it: `stream` declares
   class `hexk_analysis_imp_indexed_stream #(type T, type IMP)`.
-- The constructor is `new(string imp_name, IMP imp_owner, int imp_index = 0)`. The public
-  member `index` holds `imp_index`.
+- The constructor is `new(string imp_name, IMP imp_owner, int imp_index = 0)`.
+  `get_index()` returns `imp_index`, which cannot be changed afterwards.
 - `write(t)` of the imp calls `imp_owner.write_stream(index, t)`; the component declares
   `function void write_stream(int idx, T t)`.
 - It connects to an analysis port or export like any analysis imp.
@@ -222,9 +222,7 @@ module hexk_util_macros_example;
       task run_phase(uvm_phase phase);
          hexk_example_stats stats = hexk_example_stats::get();
          phase.raise_objection(this, "stimulus");
-         if (map.randomize() != 1) begin
-            `uvm_error("EXAMPLE", "randomization of the map failed")
-         end
+         `hexk_randomize_or_fatal(map, "EXAMPLE")
          foreach (map.first_addr[i]) begin
             `uvm_info("EXAMPLE", $sformatf("region %0d: 0x%04h to 0x%04h", i, map.first_addr[i], map.last_addr[i]),
                       UVM_NONE)

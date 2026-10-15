@@ -15,7 +15,10 @@
 // of the item and need no derived class for a plain in-order scoreboard. Every comparison
 // of a pair counts as a check in hexk_check_stats, under the ID HEXK_SB_MISMATCH.
 // The scoreboard is busy for hexk_objection_aggregator while items wait, so the test does
-// not end before the last item has arrived; on_reset() drops what is waiting.
+// not end before the last item has arrived; on_reset() drops what is waiting. With
+// cfg.max_wait_ps, an item that waits longer for its partner is an error and is dropped
+// (run_phase watches the waiting items; a derived class that overrides run_phase calls
+// super.run_phase).
 //
 //! @module    hexk_scoreboard
 //! @since     0.7.0
@@ -23,7 +26,7 @@
 //! @serves    CHK-2 CHK-3 CHK-4 CHK-5 CHK-6 OBJ-2 MSG-7
 //! @emits     HEXK_SB_MISMATCH:error HEXK_SB_UNEXPECTED:error HEXK_SB_LEFTOVER:error HEXK_SB_LATENCY:error
 //! @emits     HEXK_SB_OUTSTANDING:error HEXK_SB_STREAM:error HEXK_SB_AGGREGATOR:warning
-//! @emits     HEXK_SB_SUMMARY:info HEXK_SB_FLUSH:info HEXK_SB_CLONE:error
+//! @emits     HEXK_SB_SUMMARY:info HEXK_SB_FLUSH:info HEXK_SB_CLONE:error HEXK_SB_TIMEOUT:error
 //! @plusargs  (none)
 
 `ifndef HEXK_SCOREBOARD_SV
@@ -62,6 +65,12 @@ class hexk_scoreboard #(
    // The mode of cfg at the build phase: the streams are created for it.
    local hexk_sb_mode_e                                          mode;
 
+   // cfg.max_wait_ps at the build phase; 0 when items may wait without a limit.
+   local longint unsigned                                        max_wait_ps;
+
+   // Triggered when an item starts to wait, for run_phase while it has nothing to watch.
+   local event                                                   item_stored;
+
    // Key of every item in mode HEXK_SB_IN_ORDER, where the streams ignore keys: the value a KEY
    // has without an assignment. A lint rule reports a variable that is never assigned.
    // verilator lint_off UNDRIVEN
@@ -74,13 +83,18 @@ class hexk_scoreboard #(
    // The comparer of the default compare_items(), one for all comparisons: compare() starts it afresh.
    local uvm_comparer                                            default_comparer;
 
-   // The last pair that the default is_partner() compared, and whether it was equal, so that the pair it
-   // chooses is not compared a second time.
+   // The last pair that the default is_partner() compared, and whether it was equal. find_partner() clears it
+   // before a search and reads it for the pair it returns, so that a pair found equal is not compared again.
    local T                                                       partner_exp;
    local T                                                       partner_act;
    local bit                                                     partner_equal;
 
    `uvm_component_param_utils(hexk_scoreboard#(T, KEY))
+
+   // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+   virtual function string get_type_name();
+      return "hexk_scoreboard";
+   endfunction : get_type_name
 
    // Creates the scoreboard; streams and exports are created in build_phase.
    function new(string name, uvm_component parent);
@@ -147,6 +161,7 @@ class hexk_scoreboard #(
       T        actual;
       KEY      key;
       int      position;
+      bit      known_equal;
       if (stream == null) begin
          return;
       end
@@ -155,15 +170,20 @@ class hexk_scoreboard #(
          return;
       end
       stream.stats.expected_count++;
+      drop_overdue_before_write(idx);
       key      = key_of(item);
-      position = find_partner(stream, key, item, 1);
+      position = find_partner(stream, key, item, 1, known_equal);
       if (position >= 0) begin
          actual = stream.take_actual(key, $unsigned(position));
-         finish_pair(stream, idx, item, actual, get_timestamp_ps(item), found_equal(item, actual));
+         // The actual item came first: the latency is 0, whatever get_timestamp_ps() says.
+         finish_pair(stream, idx, item, actual, $time, known_equal);
          check_outstanding(stream, idx);
          return;
       end
       stream.store_expected(key, kept_expected(item), get_timestamp_ps(item));
+      if (max_wait_ps != 0) begin
+         ->item_stored;
+      end
       check_outstanding(stream, idx);
    endfunction : write_expected_idx
 
@@ -190,16 +210,21 @@ class hexk_scoreboard #(
       stream_t         stream = stream_of(idx);
       KEY              key;
       int              position;
+      bit              known_equal;
       longint unsigned stamp_ps;
       T                expected;
       if (stream == null || t == null) begin
          return;
       end
       stream.stats.actual_count++;
+      drop_overdue_before_write(idx);
       key      = key_of(t);
-      position = find_partner(stream, key, t, 0);
+      position = find_partner(stream, key, t, 0, known_equal);
       if (position < 0 && cfg.allow_unexpected) begin
          stream.store_actual(key, t);
+         if (max_wait_ps != 0) begin
+            ->item_stored;
+         end
          check_outstanding(stream, idx);
          return;
       end
@@ -211,10 +236,11 @@ class hexk_scoreboard #(
       end
       // No expected item of this key is a partner: the actual item is compared with the oldest one.
       if (position < 0) begin
-         position = 0;
+         position    = 0;
+         known_equal = 0;
       end
       expected = stream.take_expected(key, $unsigned(position), stamp_ps);
-      finish_pair(stream, idx, expected, t, stamp_ps, found_equal(expected, t));
+      finish_pair(stream, idx, expected, t, stamp_ps, known_equal);
       check_outstanding(stream, idx);
    endfunction : write_actual_idx
 
@@ -234,14 +260,17 @@ class hexk_scoreboard #(
       end
    endfunction : on_reset
 
-   // The counters of one stream, or of all streams together when stream is below 0.
-   // A stream that does not exist is an error and gives counters that are all 0.
+   // A copy of the counters of one stream, or of all streams together when stream is below 0; later items do not
+   // change it. A stream that does not exist is an error and gives counters that are all 0.
    function hexk_sb_stats get_stats(int stream = -1);
       hexk_sb_stats total = new();
       stream_t      one;
       if (stream >= 0) begin
          one = stream_of(stream);
-         return (one == null) ? total : one.stats;
+         if (one != null) begin
+            total.add(one.stats);
+         end
+         return total;
       end
       foreach (streams[i]) begin
          total.add(streams[i].stats);
@@ -271,7 +300,7 @@ class hexk_scoreboard #(
          if (streams[i].num_expected == 0 && streams[i].num_actual == 0) begin
             continue;
          end
-         oldest_ps = streams[i].oldest_expected_time_ps(found);
+         oldest_ps = streams[i].oldest_expected_stamp_ps(found);
          lines.push_back($sformatf(
                          "stream %0d: %0d expected and %0d actual items are waiting%s",
                          i,
@@ -292,16 +321,23 @@ class hexk_scoreboard #(
       if (cfg == null) begin
          cfg = hexk_scoreboard_cfg::type_id::create("cfg");
       end
-      mode  = cfg.mode;
-      count = cfg.num_streams;
+      mode        = cfg.mode;
+      max_wait_ps = cfg.max_wait_ps;
+      count       = cfg.num_streams;
       if (count == 0) begin
          `uvm_error("HEXK_SB_STREAM", "cfg.num_streams is 0; one stream is created")
          count = 1;
       end
       for (int unsigned i = 0; i < count; i++) begin
-         stream_t                                                      stream = new(mode != HEXK_SB_IN_ORDER);
-         hexk_analysis_imp_indexed_expected_idx #(.T(T), .IMP(this_t)) expected_imp;
-         hexk_analysis_imp_indexed_actual_idx #(.T(T), .IMP(this_t))   actual_imp;
+         stream_t stream = new(mode != HEXK_SB_IN_ORDER, max_wait_ps != 0);
+         hexk_analysis_imp_indexed_expected_idx #(
+             .T  (T),
+             .IMP(this_t)
+         ) expected_imp;
+         hexk_analysis_imp_indexed_actual_idx #(
+             .T  (T),
+             .IMP(this_t)
+         ) actual_imp;
          expected_imp = new($sformatf("expected_export_%0d", i), this, int'(i));
          actual_imp   = new($sformatf("actual_export_%0d", i), this, int'(i));
          streams.push_back(stream);
@@ -327,6 +363,23 @@ class hexk_scoreboard #(
       aggregator.register(this, get_full_name());
    endfunction : end_of_elaboration_phase
 
+   // UVM callback: with cfg.max_wait_ps, drops every item when it has waited that long for its partner, with an
+   // error. It sleeps until the oldest waiting item reaches the limit, or until an item starts to wait.
+   task run_phase(uvm_phase phase);
+      longint unsigned next_ps;
+      super.run_phase(phase);
+      if (max_wait_ps == 0) begin
+         return;
+      end
+      forever begin
+         if (drop_overdue(next_ps)) begin
+            hexk_wait_util::wait_ps(next_ps - $time);
+         end else begin
+            @(item_stored);
+         end
+      end
+   endtask : run_phase
+
    // UVM callback: reports the items that were left over on either side, and the summary.
    function void check_phase(uvm_phase phase);
       string lines[$];
@@ -347,7 +400,8 @@ class hexk_scoreboard #(
 
    // The stream with this number, or null and an error.
    local function stream_t stream_of(int idx);
-      // A string variable: a conditional of two literals of different lengths is padded with NULs on one tool.
+      // A string variable and not ?: of two literals in the arguments, where the literals are packed values and the
+      // shorter one is padded with NULs.
       string state = "built";
       if (idx < 0 || idx >= streams.size()) begin
          if (streams.size() == 0) begin
@@ -365,33 +419,31 @@ class hexk_scoreboard #(
       return (mode == HEXK_SB_IN_ORDER) ? common_key : get_key(item);
    endfunction : key_of
 
-   // Position of the waiting partner of an item under its key, or -1 when there is none.
-   // With as_expected the item is an expected one and looks among the actual items, otherwise the reverse.
-   local function int find_partner(stream_t stream, KEY key, T item, bit as_expected);
+   // Position of the waiting partner of an item under its key, or -1 when there is none. With as_expected the item
+   // is an expected one and looks among the actual items, otherwise the reverse. known_equal is 1 when the default
+   // is_partner() found the returned pair equal, so that it need not be compared again.
+   local function int find_partner(stream_t stream, KEY key, T item, bit as_expected, output bit known_equal);
       int unsigned count = as_expected ? stream.num_actual_for(key) : stream.num_expected_for(key);
-      string       diff;
+      T            expected;
+      T            actual;
+      known_equal = 0;
       if (count == 0) begin
          return -1;
       end
       if (mode != HEXK_SB_OUT_OF_ORDER) begin
          return 0;
       end
+      partner_equal = 0;
       for (int unsigned i = 0; i < count; i++) begin
-         if (as_expected ? is_partner(
-                 item, stream.peek_actual(key, i)
-             ) : is_partner(
-                 stream.peek_expected(key, i), item
-             )) begin
+         expected = as_expected ? item : stream.peek_expected(key, i);
+         actual   = as_expected ? stream.peek_actual(key, i) : item;
+         if (is_partner(expected, actual)) begin
+            known_equal = partner_equal && partner_exp == expected && partner_act == actual;
             return int'(i);
          end
       end
       return -1;
    endfunction : find_partner
-
-   // 1 when the default is_partner() has just found this pair equal, so that it need not be compared again.
-   local function bit found_equal(T expected, T actual);
-      return mode == HEXK_SB_OUT_OF_ORDER && partner_equal && partner_exp == expected && partner_act == actual;
-   endfunction : found_equal
 
    // Compares a pair, counts it here and as a check in hexk_check_stats, and reports a mismatch or a latency above
    // the limit. With known_equal the search for the pair has compared it already, and it is not compared again.
@@ -456,6 +508,76 @@ class hexk_scoreboard #(
                                                      waiting, cfg.max_outstanding))
       end
    endfunction : check_outstanding
+
+   // Drops the items that have waited longer than max_wait_ps, with an error each. Returns 1 when items still wait,
+   // with next_ps the time in picoseconds at which the oldest of them is overdue.
+   local function bit drop_overdue(output longint unsigned next_ps);
+      longint unsigned due_ps;
+      bit              waiting = 0;
+      next_ps = 0;
+      foreach (streams[i]) begin
+         if (drop_overdue_in(i, due_ps) && (!waiting || due_ps < next_ps)) begin
+            next_ps = due_ps;
+            waiting = 1;
+         end
+      end
+      return waiting;
+   endfunction : drop_overdue
+
+   // Before a write is matched: drops the overdue items of its stream, so that whether an item is overdue does not
+   // depend on whether run_phase or the writer runs first in a time step.
+   local function void drop_overdue_before_write(int idx);
+      longint unsigned due_ps;
+      if (max_wait_ps != 0) begin
+         void'(drop_overdue_in(idx, due_ps));
+      end
+   endfunction : drop_overdue_before_write
+
+   // drop_overdue() for one stream: 1 when items still wait in it, with due_ps the time it is overdue, in
+   // picoseconds.
+   // A function of its own, which ends with return: Verilator 5.046 loses the effect of a break out of this
+   // loop inside the loop over the streams.
+   local function bit drop_overdue_in(int idx, output longint unsigned due_ps);
+      stream_t         stream = streams[idx];
+      KEY              key;
+      bit              is_actual;
+      int unsigned     position;
+      longint unsigned written_ps;
+      longint unsigned stamp_ps;
+      T                item;
+      due_ps = 0;
+      while (stream.oldest_wait(
+          key, is_actual, position, written_ps
+      )) begin
+         // Overdue 1 ps after the limit: an item may wait max_wait_ps. A time after hexk_wait_util::LAST_PS is never
+         // reached, here as in the waits of run_phase: the item then never times out.
+         due_ps = (max_wait_ps == ~64'd0 || hexk_wait_util::ends_after_last(max_wait_ps + 1, written_ps)) ? ~64'd0 :
+             written_ps + max_wait_ps + 1;
+         if (due_ps > $time) begin
+            return 1;
+         end
+         stream.stats.timed_out++;
+         if (is_actual) begin
+            item = stream.take_actual(key, position);
+            report_problem("HEXK_SB_TIMEOUT", $sformatf(
+                           "stream %0d: an actual item got no expected item within %0t (waiting since %0t); dropped",
+                           idx,
+                           max_wait_ps,
+                           written_ps
+                           ), null, item);
+         end else begin
+            item = stream.take_expected(key, position, stamp_ps);
+            report_problem("HEXK_SB_TIMEOUT", $sformatf(
+                           "stream %0d: an expected item got no actual item within %0t (waiting since %0t); dropped",
+                           idx,
+                           max_wait_ps,
+                           written_ps
+                           ), item, null);
+         end
+         check_outstanding(stream, idx);
+      end
+      return 0;
+   endfunction : drop_overdue_in
 
    // Reports the expected and the actual items of a stream that never met a partner.
    local function void report_leftovers(int idx);

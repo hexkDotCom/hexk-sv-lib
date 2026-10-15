@@ -70,9 +70,9 @@ function void set_freq_mhz(real freq_mhz);
 // The frequency in MHz that period_ps stands for; 0 for a period of 0.
 function real get_freq_mhz();
 // The time in picoseconds for which a clock with this period and duty cycle is high.
-static function longint unsigned high_time_ps(longint unsigned period, int unsigned duty);
+static function longint unsigned high_time_ps(longint unsigned clock_period_ps, int unsigned duty);
 // What is wrong with a period, a duty cycle and a jitter; empty when they make a legal clock.
-static function string clock_illegal_reason(longint unsigned period, int unsigned duty, longint unsigned jitter);
+static function string clock_illegal_reason(longint unsigned clock_period_ps, int unsigned duty, longint unsigned clock_jitter_ps);
 // What is wrong with the clock values of this cfg; empty when they are legal.
 function string illegal_reason();
 // The mode, the clock and the settings of the reset, on one line.
@@ -98,13 +98,13 @@ From `src/agents/hexk_clk_rst/hexk_clk_rst_if.sv`:
 // Sets the mode, the active level of the reset and the seed of the jitter; the agent calls it once, at time 0.
 function automatic void configure(bit is_passive, bit active_low, int unsigned seed);
 // Asks for a clock with this period, high time and jitter; it holds from the next rising edge.
-function automatic void set_clock(longint unsigned period, longint unsigned high, longint unsigned jitter);
+function automatic void set_clock(longint unsigned new_period_ps, longint unsigned new_high_ps, longint unsigned new_jitter_ps);
 // Sets the time by which the first start of the clock is delayed.
-function automatic void set_start_delay(longint unsigned delay);
+function automatic void set_start_delay(longint unsigned delay_ps);
 // Starts the clock (1) or stops it after the high time that is going on (0).
 function automatic void request_run(bit run);
-// 1 when the clock is asked to run.
-function automatic bit is_running();
+// 1 when the clock is asked to run; the generator may still finish a high time after a stop was asked for.
+function automatic bit run_requested();
 // Waits until the generator has stopped; the clock is 0 then.
 task automatic wait_stopped();
 // The value of the pin for an asserted (1) or a released (0) reset.
@@ -117,8 +117,8 @@ task automatic drive_reset_at_edge(bit active, bit wait_for_edge);
 function automatic bit get_reset(output bit active);
 // Waits for a change of the reset pin.
 task automatic wait_reset_change();
-// Waits for a time in picoseconds.
-task automatic wait_ps(longint unsigned duration);
+// Waits for a time in picoseconds, through hexk_wait_util: a time after hexk_wait_util::LAST_PS never comes.
+task automatic wait_ps(longint unsigned duration_ps);
 // Number of rising edges of clk since the start of the simulation.
 function automatic longint unsigned get_clk_count();
 // Waits for n rising edges of clk; returns at once when n is 0.
@@ -159,7 +159,7 @@ From `src/agents/hexk_clk_rst/hexk_clk_rst_pkg.sv`:
 
 ```systemverilog
 // What an item asks the driver to do; an item of the monitor is always HEXK_CLK_RST_RESET.
-typedef enum { HEXK_CLK_RST_RESET, HEXK_CLK_RST_CLOCK, HEXK_CLK_RST_STOP, HEXK_CLK_RST_START } hexk_clk_rst_op_e;
+typedef enum bit [1:0] { HEXK_CLK_RST_RESET, HEXK_CLK_RST_CLOCK, HEXK_CLK_RST_STOP, HEXK_CLK_RST_START } hexk_clk_rst_op_e;
 ```
 
 From `src/agents/hexk_clk_rst/hexk_clk_rst_status.sv`:
@@ -168,7 +168,7 @@ From `src/agents/hexk_clk_rst/hexk_clk_rst_status.sv`:
 // Creates a status with the two events, out of reset, with the default clock of a cfg.
 function new(string name = "hexk_clk_rst_status");
 // Notes the clock that is driven from now on; called by the agent and its driver.
-function void set_clock(longint unsigned period, int unsigned duty, longint unsigned jitter);
+function void set_clock(longint unsigned new_period_ps, int unsigned duty, longint unsigned new_jitter_ps);
 // The frequency in MHz of the clock that is driven; 0 for a period of 0.
 function real get_freq_mhz();
 // The reset and the clock, on one line.
@@ -262,7 +262,7 @@ cfg and of the sequences are in section 5. The agent implements
 | `period_ps`, `duty_percent`, `jitter_ps` | The clock that is being driven. |
 | `get_freq_mhz()` | The frequency of that clock. |
 | `convert2string()` | The reset and the clock on one line. |
-| `set_clock(period, duty, jitter)` | Called by the agent and its driver; not by the testbench. |
+| `set_clock(new_period_ps, duty, new_jitter_ps)` | Called by the agent and its driver; not by the testbench. |
 
 Of the interface, a testbench uses the signals `clk` and `rst` (and `ext_clk` and `ext_rst`
 in passive mode), the clocking block `mon_cb`, `get_clk_count()` and `wait_clks()`. The other
@@ -317,7 +317,8 @@ The clock, in active mode:
   after the start. The item is done at that edge. A start of a running clock does nothing.
 - The driver notes the values it applied in `status.period_ps`, `status.duty_percent` and
   `status.jitter_ps`, so the status always tells the clock that is running (guide rule
-  CFG-9). The cfg is the setup: the library reads it and never changes it.
+  CFG-9): a new clock of a running clock at the rising edge from which it holds, that of a
+  stopped clock at once. The cfg is the setup: the library reads it and never changes it.
 - Legal values: `period_ps` from 2 to 2**48 - 1; `duty_percent` 1 to 99, and both the high
   and the low time at least 1 ps; `jitter_ps` at most a quarter of the shorter of the two.
   The high time is `period_ps * duty_percent / 100` rounded down and the low time is the
@@ -468,7 +469,7 @@ There are no plusargs and no compile-time switches.
 |---|---|
 | `HEXK_CLK_RST_CFG` | The agent has no cfg, assigned or in `uvm_config_db`, or the cfg has no interface. |
 | `HEXK_CLK_RST_CLOCK` | The clock was set, stopped or started (`UVM_MEDIUM`). |
-| `HEXK_CLK_RST_ILLEGAL` | The clock of the cfg or of an item is not legal, or the operation of an item is no value of `hexk_clk_rst_op_e`. |
+| `HEXK_CLK_RST_ILLEGAL` | The clock of the cfg or of an item is not legal. |
 | `HEXK_CLK_RST_RAND` | A sequence could not randomize its item. |
 | `HEXK_CLK_RST_RESET` | The reset was asserted or released (`UVM_MEDIUM`). |
 | `HEXK_CLK_RST_STOPPED` | A reset item needs clock edges, but the clock is stopped. |
@@ -492,6 +493,8 @@ There are no plusargs and no compile-time switches.
 // status of the agent, as an env would to empty its scoreboards; the status also tells the
 // clock that is being driven.
 // Needs UVM, src/uvm/hexk_uvm.f and src/agents/hexk_clk_rst/hexk_clk_rst.f.
+
+`include "hexk_macros.svh"
 
 module hexk_clk_rst_example;
    timeunit 1ns / 1ps;
@@ -533,9 +536,7 @@ module hexk_clk_rst_example;
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
          clk_rst_cfg = hexk_clk_rst_agent_cfg::type_id::create("clk_rst_cfg");
-         if (!uvm_config_db#(virtual hexk_clk_rst_if)::get(this, "", "clk_rst_vif", clk_rst_cfg.vif)) begin
-            `uvm_fatal("EXAMPLE", "no clk_rst_vif in the config database")
-         end
+         `hexk_vif_get_or_fatal(hexk_clk_rst_if, "clk_rst_vif", clk_rst_cfg.vif)
          clk_rst_cfg.set_freq_mhz(200.0);
          clk_rst_agent     = hexk_clk_rst_agent::type_id::create("clk_rst_agent", this);
          clk_rst_agent.cfg = clk_rst_cfg;
@@ -552,9 +553,7 @@ module hexk_clk_rst_example;
          hexk_clk_rst_reset_seq reset_seq = hexk_clk_rst_reset_seq::type_id::create("reset_seq");
          super.reset_phase(phase);
          phase.raise_objection(this, "reset");
-         if (reset_seq.randomize() with {hold_cycles == RESET_CYCLES;} != 1) begin
-            `uvm_fatal("EXAMPLE", "randomization of the reset sequence failed")
-         end
+         `hexk_randomize_with_or_fatal(reset_seq, "EXAMPLE", hold_cycles == RESET_CYCLES;)
          reset_seq.start(clk_rst_agent.sqr);
          `uvm_info("EXAMPLE", $sformatf("reset released at %0t, after %0d clock cycles", $realtime,
                                         clk_rst_agent.get_clk_count()), UVM_NONE)
@@ -567,9 +566,7 @@ module hexk_clk_rst_example;
          phase.raise_objection(this, "stimulus");
          clk_rst_agent.wait_clks(RUN_CYCLES);
          `uvm_info("EXAMPLE", $sformatf("at %0t the counter is %0d", $realtime, count), UVM_NONE)
-         if (clock_seq.randomize() with {period_ps == SLOW_PERIOD_PS;} != 1) begin
-            `uvm_fatal("EXAMPLE", "randomization of the frequency sequence failed")
-         end
+         `hexk_randomize_with_or_fatal(clock_seq, "EXAMPLE", period_ps == SLOW_PERIOD_PS;)
          clock_seq.start(clk_rst_agent.sqr);
          clk_rst_agent.wait_clks(RUN_CYCLES);
          `uvm_info("EXAMPLE", $sformatf("at %0t, with %0.0f MHz, the counter is %0d", $realtime,
@@ -579,7 +576,7 @@ module hexk_clk_rst_example;
    endclass : hexk_example_test
 
    initial begin
-      uvm_config_db#(virtual hexk_clk_rst_if)::set(null, "uvm_test_top", "clk_rst_vif", clk_rst_if);
+      `hexk_vif_set(hexk_clk_rst_if, "uvm_test_top", "clk_rst_vif", clk_rst_if)
       run_test("hexk_example_test");
    end
 

@@ -4,10 +4,12 @@
 // hexk_rand_once_macros.svh
 //
 // Macro that makes a class "randomize once": it declares the hexk_rand_once_guard member
-// rand_once and a pre_randomize() that asks the guard. Write `hexk_rand_once_guard_decl in
-// the body of a class that extends uvm_object, without a semicolon. A class that needs a
-// pre_randomize() of its own does not use the macro: it declares the member and calls
-// rand_once.on_pre_randomize() from its pre_randomize() itself.
+// rand_once, a pre_randomize() that asks the guard and a post_randomize() that tells it about
+// a success. Write `hexk_rand_once_guard_decl in the body of a class that extends uvm_object,
+// without a semicolon. A class that needs a pre_randomize() or post_randomize() of its own
+// does not use the macro: it declares the member, creates it with new(this), and calls
+// rand_once.on_pre_randomize() and rand_once.on_post_randomize() from those functions, after
+// the call of the function of super.
 // Include this file through hexk_macros.svh.
 //
 //! @module    hexk_rand_once

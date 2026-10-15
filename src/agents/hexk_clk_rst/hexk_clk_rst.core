@@ -6,7 +6,7 @@ CAPI=2:
 # hexk_clk_rst_pkg. UVM itself comes from the tool flow.
 # The version in 'name' is written by 'make version'; do not edit it by hand.
 
-name: "hexkdotcom:hexk:clk_rst:0.7.0"
+name: "hexkdotcom:hexk:clk_rst:0.8.0"
 description: "hexk-sv-lib clock and reset agent"
 
 filesets:

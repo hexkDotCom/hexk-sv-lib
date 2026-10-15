@@ -33,7 +33,7 @@ From `src/uvm/cov/hexk_handshake_coverage.sv`:
 
 ```systemverilog
 // What valid and ready say in one clock cycle.
-typedef enum { HEXK_HANDSHAKE_IDLE, HEXK_HANDSHAKE_WAIT, HEXK_HANDSHAKE_STALL, HEXK_HANDSHAKE_ACTIVE } hexk_handshake_state_e;
+typedef enum bit [1:0] { HEXK_HANDSHAKE_IDLE, HEXK_HANDSHAKE_WAIT, HEXK_HANDSHAKE_STALL, HEXK_HANDSHAKE_ACTIVE } hexk_handshake_state_e;
 // One rising edge of the clock of a handshake, as a monitor saw it: whether a reset began since the edge before (also one that came and went between the two edges), whether the reset is asserted now, and valid and ready, which mean nothing while the reset is asserted.
 typedef struct packed { bit reset_began;
 // Creates the component, and its covergroups unless the knob coverage is 0.

@@ -5,7 +5,7 @@ CAPI=2:
 # hexk_core.core - FuseSoC core of hexk_core_pkg (pure SystemVerilog, no UVM).
 # The version in 'name' is written by 'make version'; do not edit it by hand.
 
-name: "hexkdotcom:hexk:core:0.7.0"
+name: "hexkdotcom:hexk:core:0.8.0"
 description: "hexk-sv-lib core package: pure SystemVerilog utilities, no UVM"
 
 filesets:

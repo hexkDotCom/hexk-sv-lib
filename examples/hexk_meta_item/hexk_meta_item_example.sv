@@ -36,7 +36,11 @@ module hexk_meta_item_example;
 
       virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_packet other;
-         return $cast(other, rhs) && other.data == data;
+         if (!$cast(other, rhs)) begin
+            return 0;
+         end
+         // Through the comparer, so that a mismatch names the field; compare_field_int() takes 64-bit values.
+         return comparer.compare_field_int("data", 64'(data), 64'(other.data), $bits(data));
       endfunction : do_compare
    endclass : hexk_example_packet
 

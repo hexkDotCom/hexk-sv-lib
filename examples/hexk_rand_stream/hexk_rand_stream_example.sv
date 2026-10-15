@@ -19,6 +19,8 @@ module hexk_rand_stream_example;
 
    string           ready_pattern;
    int unsigned     burst_weights [$];
+   int unsigned     burst_kind;
+   longint          gap_cycles;
    hexk_rand_stream backpressure;
 
    initial begin
@@ -30,8 +32,10 @@ module hexk_rand_stream_example;
          ready_pattern = {ready_pattern, backpressure.chance(READY_PERCENT) ? "1" : "0"};
       end
       $info("ready for the next %0d cycles: %s", CYCLES, ready_pattern);
-      $info("burst kind %0d, then a gap of %0d cycles", backpressure.pick_weighted(burst_weights),
-            backpressure.uniform(1, 4));
+      // One draw per statement: the order of the arguments of one call differs between simulators.
+      burst_kind = backpressure.pick_weighted(burst_weights);
+      gap_cycles = backpressure.uniform(1, 4);
+      $info("burst kind %0d, then a gap of %0d cycles", burst_kind, gap_cycles);
    end
 
 endmodule : hexk_rand_stream_example

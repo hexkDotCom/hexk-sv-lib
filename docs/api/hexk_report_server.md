@@ -36,11 +36,11 @@ From `src/uvm/report/hexk_report_cfg.sv`:
 
 ```systemverilog
 // Layout of a report line: UVM's own, the fixed-column layout of the library, or the fields listed in the cfg.
-typedef enum { HEXK_FMT_UVM, HEXK_FMT_COMPACT, HEXK_FMT_CUSTOM } hexk_report_style_e;
+typedef enum bit [1:0] { HEXK_FMT_UVM, HEXK_FMT_COMPACT, HEXK_FMT_CUSTOM } hexk_report_style_e;
 // One column of a report line.
-typedef enum { HEXK_FLD_SEVERITY, HEXK_FLD_COUNTER, HEXK_FLD_TIME, HEXK_FLD_FILE_LINE, HEXK_FLD_ID, HEXK_FLD_CONTEXT, HEXK_FLD_MESSAGE } hexk_report_field_e;
+typedef enum bit [2:0] { HEXK_FLD_SEVERITY, HEXK_FLD_COUNTER, HEXK_FLD_TIME, HEXK_FLD_FILE_LINE, HEXK_FLD_ID, HEXK_FLD_CONTEXT, HEXK_FLD_MESSAGE } hexk_report_field_e;
 // Unit of the time column of a report line.
-typedef enum { HEXK_TIME_FS, HEXK_TIME_PS, HEXK_TIME_NS, HEXK_TIME_US, HEXK_TIME_MS, HEXK_TIME_S } hexk_time_unit_e;
+typedef enum bit [2:0] { HEXK_TIME_FS, HEXK_TIME_PS, HEXK_TIME_NS, HEXK_TIME_US, HEXK_TIME_MS, HEXK_TIME_S } hexk_time_unit_e;
 // Creates a cfg with the default values listed above.
 function new(string name = "hexk_report_cfg");
 // Overrides fields from the command line; see the plusarg table in docs/api/hexk_report_server.md.
@@ -49,6 +49,8 @@ function void apply_plusargs();
 static function string time_unit_text(hexk_time_unit_e unit);
 // The unit with this short name (fs, ps, ns, us, ms, s, in any case); 0 when the text names no unit.
 static function bit time_unit_of(string text, output hexk_time_unit_e unit);
+// Power of ten of a unit in seconds: -9 for HEXK_TIME_NS. The one table of the units.
+static function int unit_exponent(hexk_time_unit_e unit);
 // Number of picoseconds in one of a unit: 0.001 for HEXK_TIME_FS.
 static function real ps_per_unit(hexk_time_unit_e unit);
 // One-line summary of the layout settings, for log messages.
@@ -72,8 +74,8 @@ function void set_cfg(hexk_report_cfg cfg);
 function hexk_report_cfg get_cfg();
 // Registers an object that is told about every warning, error and fatal message.
 function void add_listener(hexk_msg_listener listener);
-// Number of messages of this severity and ID that were issued.
-function int unsigned get_count(uvm_severity severity, string id);
+// Number of messages of this ID and severity that were issued.
+function int unsigned get_count(string id, uvm_severity severity);
 // Text of the summary: one line per severity and ID, the noisiest IDs, and the first error.
 function string summary();
 // True when the cfg asks for a stack trace on this message.
@@ -111,7 +113,7 @@ Installing:
   it. `ps_per_unit(unit)` is the number of picoseconds in one of the unit. What follows from the cfg alone, the
   list of columns and the scale of the time column, is worked out once in `set_cfg` and
   not for every message.
-- Messages are counted per ID with one counter per severity; `get_count(severity, id)`
+- Messages are counted per ID with one counter per severity; `get_count(id, severity)`
   reads one of them.
 - `hexk_report_server::get_installed()` returns the installed server, or null when the report
   server of the simulation is not a `hexk_report_server`. Use it to add a listener from

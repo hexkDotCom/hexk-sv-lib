@@ -43,8 +43,10 @@ class hexk_watchdog extends uvm_component;
    local int unsigned        beat_counts[string];
    local string              sources               [$];
 
-   // Triggered when the inactivity limit is set, so that the timer starts again.
-   local event               limit_changed;
+   // Number of calls of set_inactivity_limit(): the inactivity watch waits for it to change. A count and not an
+   // event: a wait for a changed count cannot miss a change, and Verilator 5.046 keeps an event that nobody waited
+   // for as triggered until the next wait for it.
+   local int unsigned        limit_changes;
 
    `uvm_component_utils(hexk_watchdog)
 
@@ -68,7 +70,7 @@ class hexk_watchdog extends uvm_component;
    function void set_inactivity_limit(longint unsigned limit_ps);
       inactivity_limit_ps = limit_ps;
       last_activity_ps    = $time;
-      ->limit_changed;
+      limit_changes       = limit_changes + 1;
    endfunction : set_inactivity_limit
 
    // Converts a text such as "500us" or "1.5ms" to whole picoseconds, rounded; returns 0 when the text is not
@@ -142,32 +144,39 @@ class hexk_watchdog extends uvm_component;
       if (global_timeout_ps == 0) begin
          return;
       end
-      #(global_timeout_ps);
+      hexk_wait_util::wait_ps(global_timeout_ps);
       expire($sformatf("global timeout of %s reached", time_text(global_timeout_ps)));
    endtask : watch_global
 
    // Ends the test when there was no heartbeat for inactivity_limit_ps.
    local task watch_inactivity();
       longint unsigned deadline_ps;
-      longint unsigned wait_start_ps;
-      bit              timed_out;
+      int unsigned     changes;
       forever begin
+         changes = limit_changes;
          if (inactivity_limit_ps == 0) begin
-            @(limit_changed);
+            wait (limit_changes != changes);
             continue;
          end
-         deadline_ps = last_activity_ps + inactivity_limit_ps;
+         // A deadline past the largest number is the largest number, which hexk_wait_util never reaches.
+         deadline_ps = (last_activity_ps > ~inactivity_limit_ps) ? ~64'd0 : last_activity_ps + inactivity_limit_ps;
          if (deadline_ps > $time) begin
-            wait_start_ps = $time;
-            hexk_wait_util::wait_event_or_timeout(limit_changed, deadline_ps - wait_start_ps, timed_out);
-            // A heartbeat or a new limit moved the deadline, unless no time could pass at all.
-            if (!timed_out || $time != wait_start_ps) begin
-               continue;
-            end
+            // Until the deadline or a new limit, then the deadline is computed again: a heartbeat may have moved it.
+            // The outer fork keeps "disable fork" to these two branches.
+            fork
+               begin
+                  fork
+                     hexk_wait_util::wait_ps(deadline_ps - $time);
+                     wait (limit_changes != changes);
+                  join_any
+                  disable fork;
+               end
+            join
+            continue;
          end
          expire($sformatf("no heartbeat for %s", time_text(inactivity_limit_ps)));
          // Only reached when the fatal was demoted: watch again when a limit is set.
-         @(limit_changed);
+         wait (limit_changes != changes);
       end
    endtask : watch_inactivity
 

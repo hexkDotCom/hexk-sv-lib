@@ -29,7 +29,7 @@ package hexk_valid_ready_pkg;
    import hexk_uvm_pkg::hexk_handshake_cycle_t;
 
    // Which side of the channel an active agent drives.
-   typedef enum {
+   typedef enum bit {
       // Drives valid and data.
       HEXK_VALID_READY_INITIATOR,
       // Drives ready.

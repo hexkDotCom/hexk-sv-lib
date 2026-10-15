@@ -126,7 +126,8 @@ Questa and VCS with UVM 2020.
 Every time that crosses the API of the library is a whole number of picoseconds in a
 `longint unsigned` whose name ends in `_ps`: the timeouts of `hexk_wait_util`, the limits of
 the watchdog, the poll interval of the objection aggregator, the latency of the delay FIFO,
-`max_latency_ps` and the timestamps of the scoreboard, the timestamp of `hexk_meta_item`, the
+`max_latency_ps`, `max_wait_ps` and the timestamps of the scoreboard, the poll interval and
+the time limit of `hexk_csr_util`, the timestamp of `hexk_meta_item`, the
 unit of `hexk_delay::wait_time`, and all times of the agents. A number of picoseconds means
 the same in every scope, whatever its time unit, so the library can be compiled into a
 testbench with any mix of time units.
@@ -138,7 +139,19 @@ testbench with any mix of time units.
 - An override of `hexk_scoreboard::get_timestamp_ps()` returns picoseconds, such as
   `timestamp_ps` of a meta item or `hexk_wait_util::now_ps()`, not `$time` of its own scope.
 - The wait macros (`` `hexk_wait_timeout `` and the others) take a time of the calling scope,
-  `10us`, because they wait in that scope.
+  `10us`, and convert it with `` `hexk_ps `` in that scope; they wait whole picoseconds.
+- **No time limit is reached after about 2.56 hours of simulation.** Every time limit and
+  long wait of the library goes through `hexk_wait_util` (only the half periods of the clock
+  of `hexk_clk_rst`, short delays on the hottest path of a simulation, are delays of their
+  own), and a wait that would end after
+  `hexk_wait_util::LAST_PS` ((2^63 - 1) / 1000 ps, 9 223 372 036 854 775 ps, about 2 h 34 min of
+  simulated time) never ends: a timeout, a watchdog limit, a FIFO latency, a scoreboard
+  `max_wait_ps` or a spin-wait limit that long is the same as none. The reason is that one
+  simulator counts the time as a signed 64-bit number of steps of the simulation resolution
+  and cannot schedule an event later than that; with a resolution of 1 fs, the finest there
+  is, the last such time is `LAST_PS`. The library stops there on every simulator and with
+  every resolution, so that a test behaves the same everywhere.
+  `hexk_wait_util::ends_after_last(duration_ps, from_ps)` tells whether a wait would never end.
 - `hexk_uvm_pkg` declares `timeunit 1ps; timeprecision 1ps;`, so the precision of the
   simulation is 1 ps or finer. The interfaces of the agents declare `1ns/1ps` themselves.
   `hexk_core_pkg` has no times and declares no time scale.
@@ -254,7 +267,7 @@ End of the test:
 |---|---|---|
 | `hexk_report_cfg` | copied by `hexk_report_server::set_cfg()` (and `install()`) | needs another `set_cfg()` |
 | `hexk_delay_cfg` | at every draw | applies to the next delay |
-| `hexk_scoreboard_cfg` | `mode` and `num_streams` in the build phase; the rest when used | applies from then on, except `mode` and `num_streams` |
+| `hexk_scoreboard_cfg` | `mode`, `num_streams` and `max_wait_ps` in the build phase; the rest when used | applies from then on, except `mode`, `num_streams` and `max_wait_ps` |
 | `hexk_clk_rst_agent_cfg` | in the build phase, at the start of the simulation and at the start of the run phase | has no effect; clock sequences change the clock |
 | `hexk_valid_ready_agent_cfg` | in the build phase and at the start of the simulation; its `delay_cfg` at every draw | has no effect, except in `delay_cfg` |
 

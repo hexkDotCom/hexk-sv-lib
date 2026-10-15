@@ -31,12 +31,16 @@ class hexk_valid_ready_driver #(
    // Draws the delays of the transfers whose item gives none.
    local hexk_delay                                delay;
 
-   // Items taken from the sequencer and items finished: the driver holds an item while they differ. Two counters
-   // and not a flag that is set and cleared in one task, which one tool compiles wrong.
+   // Items taken from the sequencer and items finished: the driver holds an item while they differ.
    local int unsigned                              items_taken;
    local int unsigned                              items_done;
 
    `uvm_component_param_utils(hexk_valid_ready_driver#(DATA_WIDTH))
+
+   // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+   virtual function string get_type_name();
+      return "hexk_valid_ready_driver";
+   endfunction : get_type_name
 
    // Creates the driver.
    function new(string name, uvm_component parent);

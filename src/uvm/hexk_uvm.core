@@ -5,7 +5,7 @@ CAPI=2:
 # hexk_uvm.core - FuseSoC core of hexk_uvm_pkg. UVM itself comes from the tool flow.
 # The version in 'name' is written by 'make version'; do not edit it by hand.
 
-name: "hexkdotcom:hexk:uvm:0.7.0"
+name: "hexkdotcom:hexk:uvm:0.8.0"
 description: "hexk-sv-lib UVM utility package: checks, reporting, end of test, scoreboard"
 
 filesets:
@@ -47,6 +47,7 @@ filesets:
       - check/hexk_sb_stream.sv: {is_include_file: true, include_path: "."}
       - check/hexk_scoreboard.sv: {is_include_file: true, include_path: "."}
       - mem/hexk_mem_model.sv: {is_include_file: true, include_path: "."}
+      - csr/hexk_csr_util.sv: {is_include_file: true, include_path: "."}
       - config/hexk_knob.sv: {is_include_file: true, include_path: "."}
       - config/hexk_knobs.sv: {is_include_file: true, include_path: "."}
       - config/hexk_enum_knob.sv: {is_include_file: true, include_path: "."}

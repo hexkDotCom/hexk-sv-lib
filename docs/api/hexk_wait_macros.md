@@ -28,10 +28,6 @@ right there. Do not use them in functions: time passes.
 From `src/uvm/hexk_wait_macros.svh`:
 
 ```systemverilog
-// Internal: waits for a condition with a time limit and reports with the given severity. A condition that is X or Z is not true: wait() goes on waiting for it, so the timeout must report it too.
-`define hexk_wait_or_report(COND, TIMEOUT, ID, SEVERITY)
-// Internal: runs statements with a time limit and reports with the given severity.
-`define hexk_spin_or_report(BODY, TIMEOUT, ID, SEVERITY)
 // The time T of the calling scope as a whole number of picoseconds, for the _ps arguments of the library. Dividing by 1s gives seconds whatever the time unit of the caller is.
 `define hexk_ps(T)
 // Waits until COND is true; reports an error with ID if it is not true after TIMEOUT.
@@ -42,15 +38,21 @@ From `src/uvm/hexk_wait_macros.svh`:
 `define hexk_spinwait(BODY, TIMEOUT, ID)
 ```
 
+The file also defines building blocks of these, marked "Internal" in the source; they may change, do not call them.
+
 From `src/uvm/stim/hexk_wait_util.sv`:
 
 ```systemverilog
 // The simulation time in picoseconds.
 static function longint unsigned now_ps();
+// Waits duration_ps picoseconds; 0 returns at once. Classes with a type parameter delay through this task: VCS X-2025.06 scales a delay written in such a class by the time unit of the scope that declares the type given as parameter, and a delay here is always in picoseconds.
+static task wait_ps(longint unsigned duration_ps);
 // Waits until flag is 1 or timeout_ps has passed; timed_out is 1 when the timeout came first.
 static task wait_or_timeout(ref bit flag, input longint unsigned timeout_ps, output bit timed_out);
 // Waits until the event is triggered or timeout_ps has passed; timed_out is 1 when the timeout came first.
 static task wait_event_or_timeout(event e, longint unsigned timeout_ps, output bit timed_out);
+// 1 when a wait of duration_ps picoseconds that starts at from_ps would end after LAST_PS, so that it never ends; a wait of 0 never does.
+static function bit ends_after_last(longint unsigned duration_ps, longint unsigned from_ps);
 ```
 <!-- HEXK_GEN:END api -->
 
@@ -60,14 +62,26 @@ Macros:
 
 - Each macro is one complete `begin ... end` statement, like the `` `uvm_* `` macros: no
   semicolon follows it.
+- The timer of a macro waits `` `hexk_ps(TIMEOUT) `` through `hexk_wait_util::wait_ps()`:
+  `TIMEOUT` is a time of the calling scope, rounded to whole picoseconds, and it lasts as
+  long in a class with a type parameter as anywhere else.
 - `hexk_wait_timeout(COND, TIMEOUT, ID)` returns as soon as `COND` is true, at once if it
   already is. When `TIMEOUT` has passed and `COND` is still not true, it reports the error
   `timeout after <time> waiting for: <COND as text>` and returns; execution continues with
   the statement after the macro in both cases. `hexk_wait_timeout_fatal` reports a fatal.
 - A condition that is X or Z is not true: a signal that never leaves X ends in the timeout
   report.
-- When the condition becomes true in the very time step in which the timeout ends, nothing
-  is reported.
+- When the condition becomes true in the very time step in which the timeout ends, before
+  the timer looks, nothing is reported. At the timeout the macro waits for one round of
+  nonblocking assignments (`uvm_wait_for_nba_region()`) before it looks, so a condition set by
+  a nonblocking assignment of that time step counts. A condition that only a later round sets,
+  such as `always @(posedge stage) ready <= 1;` after `stage <= 1;` at the timeout, may still
+  be reported: give `TIMEOUT` a margin. In an `initial` block, Verilator `-Wall` reports the
+  nonblocking assignment inside `uvm_wait_for_nba_region()` as `INITIALDLY`, in the file
+  `uvm_globals.svh` of UVM; waive it there with `lint_off -rule INITIALDLY -file
+  "*/uvm_globals.svh"` in a `.vlt` file (a waiver of the file without a rule does not cover it). `hexk_spinwait` waits for them too, but statements of `BODY`
+  that end in that time step, after the nonblocking assignments, race with its report: give
+  `TIMEOUT` a margin.
 - `hexk_spinwait(BODY, TIMEOUT, ID)` runs `BODY`. When `BODY` has not finished after
   `TIMEOUT`, its threads are ended, the error `timeout after <time>: the statements did not
   finish` is reported, and execution continues after the macro.
@@ -92,6 +106,22 @@ Macros:
   library (`docs/integration.md`, "Times"), so it means the same whatever the time unit of
   the caller is. Write it as `` `hexk_ps(10us) `` or as `10_000_000`.
 - `now_ps()` returns the simulation time in picoseconds.
+- `wait_ps(duration_ps)` waits `duration_ps` picoseconds; 0 returns at once.
+- A wait or a timeout that would end after the simulation time `hexk_wait_util::LAST_PS`
+  ((2^63 - 1) / 1000 ps, about 2.56 hours) never ends, so `wait_or_timeout()` and
+  `wait_event_or_timeout()` then wait for the flag or the event only. One simulator keeps the
+  time as a signed 64-bit number of steps of the simulation resolution and cannot schedule an
+  event later than that; with a resolution of 1 fs, the finest there is, that is `LAST_PS`.
+  The library delays through these tasks, so the same holds for every time limit of the
+  library, the `TIMEOUT` of the macros included. A wait that starts after `LAST_PS` never
+  ends either, unless it is 0. `ends_after_last(duration_ps, from_ps)` says whether a wait
+  never ends. A delay written
+  in a class with a type parameter is scaled on VCS X-2025.06 by the time unit of the scope
+  that declares the type given as parameter (a `my_item` of a module with a time unit of 1 ns
+  makes a delay of 30000 in a class of a package with 1 ps last 30 us); the classes of the
+  library with a type parameter delay through `wait_ps()` and `wait_event_or_timeout()`,
+  whose delays are in picoseconds on every simulator. A class of your own with a type
+  parameter can do the same.
 
 `` `hexk_ps(T) ``:
 
@@ -159,7 +189,7 @@ module hexk_wait_macros_example;
       `hexk_spinwait(slow_handshake();, 200ns, "EXAMPLE_HANDSHAKE")
 
       ready = 0;
-      hexk_wait_util::wait_or_timeout(ready, 50ns, timed_out);
+      hexk_wait_util::wait_or_timeout(ready, `hexk_ps(50ns), timed_out);
       $info("second wait timed out: %0b", timed_out);
    end
 

@@ -115,7 +115,7 @@ class SourceFile:
     def statement_from(self, index):
         """The declaration that starts on line index, up to its first ';', on one line."""
         parts = []
-        for line in self.lines[index:index + 12]:
+        for line in self.lines[index:]:
             code = self.code_of(line).strip()
             parts.append(code)
             if ";" in code:
@@ -230,12 +230,17 @@ class Module:
             symbols = source.symbols
             if not symbols:
                 continue
+            # Building blocks marked "Internal" are left out: the listing shows what users call.
+            public = [symbol for symbol in symbols if not symbol.doc.startswith("Internal")]
             text += f"From `{source.rel}`:\n\n```systemverilog\n"
-            for symbol in symbols:
+            for symbol in public:
                 if symbol.doc:
                     text += f"// {symbol.doc}\n"
                 text += f"{symbol.signature}\n"
             text += "```\n\n"
+            if len(public) != len(symbols):
+                text += ('The file also defines building blocks of these, marked "Internal" in the source; '
+                         "they may change, do not call them.\n\n")
         return text.rstrip("\n") + "\n" if text else "No public symbols yet.\n"
 
     def skeleton(self):

@@ -16,6 +16,8 @@
 // The simulation must be started with access to the signals for programming interfaces
 // (read for the first macro, write for the others); how depends on the simulator.
 // A value is an integral variable or expression of at most UVM_HDL_MAX_WIDTH bits.
+// The macros declare local variables named hexk_hdl_path and hexk_hdl_value; an operand that
+// is a variable of such a name reads or writes the local instead, so do not use those names.
 // Include this file through hexk_macros.svh.
 //
 //! @module    hexk_hdl_macros

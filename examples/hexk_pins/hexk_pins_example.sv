@@ -7,7 +7,8 @@
 // the test sets, pin 1 an interrupt output that is open drain and needs a pull-up, pin 2 a
 // bidirectional pin that the DUT drives after a while. The test holds a virtual interface
 // handle and calls the functions of the interface: it drives the strap, pulls the interrupt
-// up and waits for it with a time limit, then forces the bidirectional pin against the DUT.
+// up and waits for it with a time limit, then forces the bidirectional pin against the DUT. A
+// wait that times out has reported an error; the test then stops instead of going on.
 // Needs UVM, src/uvm/hexk_uvm.f and src/agents/hexk_pins/hexk_pins.f.
 
 `include "hexk_macros.svh"
@@ -66,20 +67,34 @@ module hexk_pins_example;
 
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
-         if (!uvm_config_db#(virtual hexk_pins_if #(NUM_PINS))::get(this, "", "pins_vif", pins)) begin
-            `uvm_fatal("EXAMPLE", "no pins_vif in the config database")
-         end
+         `hexk_vif_get_or_fatal(hexk_pins_if#(NUM_PINS), "pins_vif", pins)
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
          phase.raise_objection(this, "pins");
+         exercise_pins();
+         phase.drop_objection(this, "pins done");
+      endtask : run_phase
+
+      // Drives and watches the pins; stops at the first pin that does not change in time.
+      task exercise_pins();
+         bit seen;
          pins.drive_pin(STRAP_PIN, 1'b1);
          pins.pull_up(IRQ_MASK);
-         `hexk_spinwait(pins.wait_value('0, IRQ_MASK);, 100ns, "EXAMPLE_IRQ")
+         wait_pins('0, IRQ_MASK, seen);
+         if (!seen) begin
+            return;
+         end
          `uvm_info("EXAMPLE", $sformatf("interrupt at %0t: %s", $realtime, pins.convert2string()), UVM_NONE)
-         `hexk_spinwait(pins.wait_value('1, IRQ_MASK);, 100ns, "EXAMPLE_IRQ")
+         wait_pins('1, IRQ_MASK, seen);
+         if (!seen) begin
+            return;
+         end
          `uvm_info("EXAMPLE", $sformatf("interrupt gone at %0t", $realtime), UVM_NONE)
-         `hexk_spinwait(pins.wait_value('1, GPIO_MASK);, 100ns, "EXAMPLE_GPIO")
+         wait_pins('1, GPIO_MASK, seen);
+         if (!seen) begin
+            return;
+         end
          `uvm_info("EXAMPLE", $sformatf("the DUT drives its strap to pin 2 at %0t", $realtime), UVM_NONE)
          pins.force_pins('0, GPIO_MASK);
          #1ns;
@@ -87,12 +102,18 @@ module hexk_pins_example;
          pins.release_pins(GPIO_MASK);
          #1ns;
          `uvm_info("EXAMPLE", $sformatf("released: %s", pins.convert2string()), UVM_NONE)
-         phase.drop_objection(this, "pins done");
-      endtask : run_phase
+      endtask : exercise_pins
+
+      // Waits up to 100 ns for the pins of mask to hold value. After a timeout the macro has reported an error and
+      // the test goes on, so seen says whether the pins hold the value.
+      task wait_pins(logic [NUM_PINS-1:0] value, bit [NUM_PINS-1:0] mask, output bit seen);
+         `hexk_spinwait(pins.wait_value(value, mask);, 100ns, "EXAMPLE_PINS")
+         seen = pins.holds(value, mask);
+      endtask : wait_pins
    endclass : hexk_example_test
 
    initial begin
-      uvm_config_db#(virtual hexk_pins_if #(NUM_PINS))::set(null, "uvm_test_top", "pins_vif", pins_if);
+      `hexk_vif_set(hexk_pins_if#(NUM_PINS), "uvm_test_top", "pins_vif", pins_if)
       run_test("hexk_example_test");
    end
 

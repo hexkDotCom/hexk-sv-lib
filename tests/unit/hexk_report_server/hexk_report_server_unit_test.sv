@@ -250,19 +250,19 @@ module hexk_report_server_unit_test;
       return $sformatf(
           "%0d %0d %0d %0d %0d",
           server.get_count(
-              UVM_INFO, "MON_ITEM"
+              "MON_ITEM", UVM_INFO
           ),
           server.get_count(
-              UVM_WARNING, "agent_2.DRV_RETRY"
+              "agent_2.DRV_RETRY", UVM_WARNING
           ),
           server.get_count(
-              UVM_ERROR, "SB_MISMATCH"
+              "SB_MISMATCH", UVM_ERROR
           ),
           server.get_count(
-              UVM_FATAL, "SB_GIVE_UP"
+              "SB_GIVE_UP", UVM_FATAL
           ),
           server.get_count(
-              UVM_ERROR, "MON_ITEM"
+              "MON_ITEM", UVM_ERROR
           )
       );
    endfunction : counts_after_feed
@@ -411,16 +411,16 @@ module hexk_report_server_unit_test;
       return $sformatf(
           "%0d %0d %0d %0d lines=%0d",
           server.get_count(
-              UVM_INFO, "SHARED"
+              "SHARED", UVM_INFO
           ),
           server.get_count(
-              UVM_WARNING, "SHARED"
+              "SHARED", UVM_WARNING
           ),
           server.get_count(
-              UVM_ERROR, "SHARED"
+              "SHARED", UVM_ERROR
           ),
           server.get_count(
-              UVM_FATAL, "SHARED"
+              "SHARED", UVM_FATAL
           ),
           named
       );
@@ -465,10 +465,10 @@ module hexk_report_server_unit_test;
           "%0b %0d %0d",
           is_current,
           server.get_count(
-              UVM_INFO, "UT_INSTALLED"
+              "UT_INSTALLED", UVM_INFO
           ),
           server.get_count(
-              UVM_WARNING, "UT_INSTALLED"
+              "UT_INSTALLED", UVM_WARNING
           )
       );
    endfunction : installed_counts
@@ -549,7 +549,7 @@ module hexk_report_server_unit_test;
    `SVTEST_END
 
    `SVTEST(a_time_unit_that_is_no_member_of_the_enum_is_shown_as_ns)
-      `FAIL_UNLESS_STR_EQUAL(time_of(hexk_time_unit_e'(99), 3), "5001234.567ns")
+      `FAIL_UNLESS_STR_EQUAL(time_of(hexk_time_unit_e'(7), 3), "5001234.567ns")
    `SVTEST_END
 
    `SVTEST(a_time_precision_below_one_fs_is_cut_to_what_the_unit_has)

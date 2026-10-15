@@ -39,6 +39,8 @@ come after `valid` or the other way round: this agent allows both, as AXI-Stream
 From `src/agents/hexk_valid_ready/hexk_valid_ready_agent.sv`:
 
 ```systemverilog
+// Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+virtual function string get_type_name();
 // Creates the agent and its ports; the children are created in build_phase.
 function new(string name, uvm_component parent);
 // UVM callback: checks the cfg and its interface, creates the monitor, the coverage and, in active mode, the rest.
@@ -71,6 +73,8 @@ function void do_copy(uvm_object rhs);
 From `src/agents/hexk_valid_ready/hexk_valid_ready_driver.sv`:
 
 ```systemverilog
+// Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+virtual function string get_type_name();
 // Creates the driver.
 function new(string name, uvm_component parent);
 // UVM callback: takes the interface from the cfg, which the agent has checked, and creates the delay generator.
@@ -132,6 +136,8 @@ function void do_unpack(uvm_packer packer);
 From `src/agents/hexk_valid_ready/hexk_valid_ready_monitor.sv`:
 
 ```systemverilog
+// Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+virtual function string get_type_name();
 // Creates the monitor and its ports.
 function new(string name, uvm_component parent);
 // UVM callback: takes the interface from the cfg; the agent has checked both.
@@ -146,7 +152,7 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_pkg.sv`:
 
 ```systemverilog
 // Which side of the channel an active agent drives.
-typedef enum { HEXK_VALID_READY_INITIATOR, HEXK_VALID_READY_RESPONDER } hexk_valid_ready_role_e;
+typedef enum bit { HEXK_VALID_READY_INITIATOR, HEXK_VALID_READY_RESPONDER } hexk_valid_ready_role_e;
 ```
 
 From `src/agents/hexk_valid_ready/sequences/hexk_valid_ready_data_seq.sv`:
@@ -173,7 +179,10 @@ task body();
 <!-- HEXK_GEN:END api -->
 
 Types, signals and members that the listing above does not show. `DATA_WIDTH` (default 32)
-is a parameter of the interface and of every class.
+is a parameter of the interface and of every class. `compare()`, `pack()` and the printout of
+an item go through the bit stream of UVM, `UVM_MAX_STREAMBITS` bits (4096 unless your flow
+defines it larger): a wider `DATA_WIDTH` is compared, packed and printed in its low 4096 bits
+only. The driver and the monitor have no such limit.
 
 | Interface `hexk_valid_ready_if #(DATA_WIDTH) (input logic clk, input logic rst_n)` | |
 |---|---|
@@ -337,7 +346,13 @@ The agent:
   testbench. Two active agents with the same role on one interface are not allowed.
 - Driver and monitor work in the run phase only; the sequences raise no objections. A
   sequence sends one item per transfer; a failed randomization of an item is the fatal
-  `HEXK_VALID_READY_RAND`.
+  `HEXK_VALID_READY_RAND`. `hexk_valid_ready_data_seq` randomizes an item only when the
+  factory gives a class derived from `hexk_valid_ready_item`, so that its own random fields
+  get values; a plain item is not randomized, since the sequence assigns both its random
+  fields. A randomization costs several times as much as the rest of an item. The sequence
+  asks the factory once when it starts, for the instance name `req`, as `create()` does, and
+  makes every item of that start of the class it gave; an override set while it runs counts
+  from its next start. A failed cast of such an item is the fatal `HEXK_VALID_READY_RAND`.
 
 Items and cfg:
 
@@ -420,14 +435,19 @@ There are no plusargs and no compile-time switches.
 // A hexk_scoreboard compares what the two monitors saw, in order. The inputs of the DUT are
 // connected to the channel signals of the interfaces, its outputs to their ext_ inputs.
 // The scoreboard and the agent at the output hold the phase through the aggregator until
-// the last word has left the DUT.
+// the last word has left the DUT, or the scoreboard reports a word that is overdue; the test
+// checks that every word was compared.
 // Needs UVM, src/uvm/hexk_uvm.f and src/agents/hexk_valid_ready/hexk_valid_ready.f.
+
+`include "hexk_macros.svh"
 
 module hexk_valid_ready_example;
    timeunit 1ns / 1ps;
 
    import uvm_pkg::*;
    import hexk_uvm_pkg::hexk_scoreboard;
+   import hexk_uvm_pkg::hexk_scoreboard_cfg;
+   import hexk_uvm_pkg::hexk_sb_stats;
    import hexk_uvm_pkg::hexk_objection_aggregator;
    import hexk_valid_ready_pkg::hexk_valid_ready_agent;
    import hexk_valid_ready_pkg::hexk_valid_ready_agent_cfg;
@@ -488,6 +508,7 @@ module hexk_valid_ready_example;
       hexk_valid_ready_agent_cfg #(WIDTH) out_cfg;
       hexk_valid_ready_agent #(WIDTH)     in_agent;
       hexk_valid_ready_agent #(WIDTH)     out_agent;
+      hexk_scoreboard_cfg                 sb_cfg;
       hexk_scoreboard #(item_t)           sb;
       hexk_objection_aggregator           objections;
 
@@ -501,20 +522,20 @@ module hexk_valid_ready_example;
          super.build_phase(phase);
          in_cfg  = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("in_cfg");
          out_cfg = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("out_cfg");
-         if (!uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::get(this, "", "in_vif", in_cfg.vif)) begin
-            `uvm_fatal("EXAMPLE", "no in_vif in the config database")
-         end
-         if (!uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::get(this, "", "out_vif", out_cfg.vif)) begin
-            `uvm_fatal("EXAMPLE", "no out_vif in the config database")
-         end
-         out_cfg.role  = HEXK_VALID_READY_RESPONDER;
-         in_agent      = hexk_valid_ready_agent#(WIDTH)::type_id::create("in_agent", this);
-         in_agent.cfg  = in_cfg;
-         out_agent     = hexk_valid_ready_agent#(WIDTH)::type_id::create("out_agent", this);
-         out_agent.cfg = out_cfg;
-         objections    = hexk_objection_aggregator::type_id::create("objections", this);
-         sb            = hexk_scoreboard#(item_t)::type_id::create("sb", this);
-         sb.aggregator = objections;
+         `hexk_vif_get_or_fatal(hexk_valid_ready_if#(WIDTH), "in_vif", in_cfg.vif)
+         `hexk_vif_get_or_fatal(hexk_valid_ready_if#(WIDTH), "out_vif", out_cfg.vif)
+         out_cfg.role       = HEXK_VALID_READY_RESPONDER;
+         in_agent           = hexk_valid_ready_agent#(WIDTH)::type_id::create("in_agent", this);
+         in_agent.cfg       = in_cfg;
+         out_agent          = hexk_valid_ready_agent#(WIDTH)::type_id::create("out_agent", this);
+         out_agent.cfg      = out_cfg;
+         objections         = hexk_objection_aggregator::type_id::create("objections", this);
+         // A word that never leaves the DUT is an error after 1 us, instead of a run phase that never ends.
+         sb_cfg             = hexk_scoreboard_cfg::type_id::create("sb_cfg");
+         sb_cfg.max_wait_ps = `hexk_ps(1us);
+         sb                 = hexk_scoreboard#(item_t)::type_id::create("sb", this);
+         sb.cfg             = sb_cfg;
+         sb.aggregator      = objections;
       endfunction : build_phase
 
       function void connect_phase(uvm_phase phase);
@@ -528,18 +549,23 @@ module hexk_valid_ready_example;
          hexk_valid_ready_random_seq #(WIDTH) seq = hexk_valid_ready_random_seq#(WIDTH)::type_id::create("seq");
          super.main_phase(phase);
          phase.raise_objection(this, "stimulus");
-         if (seq.randomize() with {num_items == NUM_WORDS;} != 1) begin
-            `uvm_fatal("EXAMPLE", "randomization of the sequence failed")
-         end
+         `hexk_randomize_with_or_fatal(seq, "EXAMPLE", num_items == NUM_WORDS;)
          seq.start(in_agent.sqr);
          `uvm_info("EXAMPLE", $sformatf("%0d words were sent by %0t", NUM_WORDS, $realtime), UVM_NONE)
          phase.drop_objection(this, "stimulus done");
       endtask : main_phase
+
+      // An empty scoreboard reports nothing either: the test checks that every word it sent was compared.
+      function void check_phase(uvm_phase phase);
+         hexk_sb_stats stats = sb.get_stats();
+         super.check_phase(phase);
+         `hexk_check_eq(stats.matched, NUM_WORDS, "EXAMPLE_MATCHED")
+      endfunction : check_phase
    endclass : hexk_example_test
 
    initial begin
-      uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::set(null, "uvm_test_top", "in_vif", in_if);
-      uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::set(null, "uvm_test_top", "out_vif", out_if);
+      `hexk_vif_set(hexk_valid_ready_if#(WIDTH), "uvm_test_top", "in_vif", in_if)
+      `hexk_vif_set(hexk_valid_ready_if#(WIDTH), "uvm_test_top", "out_vif", out_if)
       run_test("hexk_example_test");
    end
 

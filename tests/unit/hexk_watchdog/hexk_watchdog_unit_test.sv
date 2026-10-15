@@ -104,6 +104,11 @@ module hexk_watchdog_unit_test;
       watchdog.set_inactivity_limit(`hexk_ps(limit));
    endfunction : set_limit
 
+   // Sets the largest inactivity limit there is.
+   function automatic void set_largest_limit();
+      watchdog.set_inactivity_limit('1);
+   endfunction : set_largest_limit
+
    // Starts run_phase of the watchdog as UVM would at the start of the run phase.
    task automatic start_watchdog();
       fork
@@ -229,6 +234,27 @@ module hexk_watchdog_unit_test;
       advance(40ns);
       `FAIL_UNLESS_STR_EQUAL(fatals(), "0")
       advance(11ns);
+      `FAIL_UNLESS_STR_EQUAL(fatals(), "1")
+   `SVTEST_END
+
+   `SVTEST(the_largest_inactivity_limit_does_not_wrap_around)
+      configure(0, 50ns);
+      start_watchdog();
+      advance(40ns);
+      set_largest_limit();
+      advance(200ns);
+      `FAIL_UNLESS_STR_EQUAL(fatals(), "0")
+      set_limit(30ns);
+      advance(31ns);
+      `FAIL_UNLESS_STR_EQUAL(fatals(), "1")
+   `SVTEST_END
+
+   `SVTEST(a_new_limit_set_while_the_watch_starts_is_not_lost)
+      configure(0, 0);
+      set_largest_limit();
+      start_watchdog();
+      set_limit(30ns);
+      advance(31ns);
       `FAIL_UNLESS_STR_EQUAL(fatals(), "1")
    `SVTEST_END
 

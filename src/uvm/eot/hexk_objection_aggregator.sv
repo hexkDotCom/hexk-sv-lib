@@ -37,14 +37,18 @@ class hexk_objection_aggregator extends uvm_component;
    // Number of raise() calls over all objects that are not matched by a drop() yet.
    local int unsigned          raised_total;
 
-   // Task phases that are executing. The other queues have one entry per phase: whether an
-   // objection is held on it, whether a thread is polling for it, and a serial number that
-   // tells a polling thread that its phase has ended.
-   local uvm_phase             active_phases   [              $];
-   local bit                   held            [              $];
-   local bit                   polling         [              $];
-   local int unsigned          serials         [              $];
-   local int unsigned          last_serial;
+   // A task phase that is executing: whether an objection is held on it, whether a thread is polling for it, and a
+   // serial number that tells a polling thread that its phase has ended.
+   typedef struct {
+      uvm_phase    phase;
+      bit          held;
+      bit          polling;
+      int unsigned serial;
+   } active_t;
+
+   // The task phases that are executing.
+   local active_t     active      [$];
+   local int unsigned last_serial;
 
    `uvm_component_utils(hexk_objection_aggregator)
 
@@ -128,15 +132,17 @@ class hexk_objection_aggregator extends uvm_component;
 
    // UVM callback: a task phase starts; objects that are raised keep it alive from the start.
    function void phase_started(uvm_phase phase);
+      active_t entry;
       super.phase_started(phase);
       if (!is_task_phase(phase) || find_phase(phase) >= 0) begin
          return;
       end
       last_serial++;
-      active_phases.push_back(phase);
-      held.push_back(0);
-      polling.push_back(0);
-      serials.push_back(last_serial);
+      entry.phase   = phase;
+      entry.held    = 0;
+      entry.polling = 0;
+      entry.serial  = last_serial;
+      active.push_back(entry);
       update_objections("raised before the phase started", "");
    endfunction : phase_started
 
@@ -145,7 +151,7 @@ class hexk_objection_aggregator extends uvm_component;
       int          index = find_phase(phase);
       int unsigned serial;
       super.phase_ready_to_end(phase);
-      if (index < 0 || polling[index] || !is_any_busy()) begin
+      if (index < 0 || active[index].polling || !is_any_busy()) begin
          return;
       end
       if (poll_interval_ps == 0) begin
@@ -155,12 +161,12 @@ class hexk_objection_aggregator extends uvm_component;
       end
       `uvm_info("HEXK_OBJECTION_BUSY", $sformatf(
                 "phase '%s' is held back, waiting for:\n%s", phase.get_name(), report_busy()), UVM_LOW)
-      if (!held[index]) begin
+      if (!active[index].held) begin
          phase.raise_objection(this, "registered objects are busy");
-         held[index] = 1;
+         active[index].held = 1;
       end
-      polling[index] = 1;
-      serial         = serials[index];
+      active[index].polling = 1;
+      serial                = active[index].serial;
       fork
          hold_until_idle(phase, serial);
       join_none
@@ -173,10 +179,7 @@ class hexk_objection_aggregator extends uvm_component;
       if (index < 0) begin
          return;
       end
-      active_phases.delete(index);
-      held.delete(index);
-      polling.delete(index);
-      serials.delete(index);
+      active.delete(index);
    endfunction : phase_ended
 
    // UVM callback: reports objects whose raise() calls were never matched by drop().
@@ -194,20 +197,20 @@ class hexk_objection_aggregator extends uvm_component;
    local task hold_until_idle(uvm_phase phase, int unsigned serial);
       int index;
       forever begin
-         #(poll_interval_ps);
+         hexk_wait_util::wait_ps(poll_interval_ps);
          index = find_phase(phase);
          // The phase ended meanwhile, by a jump: its objections are gone already.
-         if (index < 0 || serials[index] != serial) begin
+         if (index < 0 || active[index].serial != serial) begin
             return;
          end
          if (!is_any_busy()) begin
             break;
          end
       end
-      polling[index] = 0;
+      active[index].polling = 0;
       if (raised_total == 0) begin
          phase.drop_objection(this, "registered objects are no longer busy");
-         held[index] = 0;
+         active[index].held = 0;
       end
    endtask : hold_until_idle
 
@@ -215,13 +218,13 @@ class hexk_objection_aggregator extends uvm_component;
    // The description of the objection is "<what>: <detail>"; it is put together only when an objection changes.
    local function void update_objections(string what, string detail);
       bit wanted = raised_total != 0;
-      foreach (active_phases[i]) begin
-         if (wanted && !held[i]) begin
-            active_phases[i].raise_objection(this, describe(what, detail));
-            held[i] = 1;
-         end else if (!wanted && held[i] && !polling[i]) begin
-            active_phases[i].drop_objection(this, describe(what, detail));
-            held[i] = 0;
+      foreach (active[i]) begin
+         if (wanted && !active[i].held) begin
+            active[i].phase.raise_objection(this, describe(what, detail));
+            active[i].held = 1;
+         end else if (!wanted && active[i].held && !active[i].polling) begin
+            active[i].phase.drop_objection(this, describe(what, detail));
+            active[i].held = 0;
          end
       end
    endfunction : update_objections
@@ -246,8 +249,8 @@ class hexk_objection_aggregator extends uvm_component;
 
    // Index of the phase among the executing task phases, or -1.
    local function int find_phase(uvm_phase phase);
-      foreach (active_phases[i]) begin
-         if (active_phases[i] == phase) begin
+      foreach (active[i]) begin
+         if (active[i].phase == phase) begin
             return i;
          end
       end

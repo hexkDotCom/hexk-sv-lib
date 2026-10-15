@@ -28,13 +28,13 @@
 class hexk_ecc;
 
    // Place of the check bits in the code word: at their positions between the data bits, or above the data.
-   typedef enum {
+   typedef enum bit {
       HEXK_ECC_INTERLEAVED,
       HEXK_ECC_APPENDED
    } layout_e;
 
    // What decode found in a code word.
-   typedef enum {
+   typedef enum bit [1:0] {
       HEXK_ECC_NO_ERROR,
       HEXK_ECC_CORRECTED,
       HEXK_ECC_UNCORRECTABLE

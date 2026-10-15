@@ -3,7 +3,8 @@
 //
 // hexk_delay_analysis_fifo_unit_test.sv
 //
-// SVUnit tests of hexk_delay_analysis_fifo with int as the item type.
+// SVUnit tests of hexk_delay_analysis_fifo with int as the item type, and one test with a class
+// of this module as the item type, whose time unit (1 ns) differs from that of the package.
 // The UVM phases do not run in a unit test simulation, so each test starts run_phase of a
 // fresh FIFO in a thread of its own and ends that thread in teardown. Items are written
 // through an analysis port that is connected to the FIFO, as a monitor would write them.
@@ -21,6 +22,11 @@ module hexk_delay_analysis_fifo_unit_test;
    import hexk_uvm_pkg::hexk_delay_analysis_fifo;
    import hexk_uvm_pkg::hexk_report_catcher;
 
+   // Item class of this module.
+   class hexk_ut_fifo_item;
+      int unsigned value;
+   endclass : hexk_ut_fifo_item
+
    string                          name = "hexk_delay_analysis_fifo_ut";
    svunit_testcase                 svunit_ut;
 
@@ -29,6 +35,8 @@ module hexk_delay_analysis_fifo_unit_test;
    uvm_analysis_port #(int)        port;
    process                         fifo_process;
    process                         clock_process;
+   process                         item_fifo_process;
+   string                          item_counts;
    event                           clock_tick;
    int unsigned                    created;
 
@@ -67,6 +75,10 @@ module hexk_delay_analysis_fifo_unit_test;
          clock_process.kill();
          clock_process = null;
       end
+      if (item_fifo_process != null) begin
+         item_fifo_process.kill();
+         item_fifo_process = null;
+      end
       catcher.clear();
    endtask : teardown
 
@@ -74,6 +86,22 @@ module hexk_delay_analysis_fifo_unit_test;
    function automatic void set_latency(realtime latency);
       fifo.latency_ps = `hexk_ps(latency);
    endfunction : set_latency
+
+   // Sets the largest latency there is.
+   function automatic void set_latency_max();
+      fifo.latency_ps = '1;
+   endfunction : set_latency_max
+
+   // An item with the largest latency, then in the same time step and after a zero delay a flush and an item with a
+   // latency of 10 ns.
+   task automatic flush_behind_the_largest_latency();
+      fifo.latency_ps = '1;
+      port.write(21);
+      #0ns;
+      fifo.flush();
+      fifo.latency_ps = `hexk_ps(10ns);
+      port.write(22);
+   endtask : flush_behind_the_largest_latency
 
    // Sets the latency of the FIFO in clock events.
    function automatic void set_latency_cycles(int unsigned cycles);
@@ -157,6 +185,27 @@ module hexk_delay_analysis_fifo_unit_test;
    function automatic string in_flight();
       return $sformatf("%0d %0d", fifo.num_in_flight(), fifo.is_busy());
    endfunction : in_flight
+
+   // A FIFO of items of a class of this module with a latency of 30 ns gets an item; gives the number of visible
+   // items 29 ns and 31 ns later in item_counts, as "<count> <count>".
+   task automatic latency_with_a_class_of_this_module();
+      hexk_delay_analysis_fifo #(hexk_ut_fifo_item) item_fifo;
+      hexk_ut_fifo_item                             item = new();
+      item_fifo            = new($sformatf("ut_delay_item_fifo_%0d", created), null);
+      item_fifo.latency_ps = `hexk_ps(30ns);
+      fork
+         begin
+            item_fifo_process = process::self();
+            item_fifo.run_phase(null);
+         end
+      join_none
+      wait (item_fifo_process != null);
+      void'(item_fifo.try_put(item));
+      #29ns;
+      item_counts = $sformatf("%0d", item_fifo.used());
+      #2ns;
+      item_counts = $sformatf("%s %0d", item_counts, item_fifo.used());
+   endtask : latency_with_a_class_of_this_module
 
    // Number of HEXK_DELAY_FIFO_CLOCK errors in this test.
    function automatic string clock_errors();
@@ -370,6 +419,30 @@ module hexk_delay_analysis_fifo_unit_test;
       port.write(2);
       `FAIL_UNLESS_STR_EQUAL(fifo.busy_reason(),
          "2 items are waiting for the end of their delay, 0 are visible and not yet read")
+   `SVTEST_END
+
+   `SVTEST(the_largest_latency_does_not_wrap_around)
+      advance(5ns);
+      set_latency_max();
+      port.write(12);
+      advance(100ns);
+      `FAIL_UNLESS_STR_EQUAL(visible(), "-")
+      `FAIL_UNLESS_STR_EQUAL(in_flight(), "1 1")
+      fifo.flush();
+      `FAIL_UNLESS_STR_EQUAL(in_flight(), "0 0")
+   `SVTEST_END
+
+   `SVTEST(a_flush_ends_the_wait_for_the_largest_latency)
+      advance(5ns);
+      flush_behind_the_largest_latency();
+      advance(11ns);
+      `FAIL_UNLESS_STR_EQUAL(visible(), "22 ")
+      `FAIL_UNLESS_STR_EQUAL(in_flight(), "0 0")
+   `SVTEST_END
+
+   `SVTEST(the_latency_is_the_same_with_an_item_class_of_a_scope_with_another_time_unit)
+      latency_with_a_class_of_this_module();
+      `FAIL_UNLESS_STR_EQUAL(item_counts, "0 1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

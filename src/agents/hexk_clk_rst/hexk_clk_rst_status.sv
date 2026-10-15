@@ -49,10 +49,10 @@ class hexk_clk_rst_status extends uvm_object;
    endfunction : new
 
    // Notes the clock that is driven from now on; called by the agent and its driver.
-   function void set_clock(longint unsigned period, int unsigned duty, longint unsigned jitter);
-      period_ps    = period;
+   function void set_clock(longint unsigned new_period_ps, int unsigned duty, longint unsigned new_jitter_ps);
+      period_ps    = new_period_ps;
       duty_percent = duty;
-      jitter_ps    = jitter;
+      jitter_ps    = new_jitter_ps;
    endfunction : set_clock
 
    // The frequency in MHz of the clock that is driven; 0 for a period of 0.

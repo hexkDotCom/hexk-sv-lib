@@ -28,7 +28,7 @@
 `define HEXK_HANDSHAKE_COVERAGE_SV
 
 // What valid and ready say in one clock cycle.
-typedef enum {
+typedef enum bit [1:0] {
    // Neither valid nor ready.
    HEXK_HANDSHAKE_IDLE,
    // Ready without valid: the receiver waits for data.

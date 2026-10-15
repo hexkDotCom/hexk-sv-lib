@@ -31,12 +31,6 @@ programming-interface access, such as Verilator.
 From `src/uvm/hexk_hdl_macros.svh`:
 
 ```systemverilog
-// Internal: what every message says after the path.
-`define HEXK_HDL_HINT
-// Internal: deposits or forces a value with the given UVM function and reports when that fails.
-`define hexk_hdl_write(FUNCTION, VERB, PATH, VALUE, ID)
-// Internal: the call that releases a path. With UVM_HDL_NO_DPI, UVM 1.2 declares its stand-in for uvm_hdl_release with a second argument.
-`define hexk_hdl_release_call(PATH, VALUE)
 // Reads the signal at PATH into the variable VALUE; reports an error with ID when it cannot be read.
 `define hexk_hdl_read(PATH, VALUE, ID)
 // Sets the signal at PATH to VALUE until its driver or a later deposit changes it; error with ID on failure.
@@ -48,6 +42,8 @@ From `src/uvm/hexk_hdl_macros.svh`:
 // Reports a fatal with ID when PATH does not exist or the simulator gives no access to it.
 `define hexk_hdl_check_path_or_fatal(PATH, ID)
 ```
+
+The file also defines building blocks of these, marked "Internal" in the source; they may change, do not call them.
 <!-- HEXK_GEN:END api -->
 
 ## 4. Behaviour and invariants
@@ -180,6 +176,9 @@ endmodule : hexk_hdl_macros_example
 
 ## 8. Anti-patterns
 
+- **A variable of your own named `hexk_hdl_path` or `hexk_hdl_value`.** The macros declare
+  local variables of these names; an operand of the same name reads or writes the local
+  instead, and nothing reports it. Names that start with `hexk_` belong to the library.
 - **Paths typed at every use.** One typing error is one silent difference. Keep the paths of a
   block as constants or in its configuration object, and check each with
   `` `hexk_hdl_check_path_or_fatal `` at the start.

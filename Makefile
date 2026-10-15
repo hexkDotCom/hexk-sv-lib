@@ -45,6 +45,8 @@ EXAMPLES      := $(sort $(wildcard examples/*/*.sv))
 # Examples that do not mention UVM compile against the core filelist alone.
 CORE_EXAMPLES := $(if $(EXAMPLES),$(shell grep -L -E 'uvm_pkg|hexk_uvm_pkg|hexk_macros' $(EXAMPLES)))
 UVM_EXAMPLES  := $(filter-out $(CORE_EXAMPLES),$(EXAMPLES))
+# Code written the way a user writes it, linted with the core like an example (tests/lint/README.md).
+CORE_LINT_CASES := tests/lint/hexk_core_enum_lint.sv
 ALL_UNIT_TESTS := $(sort $(wildcard tests/unit/*/*_unit_test.sv))
 UNIT_TESTS    := $(sort $(wildcard tests/unit/$(if $(TEST),$(TEST),*)/*_unit_test.sv))
 # Unit tests that mention UVM are simulated with UVM compiled in; the others with the core alone.
@@ -195,7 +197,7 @@ lint_verible:
 
 lint_verilator:
 	@echo "== lint (verilator --lint-only -Wall, core)"
-	@for example in $(CORE_EXAMPLES); do \
+	@for example in $(CORE_EXAMPLES) $(CORE_LINT_CASES); do \
 	   $(VERILATOR) --lint-only -Wall --timescale 1ns/1ps tests/lint/verilator.vlt \
 	      -f src/core/hexk_core.f $$example --top-module $$(basename $$example .sv); \
 	   echo "lint: verilator: core + $$example clean"; \
@@ -204,7 +206,12 @@ lint_verilator:
 	@# UNUSEDSIGNAL is off here: every example is linted with the whole package, and the public
 	@# fields of the classes that an example does not use would all be reported as unused.
 	@mkdir -p $(BUILD_DIR)
-	@printf '%s\n' '`verilator_config' 'lint_off -file "$(abspath $(UVM_SIM_HOME))/*"' > $(BUILD_DIR)/uvm_quiet.vlt
+	@# UVM is waived by its absolute path and by the path as given, which Verilator may print instead. A
+	@# waiver without a rule does not cover INITIALDLY, which uvm_wait_for_nba_region() of UVM gives when a wait
+	@# macro runs in an initial block.
+	@printf '%s\n' '`verilator_config' 'lint_off -file "$(abspath $(UVM_SIM_HOME))/*"' \
+	   'lint_off -file "$(UVM_SIM_HOME)/*"' 'lint_off -rule INITIALDLY -file "*/uvm_globals.svh"' \
+	   > $(BUILD_DIR)/uvm_quiet.vlt
 	@for example in $(VERILATOR_UVM_EXAMPLES); do \
 	   $(VERILATOR) --lint-only -Wall -Wno-UNUSEDSIGNAL --timing --timescale 1ns/1ps \
 	      tests/lint/verilator.vlt $(BUILD_DIR)/uvm_quiet.vlt \

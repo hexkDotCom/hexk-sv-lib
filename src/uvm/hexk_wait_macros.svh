@@ -26,6 +26,11 @@
 `ifndef HEXK_WAIT_MACROS_SVH
 `define HEXK_WAIT_MACROS_SVH
 
+// The timers of the macros wait through hexk_wait_util::wait_ps(), with TIMEOUT in whole picoseconds of the
+// calling scope: a delay written in a class with a type parameter is in the wrong unit on VCS X-2025.06, and a
+// limit after hexk_wait_util::LAST_PS is never reached. At the timeout they wait for the nonblocking assignments of
+// that time step before they decide (one round of them): a condition set by them counts.
+
 // Internal: waits for a condition with a time limit and reports with the given severity.
 // A condition that is X or Z is not true: wait() goes on waiting for it, so the timeout must report it too.
 `define hexk_wait_or_report(COND, TIMEOUT, ID, SEVERITY) \
@@ -35,7 +40,8 @@
             fork \
                wait (COND); \
                begin \
-                  #(TIMEOUT); \
+                  hexk_uvm_pkg::hexk_wait_util::wait_ps(`hexk_ps(TIMEOUT)); \
+                  uvm_pkg::uvm_wait_for_nba_region(); \
                   if (COND) begin \
                   end else begin \
                      `hexk_check_report(SEVERITY, ID, $sformatf("timeout after %0t waiting for: %s", \
@@ -58,7 +64,8 @@
                   BODY \
                end \
                begin \
-                  #(TIMEOUT); \
+                  hexk_uvm_pkg::hexk_wait_util::wait_ps(`hexk_ps(TIMEOUT)); \
+                  uvm_pkg::uvm_wait_for_nba_region(); \
                   `hexk_check_report(SEVERITY, ID, $sformatf("timeout after %0t: the statements did not finish", \
                      TIMEOUT)) \
                end \

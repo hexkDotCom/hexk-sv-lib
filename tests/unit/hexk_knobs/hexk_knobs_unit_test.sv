@@ -44,6 +44,12 @@ module hexk_knobs_unit_test;
       HEXK_UT_KNOB_LOOK_POWER
    } hexk_ut_knob_look_e;
 
+   // An enumeration with two members of the same text on the command line, x.
+   typedef enum {
+      HEXK_UT_KNOB_CASE_X,
+      HEXK_UT_KNOB_CASE_x
+   } hexk_ut_knob_case_e;
+
    string              name = "hexk_knobs_ut";
    svunit_testcase     svunit_ut;
 
@@ -67,6 +73,7 @@ module hexk_knobs_unit_test;
       catcher.expect_msg("^HEXK_KNOBS_STRICT$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_KNOBS_READ$", UVM_FATAL, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_KNOBS_TYPE$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_KNOBS_ENUM$", UVM_ERROR, "", 0, -1, UVM_INFO);
       hexk_knobs::reset_for_test();
       waiter_done = 0;
    endtask : setup
@@ -125,6 +132,12 @@ module hexk_knobs_unit_test;
       knobs.add_str("hexk_ut_knob_label", "none", "label of the run");
       knobs.add_enum_str("hexk_ut_knob_mode", "rtl", modes, "kind of netlist");
    endfunction : define_cli_knobs
+
+   // Defines a knob of an enumeration with two members of one text: "<HEXK_KNOBS_ENUM errors> <knob exists>".
+   function automatic string define_ambiguous_enum_knob();
+      hexk_enum_knob#(hexk_ut_knob_case_e)::add("ut_case", HEXK_UT_KNOB_CASE_X, "two members of one text");
+      return $sformatf("%0d %0b", catcher.get_count("^HEXK_KNOBS_ENUM$"), knobs.has("ut_case"));
+   endfunction : define_ambiguous_enum_knob
 
    // Defines two enumeration knobs: one without a plusarg, and one that the plusargs of this test set to power.
    function automatic void define_enum_knobs();
@@ -460,6 +473,10 @@ module hexk_knobs_unit_test;
       knobs.lock();
       `FAIL_UNLESS_STR_EQUAL(int_of("ut_items"), "3")
       `FAIL_UNLESS_STR_EQUAL(messages(), "define=0 locked=0 value=0 strict=0 read=0")
+   `SVTEST_END
+
+   `SVTEST(an_enumeration_with_two_members_of_one_text_is_an_error_and_defines_no_knob)
+      `FAIL_UNLESS_STR_EQUAL(define_ambiguous_enum_knob(), "1 0")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

@@ -10,3 +10,4 @@ Configuration and waivers of the Gate 1 tools. A waiver always names the rule an
 | `slang.f` | options for slang elaboration |
 | `verilator.vlt` | Verilator lint waivers |
 | `hexk_style_check.waiver` | waivers for `scripts/hexk_style_check.py` |
+| `hexk_core_enum_lint.sv` | a lint case for Verilator `-Wall`: user code that only prints the name of an enum of the core |

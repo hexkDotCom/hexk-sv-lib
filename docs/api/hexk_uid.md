@@ -60,6 +60,8 @@ function hexk_uid new_uid(string label);
   every label has its own numbers.
 - `new_child(label)` creates an ID below another. The children of one ID are numbered per
   label in the same way. The numbers of different parents do not depend on each other.
+- The numbers are 32-bit: after 2**32 IDs with one label (top-level, or under one parent)
+  the numbers start again at 0, and the IDs are no longer unique.
 - The text of an ID is `<label>:<number>`, with the number padded with zeros to six digits
   and never cut, after the text of its parent and a slash:
   `seq_wr:000012/item:000003`. `convert2string()` builds it on every call; an ID stores only

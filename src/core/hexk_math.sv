@@ -147,7 +147,12 @@ virtual class hexk_math;
    // The low num_bytes bytes of v in reverse byte order; the bits above are 0.
    static function hexk_bits_t swap_bytes(hexk_bits_t v, int unsigned num_bytes);
       hexk_bits_t  result = '0;
-      int unsigned count = legal_width(num_bytes * BYTE_WIDTH, "swap_bytes") / BYTE_WIDTH;
+      int unsigned count = num_bytes;
+      // Checked as bytes: num_bytes * 8 would not fit 32 bits for a large num_bytes.
+      if (num_bytes > MAX_WIDTH / BYTE_WIDTH) begin
+         $error("hexk_math::swap_bytes: %0d bytes do not fit HEXK_MAX_WIDTH (%0d bits)", num_bytes, MAX_WIDTH);
+         count = MAX_WIDTH / BYTE_WIDTH;
+      end
       for (int unsigned i = 0; i < count; i++) begin
          result[i*BYTE_WIDTH+:BYTE_WIDTH] = v[(count-1-i)*BYTE_WIDTH+:BYTE_WIDTH];
       end

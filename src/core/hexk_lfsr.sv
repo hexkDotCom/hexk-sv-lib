@@ -25,7 +25,7 @@ class hexk_lfsr;
 
    // Form of the register: Fibonacci shifts left and feeds the XOR of the tapped bits into bit 0;
    // Galois shifts right and XORs the taps into the state when the bit shifted out is 1.
-   typedef enum {
+   typedef enum bit {
       HEXK_LFSR_FIBONACCI,
       HEXK_LFSR_GALOIS
    } kind_e;

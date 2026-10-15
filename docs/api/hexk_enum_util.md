@@ -27,7 +27,7 @@ From `src/core/hexk_enum_util.sv`:
 
 ```systemverilog
 // Default of the type parameter of hexk_enum_util: a placeholder that keeps the class legal when a tool elaborates it without an override. Always give your own enum type.
-typedef enum {HEXK_ENUM_UTIL_NONE} hexk_enum_util_none_e;
+typedef enum bit {HEXK_ENUM_UTIL_NONE} hexk_enum_util_none_e;
 // Name of value, or "" when value is not a member of E.
 static function string name(E value);
 // Sets value to the member called enum_name and returns 1; else returns 0 and the first member.

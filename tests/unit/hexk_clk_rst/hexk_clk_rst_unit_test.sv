@@ -43,22 +43,6 @@ module hexk_clk_rst_unit_test;
    localparam longint JITTER_PS = 400;
    localparam int unsigned JITTER_EDGES = 16;
 
-   // Sends one item whose operation is no value of hexk_clk_rst_op_e.
-   class hexk_ut_unknown_op_seq extends uvm_sequence #(hexk_clk_rst_item);
-      `uvm_object_utils(hexk_ut_unknown_op_seq)
-
-      function new(string seq_name = "hexk_ut_unknown_op_seq");
-         super.new(seq_name);
-      endfunction : new
-
-      task body();
-         req = hexk_clk_rst_item::type_id::create("req");
-         start_item(req);
-         req.op = hexk_clk_rst_pkg::hexk_clk_rst_op_e'(7);
-         finish_item(req);
-      endtask : body
-   endclass : hexk_ut_unknown_op_seq
-
    string          name = "hexk_clk_rst_ut";
    svunit_testcase svunit_ut;
 
@@ -339,6 +323,20 @@ module hexk_clk_rst_unit_test;
       result = $sformatf("%0d %0d %0d", since_start(), agent.status.period_ps, cfg.period_ps);
    endtask : run_freq
 
+   // Starts a clock sequence with a new period in the background; result is the period in the status 1 ns later.
+   task automatic status_while_the_clock_changes(longint unsigned period);
+      fork
+         run_freq(period);
+      join_none
+      #1ns;
+      result = $sformatf("%0d", agent.status.period_ps);
+   endtask : status_while_the_clock_changes
+
+   // The period in the status.
+   function automatic string status_period();
+      return $sformatf("%0d", agent.status.period_ps);
+   endfunction : status_period
+
    // Runs a stop sequence: "<done at> <clock> <rising edges since the start>".
    task automatic run_stop(longint unsigned restart_after_ps = 0);
       hexk_clk_rst_stop_seq seq = hexk_clk_rst_stop_seq::type_id::create("seq");
@@ -361,13 +359,6 @@ module hexk_clk_rst_unit_test;
       seq.start(agent.sqr);
       result = $sformatf("%0d %s", since_start(), edges_since_start());
    endtask : run_start
-
-   // Runs a sequence whose item has an unknown operation: "<done at> <rising edges since the start>".
-   task automatic run_unknown_op();
-      hexk_ut_unknown_op_seq seq = hexk_ut_unknown_op_seq::type_id::create("seq");
-      seq.start(agent.sqr);
-      result = $sformatf("%0d %s", since_start(), edges_since_start());
-   endtask : run_unknown_op
 
    // Errors and fatals of the agent in this test, as "<illegal> <stopped> <cfg>".
    function automatic string problems();
@@ -693,15 +684,13 @@ module hexk_clk_rst_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result, "35000 1")
    `SVTEST_END
 
-   `SVTEST(an_item_with_an_unknown_operation_is_an_error_and_does_not_start_the_clock)
-      set_flag("start_clock", 0);
+   `SVTEST(the_status_tells_a_new_clock_from_the_rising_edge_from_which_it_holds)
       start_agent();
-      advance_to(30_000);
-      run_unknown_op();
-      `FAIL_UNLESS_STR_EQUAL(result, "30000 0")
-      advance_to(60_000);
-      `FAIL_UNLESS_STR_EQUAL(edges_since_start(), "0")
-      `FAIL_UNLESS_STR_EQUAL(problems(), "1 0 0")
+      advance_to(6_000);
+      status_while_the_clock_changes(20_000);
+      `FAIL_UNLESS_STR_EQUAL(result, "10000")
+      advance_to(40_000);
+      `FAIL_UNLESS_STR_EQUAL(status_period(), "20000")
    `SVTEST_END
 
    `SVTEST(a_start_of_a_running_clock_does_nothing)

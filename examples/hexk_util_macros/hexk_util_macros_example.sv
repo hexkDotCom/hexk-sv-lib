@@ -104,9 +104,7 @@ module hexk_util_macros_example;
       task run_phase(uvm_phase phase);
          hexk_example_stats stats = hexk_example_stats::get();
          phase.raise_objection(this, "stimulus");
-         if (map.randomize() != 1) begin
-            `uvm_error("EXAMPLE", "randomization of the map failed")
-         end
+         `hexk_randomize_or_fatal(map, "EXAMPLE")
          foreach (map.first_addr[i]) begin
             `uvm_info("EXAMPLE", $sformatf("region %0d: 0x%04h to 0x%04h", i, map.first_addr[i], map.last_addr[i]),
                       UVM_NONE)

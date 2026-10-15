@@ -55,9 +55,10 @@ function hexk_bits_t inject(hexk_bits_t code, int unsigned num_errors = 1);
 <!-- HEXK_GEN:END api -->
 
 The layout is `hexk_ecc::HEXK_ECC_INTERLEAVED` (default) or `hexk_ecc::HEXK_ECC_APPENDED`, of
-type `hexk_ecc::layout_e`. `decode` returns `hexk_ecc::HEXK_ECC_NO_ERROR`,
+type `hexk_ecc::layout_e` (`enum bit`). `decode` returns `hexk_ecc::HEXK_ECC_NO_ERROR`,
 `hexk_ecc::HEXK_ECC_CORRECTED` or `hexk_ecc::HEXK_ECC_UNCORRECTABLE`, of type
-`hexk_ecc::status_e`. Class constants: `hexk_ecc::MIN_DATA_WIDTH` (4),
+`hexk_ecc::status_e` (`enum bit [1:0]`). Both enums have the width of their values, so a
+variable of the type that is only printed by name lints clean with Verilator `-Wall`. Class constants: `hexk_ecc::MIN_DATA_WIDTH` (4),
 `hexk_ecc::MAX_DATA_WIDTH` (128) and `hexk_ecc::VECTOR_WIDTH` (the value of `HEXK_MAX_WIDTH`).
 
 Widths for common data widths (`r` Hamming check bits plus one overall parity bit):

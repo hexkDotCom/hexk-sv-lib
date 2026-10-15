@@ -25,7 +25,7 @@ package hexk_clk_rst_pkg;
    import hexk_uvm_pkg::hexk_clk_countable;
 
    // What an item asks the driver to do; an item of the monitor is always HEXK_CLK_RST_RESET.
-   typedef enum {
+   typedef enum bit [1:0] {
       // Assert the reset, hold it, release it.
       HEXK_CLK_RST_RESET,
       // A new period, duty cycle and jitter.

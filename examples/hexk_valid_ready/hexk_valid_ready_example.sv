@@ -9,14 +9,19 @@
 // A hexk_scoreboard compares what the two monitors saw, in order. The inputs of the DUT are
 // connected to the channel signals of the interfaces, its outputs to their ext_ inputs.
 // The scoreboard and the agent at the output hold the phase through the aggregator until
-// the last word has left the DUT.
+// the last word has left the DUT, or the scoreboard reports a word that is overdue; the test
+// checks that every word was compared.
 // Needs UVM, src/uvm/hexk_uvm.f and src/agents/hexk_valid_ready/hexk_valid_ready.f.
+
+`include "hexk_macros.svh"
 
 module hexk_valid_ready_example;
    timeunit 1ns / 1ps;
 
    import uvm_pkg::*;
    import hexk_uvm_pkg::hexk_scoreboard;
+   import hexk_uvm_pkg::hexk_scoreboard_cfg;
+   import hexk_uvm_pkg::hexk_sb_stats;
    import hexk_uvm_pkg::hexk_objection_aggregator;
    import hexk_valid_ready_pkg::hexk_valid_ready_agent;
    import hexk_valid_ready_pkg::hexk_valid_ready_agent_cfg;
@@ -77,6 +82,7 @@ module hexk_valid_ready_example;
       hexk_valid_ready_agent_cfg #(WIDTH) out_cfg;
       hexk_valid_ready_agent #(WIDTH)     in_agent;
       hexk_valid_ready_agent #(WIDTH)     out_agent;
+      hexk_scoreboard_cfg                 sb_cfg;
       hexk_scoreboard #(item_t)           sb;
       hexk_objection_aggregator           objections;
 
@@ -90,20 +96,20 @@ module hexk_valid_ready_example;
          super.build_phase(phase);
          in_cfg  = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("in_cfg");
          out_cfg = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("out_cfg");
-         if (!uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::get(this, "", "in_vif", in_cfg.vif)) begin
-            `uvm_fatal("EXAMPLE", "no in_vif in the config database")
-         end
-         if (!uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::get(this, "", "out_vif", out_cfg.vif)) begin
-            `uvm_fatal("EXAMPLE", "no out_vif in the config database")
-         end
-         out_cfg.role  = HEXK_VALID_READY_RESPONDER;
-         in_agent      = hexk_valid_ready_agent#(WIDTH)::type_id::create("in_agent", this);
-         in_agent.cfg  = in_cfg;
-         out_agent     = hexk_valid_ready_agent#(WIDTH)::type_id::create("out_agent", this);
-         out_agent.cfg = out_cfg;
-         objections    = hexk_objection_aggregator::type_id::create("objections", this);
-         sb            = hexk_scoreboard#(item_t)::type_id::create("sb", this);
-         sb.aggregator = objections;
+         `hexk_vif_get_or_fatal(hexk_valid_ready_if#(WIDTH), "in_vif", in_cfg.vif)
+         `hexk_vif_get_or_fatal(hexk_valid_ready_if#(WIDTH), "out_vif", out_cfg.vif)
+         out_cfg.role       = HEXK_VALID_READY_RESPONDER;
+         in_agent           = hexk_valid_ready_agent#(WIDTH)::type_id::create("in_agent", this);
+         in_agent.cfg       = in_cfg;
+         out_agent          = hexk_valid_ready_agent#(WIDTH)::type_id::create("out_agent", this);
+         out_agent.cfg      = out_cfg;
+         objections         = hexk_objection_aggregator::type_id::create("objections", this);
+         // A word that never leaves the DUT is an error after 1 us, instead of a run phase that never ends.
+         sb_cfg             = hexk_scoreboard_cfg::type_id::create("sb_cfg");
+         sb_cfg.max_wait_ps = `hexk_ps(1us);
+         sb                 = hexk_scoreboard#(item_t)::type_id::create("sb", this);
+         sb.cfg             = sb_cfg;
+         sb.aggregator      = objections;
       endfunction : build_phase
 
       function void connect_phase(uvm_phase phase);
@@ -117,18 +123,23 @@ module hexk_valid_ready_example;
          hexk_valid_ready_random_seq #(WIDTH) seq = hexk_valid_ready_random_seq#(WIDTH)::type_id::create("seq");
          super.main_phase(phase);
          phase.raise_objection(this, "stimulus");
-         if (seq.randomize() with {num_items == NUM_WORDS;} != 1) begin
-            `uvm_fatal("EXAMPLE", "randomization of the sequence failed")
-         end
+         `hexk_randomize_with_or_fatal(seq, "EXAMPLE", num_items == NUM_WORDS;)
          seq.start(in_agent.sqr);
          `uvm_info("EXAMPLE", $sformatf("%0d words were sent by %0t", NUM_WORDS, $realtime), UVM_NONE)
          phase.drop_objection(this, "stimulus done");
       endtask : main_phase
+
+      // An empty scoreboard reports nothing either: the test checks that every word it sent was compared.
+      function void check_phase(uvm_phase phase);
+         hexk_sb_stats stats = sb.get_stats();
+         super.check_phase(phase);
+         `hexk_check_eq(stats.matched, NUM_WORDS, "EXAMPLE_MATCHED")
+      endfunction : check_phase
    endclass : hexk_example_test
 
    initial begin
-      uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::set(null, "uvm_test_top", "in_vif", in_if);
-      uvm_config_db#(virtual hexk_valid_ready_if #(WIDTH))::set(null, "uvm_test_top", "out_vif", out_if);
+      `hexk_vif_set(hexk_valid_ready_if#(WIDTH), "uvm_test_top", "in_vif", in_if)
+      `hexk_vif_set(hexk_valid_ready_if#(WIDTH), "uvm_test_top", "out_vif", out_if)
       run_test("hexk_example_test");
    end
 

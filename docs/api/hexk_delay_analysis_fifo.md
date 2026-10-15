@@ -26,6 +26,8 @@ synchronise two clock domains of the DUT model; it delays, it does not resample.
 From `src/uvm/tlm/hexk_delay_analysis_fifo.sv`:
 
 ```systemverilog
+// Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+virtual function string get_type_name();
 // Creates the FIFO; without a latency it behaves like uvm_tlm_analysis_fifo.
 function new(string name, uvm_component parent = null);
 // Gives the event whose triggers count as cycles for latency_cycles.
@@ -58,7 +60,9 @@ the get/peek exports.
   accept the item. The item is kept aside and enters the FIFO when its delay is over. Until
   then `try_get()`, `used()` and `is_empty()` do not see it; `num_in_flight()` counts it.
 - **Delay by time.** With `latency_cycles` 0 an item becomes visible `latency_ps`
-  picoseconds after it was written.
+  picoseconds after it was written. A time after `hexk_wait_util::LAST_PS` (about 2.56 hours
+  of simulation) is never reached, as for every wait of the library: the item waits until a
+  flush.
 - **Delay by clock events.** With `latency_cycles` above 0 an item becomes visible when the
   event given with `set_clock()` has triggered that many times after the write; `latency_ps`
   is then ignored. A trigger in the time step of the write never counts, whichever of the two

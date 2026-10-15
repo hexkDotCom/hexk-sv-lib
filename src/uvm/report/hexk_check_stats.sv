@@ -57,7 +57,7 @@ typedef logic [HEXK_CHECK_MAX_WIDTH:1] hexk_check_wide_t;
 typedef logic signed [HEXK_CHECK_WORD_WIDTH:0] hexk_check_word_num_t;
 
 // The order that an order check asks for between its two operands.
-typedef enum {
+typedef enum bit [1:0] {
    HEXK_CHECK_LT,
    HEXK_CHECK_LE,
    HEXK_CHECK_GT,
@@ -66,14 +66,14 @@ typedef enum {
 
 virtual class hexk_check_stats;
 
-   // Number of passed checks per message ID.
-   static int unsigned pass_count[string];
+   // Number of passed checks per message ID; read them with num_passed().
+   local static int unsigned pass_count[string];
 
-   // Number of failed checks per message ID.
-   static int unsigned fail_count[string];
+   // Number of failed checks per message ID; read them with num_failed().
+   local static int unsigned fail_count[string];
 
    // Number of failed checks per message ID that a test expects; see expect_failures().
-   static int unsigned expected_fail_count[string];
+   local static int unsigned expected_fail_count[string];
 
    // Counts one passed check with this ID.
    static function void record_pass(string id);

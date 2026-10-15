@@ -30,58 +30,6 @@ test continue.
 From `src/uvm/hexk_check_macros.svh`:
 
 ```systemverilog
-// Internal: counts a passed check.
-`define hexk_check_passed(ID)
-// Internal: counts a failed check.
-`define hexk_check_failed(ID)
-// Internal: reports a failed check with the given severity, through the reporter of the calling scope.
-`define hexk_check_report(SEVERITY, ID, TEXT)
-// Internal: checks a condition.
-`define hexk_check_condition(COND, ID, MSG, SEVERITY)
-// Internal: 1 when the first operand of a check is copied into 64 bits.
-`define hexk_check_is_word(VALUE)
-// Internal: 1 when all bits of the first operand of a check are compared.
-`define hexk_check_fits(VALUE)
-// Internal: the width of the widest of two or three operands of a check that compares numbers. The sum is not evaluated. It is there because the first operand is a variable or a signal and the others are often constants: a linter (slang, -Wbits-of-integer-constant) reports $bits() of a constant.
-`define hexk_check_width2(FIRST, SECOND)
-// Internal: hexk_check_width2 for three operands.
-`define hexk_check_width3(FIRST, SECOND, THIRD)
-// Internal: compares the bits of two values in copies of type TYPE; EXP is brought to the width of ACT.
-`define hexk_check_compare_as(TYPE, ACT, OP, EXP, ID, MSG, SEVERITY)
-// Internal: compares the bits of two values; EXP is brought to the width of ACT. Each value is evaluated once.
-`define hexk_check_compare(ACT, OP, EXP, ID, MSG, SEVERITY)
-// Internal: compares two values as numbers in copies of type TYPE, each extended by its own signedness. The comparison and the message are functions, so that a check adds little code where it is used.
-`define hexk_check_order_as(TYPE, IS_ORDERED, ACT, ORDER, EXP, ID, MSG, SEVERITY)
-// Internal: compares two values as numbers, each in its own type. Each value is evaluated once. The copies have one bit more than 64 when no operand is wider than that, and the full check width otherwise.
-`define hexk_check_order(ACT, ORDER, EXP, ID, MSG, SEVERITY)
-// Internal: compares two strings.
-`define hexk_check_strings(ACT, EXP, ID, MSG, SEVERITY)
-// Internal: the element of a queue or array at a position counted from its first element, whatever its bounds.
-`define hexk_check_at(ARRAY, POS)
-// Internal: compares two queues or arrays, size first, then element by element; both are read in place. The elements are compared by position: the first with the first, whatever the bounds of two arrays are. Two elements are equal when == says so: an X or Z bit in one of them is a difference, as in hexk_check_eq.
-`define hexk_check_queues(ACT_Q, EXP_Q, ID, MSG, SEVERITY)
-// Internal: compares two objects with compare(); two null handles are equal.
-`define hexk_check_objects(ACT, EXP, ID, MSG, SEVERITY)
-// Internal: checks in copies of type TYPE that a value is within inclusive limits.
-`define hexk_check_range_as(TYPE, IS_IN_RANGE, VAL, LO, HI, ID, MSG, SEVERITY)
-// Internal: checks that a value is within inclusive limits; the three values are compared as numbers.
-`define hexk_check_range(VAL, LO, HI, ID, MSG, SEVERITY)
-// Internal: checks in copies of type TYPE that a value is in a set. The copy is brought back to the width of VAL for the test: Verilator 5.046 does not compile 'inside' with a range when the value is wider than the limits of the range.
-`define hexk_check_set_as(TYPE, VAL, SET, ID, MSG, SEVERITY)
-// Internal: 1 when VAL is a signed expression. A conditional is signed only when both of its operands are, and with the condition 0 only the -1 is evaluated, so VAL is not.
-`define hexk_check_is_signed(VAL)
-// Internal: checks in a signed copy of type TYPE that a signed value is in a set. The copy is brought back to the width of VAL and made signed again, which a size cast does not keep on Verilator 5.046. The test of the set is a variable of its own: Verilator 5.046 gets a signed 'inside' wrong as an operand of &&.
-`define hexk_check_set_signed_as(TYPE, VAL, SET, ID, MSG, SEVERITY)
-// Internal: checks that a value is in a set, as a signed number when VAL is signed and as an unsigned number of its own width otherwise, as 'inside' itself does. The test of the signedness is constant by design (CMPCONST for an unsigned VAL), and the message cuts a VAL wider than a check compares, which it reports as too wide.
-`define hexk_check_set(VAL, SET, ID, MSG, SEVERITY)
-// Internal: checks in copies of type TYPE that a value has no bit set outside a mask.
-`define hexk_check_bits_as(TYPE, VAL, MASK, ID, MSG, SEVERITY)
-// Internal: checks that a value has no bit set outside a mask; MASK is brought to the width of VAL.
-`define hexk_check_bits(VAL, MASK, ID, MSG, SEVERITY)
-// Internal: checks in copies of type TYPE that a value is a multiple of an alignment.
-`define hexk_check_multiple_as(TYPE, VAL, ALIGN, ID, MSG, SEVERITY)
-// Internal: checks that a value is a multiple of an alignment; both count as unsigned numbers of the width of VAL.
-`define hexk_check_multiple(VAL, ALIGN, ID, MSG, SEVERITY)
 // Error unless COND holds; MSG is the whole message.
 `define hexk_check(COND, ID, MSG)
 // Fatal unless COND holds; MSG is the whole message.
@@ -154,6 +102,8 @@ From `src/uvm/hexk_check_macros.svh`:
 `define hexk_cast_or_fatal(DST, SRC, ID)
 ```
 
+The file also defines building blocks of these, marked "Internal" in the source; they may change, do not call them.
+
 From `src/uvm/report/hexk_check_stats.sv`:
 
 ```systemverilog
@@ -168,7 +118,7 @@ typedef logic [HEXK_CHECK_MAX_WIDTH:1] hexk_check_wide_t;
 // Signed number for the operands of an order or range check of which none has more than HEXK_CHECK_WORD_WIDTH bits: the usual case, which then costs little.
 typedef logic signed [HEXK_CHECK_WORD_WIDTH:0] hexk_check_word_num_t;
 // The order that an order check asks for between its two operands.
-typedef enum { HEXK_CHECK_LT, HEXK_CHECK_LE, HEXK_CHECK_GT, HEXK_CHECK_GE } hexk_check_order_e;
+typedef enum bit [1:0] { HEXK_CHECK_LT, HEXK_CHECK_LE, HEXK_CHECK_GT, HEXK_CHECK_GE } hexk_check_order_e;
 // Counts one passed check with this ID.
 static function void record_pass(string id);
 // Counts one failed check with this ID.
@@ -224,8 +174,7 @@ static function void reset_for_test();
 ```
 <!-- HEXK_GEN:END api -->
 
-Macros described as "Internal" in the list are building blocks of the others and may change;
-do not call them. `ID` is a string, `MSG` an optional string that starts the message.
+`ID` is a string, `MSG` an optional string that starts the message.
 
 ## 4. Behaviour and invariants
 
@@ -270,6 +219,10 @@ do not call them. `ID` is a string, `MSG` an optional string that starts the mes
   counts as the number it stands for in its own type: a signed operand can be negative, an
   unsigned one cannot, and the widths do not matter. So an unsigned 200 is greater than -1,
   where the plain SystemVerilog expression `8'd200 > -1` is false.
+- An operand that is an expression is evaluated in the width of the comparison (at least 65
+  bits), as in an assignment to a variable of that width: `a + 1` of an `int a` that holds
+  the largest `int` is 2147483648, not the wrapped -2147483648. To check a value that wraps
+  at its own width, assign it to a variable of that width first and give the variable.
 - `hexk_check_inside` tests `VAL` as `inside` itself does: a signed `VAL` as a signed number,
   so that `-3` is inside `{[-5:-1]}`, an unsigned one as an unsigned number of its own width,
   so that `8'd200` is not inside `{[-5:-1]}`. The message prints `VAL` in its own width.
@@ -406,11 +359,21 @@ endmodule : hexk_check_macros_example
   store the result in a queue first.
 - **`get_name()` or a formatted string as ID.** IDs are static (MSG-2); the counts in
   `hexk_check_stats` and catcher rules depend on it. Put variable text in `MSG`.
+- **A variable of your own named like a local of the macros.** A check copies its operands
+  into local variables named `hexk_check_act`, `hexk_check_exp`, `hexk_check_val`,
+  `hexk_check_lo`, `hexk_check_hi` and so on, and evaluates the operands after those are
+  declared. An operand that is a variable of the same name reads the uninitialized local
+  instead, and nothing reports it. Names that start with `hexk_` belong to the library: do
+  not give them to your own variables.
 - **A semicolon after the macro before `else`.** It ends the `if`, as with `` `uvm_error ``.
 - **An `if` around a check that only reports.** `if (a != b) `uvm_error(...)` is what the
   macro replaces: the macro also counts the passing case.
 - **Constraints with braces** in `` `hexk_randomize_with_or_fatal(obj, "ID", {x < 3;}) ``. Write
   them without the outer braces: `x < 3;`.
+- **A string literal inside an operand of an `or_fatal` macro**, such as
+  `` `hexk_cast_or_fatal(item, wrapper.create_object("item"), "ID") ``. These macros put their
+  operands into the message as text, and Verilator rejects a quote inside it. Assign the
+  value to a variable first and give the variable.
 - **`assert(obj.randomize())`.** An assertion can be switched off, and then nothing is
   randomized (LNG-10). Use `` `hexk_randomize_or_fatal ``.
 - **`hexk_check_eq` on values that may hold X** when X must match. Use `hexk_check_case_eq`.

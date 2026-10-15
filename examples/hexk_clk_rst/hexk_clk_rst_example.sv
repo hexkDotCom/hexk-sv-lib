@@ -11,6 +11,8 @@
 // clock that is being driven.
 // Needs UVM, src/uvm/hexk_uvm.f and src/agents/hexk_clk_rst/hexk_clk_rst.f.
 
+`include "hexk_macros.svh"
+
 module hexk_clk_rst_example;
    timeunit 1ns / 1ps;
 
@@ -51,9 +53,7 @@ module hexk_clk_rst_example;
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
          clk_rst_cfg = hexk_clk_rst_agent_cfg::type_id::create("clk_rst_cfg");
-         if (!uvm_config_db#(virtual hexk_clk_rst_if)::get(this, "", "clk_rst_vif", clk_rst_cfg.vif)) begin
-            `uvm_fatal("EXAMPLE", "no clk_rst_vif in the config database")
-         end
+         `hexk_vif_get_or_fatal(hexk_clk_rst_if, "clk_rst_vif", clk_rst_cfg.vif)
          clk_rst_cfg.set_freq_mhz(200.0);
          clk_rst_agent     = hexk_clk_rst_agent::type_id::create("clk_rst_agent", this);
          clk_rst_agent.cfg = clk_rst_cfg;
@@ -70,9 +70,7 @@ module hexk_clk_rst_example;
          hexk_clk_rst_reset_seq reset_seq = hexk_clk_rst_reset_seq::type_id::create("reset_seq");
          super.reset_phase(phase);
          phase.raise_objection(this, "reset");
-         if (reset_seq.randomize() with {hold_cycles == RESET_CYCLES;} != 1) begin
-            `uvm_fatal("EXAMPLE", "randomization of the reset sequence failed")
-         end
+         `hexk_randomize_with_or_fatal(reset_seq, "EXAMPLE", hold_cycles == RESET_CYCLES;)
          reset_seq.start(clk_rst_agent.sqr);
          `uvm_info("EXAMPLE", $sformatf("reset released at %0t, after %0d clock cycles", $realtime,
                                         clk_rst_agent.get_clk_count()), UVM_NONE)
@@ -85,9 +83,7 @@ module hexk_clk_rst_example;
          phase.raise_objection(this, "stimulus");
          clk_rst_agent.wait_clks(RUN_CYCLES);
          `uvm_info("EXAMPLE", $sformatf("at %0t the counter is %0d", $realtime, count), UVM_NONE)
-         if (clock_seq.randomize() with {period_ps == SLOW_PERIOD_PS;} != 1) begin
-            `uvm_fatal("EXAMPLE", "randomization of the frequency sequence failed")
-         end
+         `hexk_randomize_with_or_fatal(clock_seq, "EXAMPLE", period_ps == SLOW_PERIOD_PS;)
          clock_seq.start(clk_rst_agent.sqr);
          clk_rst_agent.wait_clks(RUN_CYCLES);
          `uvm_info("EXAMPLE", $sformatf("at %0t, with %0.0f MHz, the counter is %0d", $realtime,
@@ -97,7 +93,7 @@ module hexk_clk_rst_example;
    endclass : hexk_example_test
 
    initial begin
-      uvm_config_db#(virtual hexk_clk_rst_if)::set(null, "uvm_test_top", "clk_rst_vif", clk_rst_if);
+      `hexk_vif_set(hexk_clk_rst_if, "uvm_test_top", "clk_rst_vif", clk_rst_if)
       run_test("hexk_example_test");
    end
 

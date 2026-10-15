@@ -294,6 +294,13 @@ module hexk_check_macros_unit_test;
       return outcome();
    endfunction : run_obj_eq
 
+   // `hexk_check_gt(value + 1, 0) on an int: the sum is evaluated in the width of the comparison and does not wrap.
+   function automatic string run_gt_of_a_sum(int value);
+      mark();
+      `hexk_check_gt(value + 1, 0, "UT_GT")
+      return outcome();
+   endfunction : run_gt_of_a_sum
+
    function automatic string run_in_range(int value, int lo, int hi);
       mark();
       `hexk_check_in_range(value, lo, hi, "UT_IN_RANGE")
@@ -652,7 +659,9 @@ module hexk_check_macros_unit_test;
               "UT_STATS_NONE"
           ),
           hexk_check_stats::num_checks(),
-          hexk_check_stats::pass_count["UT_STATS_B"]
+          hexk_check_stats::num_passed(
+              "UT_STATS_B"
+          )
       );
    endfunction : stats_of_id
 
@@ -1057,6 +1066,10 @@ module hexk_check_macros_unit_test;
          "yes ? F randomization with constraints failed: item")
       `FAIL_UNLESS_STR_EQUAL(run_randomize("variable_impossible"),
          "yes ? F randomization with constraints failed: number")
+   `SVTEST_END
+
+   `SVTEST(an_expression_operand_is_evaluated_in_the_width_of_the_comparison)
+      `FAIL_UNLESS_STR_EQUAL(run_gt_of_a_sum(32'sh7fff_ffff), "P - ")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

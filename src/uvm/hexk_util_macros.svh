@@ -35,18 +35,22 @@
       hexk_singleton = null; \
    endfunction : reset_for_test
 
-// Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP.
+// Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP;
+// get_index() gives the index.
 `define hexk_analysis_imp_indexed_decl(SUFFIX) \
    class hexk_analysis_imp_indexed_``SUFFIX #(type T = int, type IMP = int) \
       extends uvm_pkg::uvm_port_base #(uvm_pkg::uvm_tlm_if_base #(T, T)); \
       local IMP imp_parent; \
-      int       index; \
+      local int index; \
       function new(string imp_name, IMP imp_owner, int imp_index = 0); \
          super.new(imp_name, imp_owner, uvm_pkg::UVM_IMPLEMENTATION, 1, 1); \
          imp_parent = imp_owner; \
          index      = imp_index; \
          m_if_mask  = `UVM_TLM_ANALYSIS_MASK; \
       endfunction : new \
+      function int get_index(); \
+         return index; \
+      endfunction : get_index \
       virtual function string get_type_name(); \
          return `"hexk_analysis_imp_indexed_``SUFFIX`"; \
       endfunction : get_type_name \

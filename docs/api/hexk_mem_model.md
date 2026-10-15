@@ -27,7 +27,7 @@ From `src/uvm/mem/hexk_mem_model.sv`:
 
 ```systemverilog
 // What a read of a byte that was never written does.
-typedef enum { HEXK_MEM_UNINIT_ERROR, HEXK_MEM_UNINIT_RANDOM, HEXK_MEM_UNINIT_ZERO, HEXK_MEM_UNINIT_PATTERN, HEXK_MEM_UNINIT_X } hexk_mem_uninit_e;
+typedef enum bit [2:0] { HEXK_MEM_UNINIT_ERROR, HEXK_MEM_UNINIT_RANDOM, HEXK_MEM_UNINIT_ZERO, HEXK_MEM_UNINIT_PATTERN, HEXK_MEM_UNINIT_X } hexk_mem_uninit_e;
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
 virtual function string get_type_name();
 // Creates an empty memory; the seed of the random policy is derived from the name.

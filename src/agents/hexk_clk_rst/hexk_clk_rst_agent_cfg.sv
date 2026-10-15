@@ -108,30 +108,35 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
    endfunction : get_freq_mhz
 
    // The time in picoseconds for which a clock with this period and duty cycle is high.
-   static function longint unsigned high_time_ps(longint unsigned period, int unsigned duty);
-      return (period * 64'(duty)) / 100;
+   static function longint unsigned high_time_ps(longint unsigned clock_period_ps, int unsigned duty);
+      return (clock_period_ps * 64'(duty)) / 100;
    endfunction : high_time_ps
 
    // What is wrong with a period, a duty cycle and a jitter; empty when they make a legal clock.
-   static function string clock_illegal_reason(longint unsigned period, int unsigned duty, longint unsigned jitter);
+   static function string clock_illegal_reason(longint unsigned clock_period_ps, int unsigned duty,
+                                               longint unsigned clock_jitter_ps);
       longint unsigned high;
       longint unsigned low;
       longint unsigned shorter;
-      if (period < 2 || period > MAX_PERIOD_PS) begin
-         return $sformatf("period_ps (%0d) is not in 2 to %0d", period, MAX_PERIOD_PS);
+      if (clock_period_ps < 2 || clock_period_ps > MAX_PERIOD_PS) begin
+         return $sformatf("period_ps (%0d) is not in 2 to %0d", clock_period_ps, MAX_PERIOD_PS);
       end
       if (duty < 1 || duty > 99) begin
          return $sformatf("duty_percent (%0d) is not in 1 to 99", duty);
       end
-      high = high_time_ps(period, duty);
-      low  = period - high;
+      high = high_time_ps(clock_period_ps, duty);
+      low  = clock_period_ps - high;
       if (high == 0 || low == 0) begin
-         return $sformatf("period_ps (%0d) with duty_percent (%0d) leaves no high or no low time", period, duty);
+         return
+             $sformatf("period_ps (%0d) with duty_percent (%0d) leaves no high or no low time", clock_period_ps, duty);
       end
       shorter = (high < low) ? high : low;
-      if (jitter > shorter / 64'(JITTER_DIVISOR)) begin
-         return $sformatf("jitter_ps (%0d) is above a quarter of the shorter of the high and the low time (%0d)",
-                          jitter, shorter);
+      if (clock_jitter_ps > shorter / 64'(JITTER_DIVISOR)) begin
+         return $sformatf(
+             "jitter_ps (%0d) is above a quarter of the shorter of the high and the low time (%0d)",
+             clock_jitter_ps,
+             shorter
+         );
       end
       return "";
    endfunction : clock_illegal_reason

@@ -44,6 +44,11 @@ class hexk_valid_ready_monitor #(
 
    `uvm_component_param_utils(hexk_valid_ready_monitor#(DATA_WIDTH))
 
+   // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+   virtual function string get_type_name();
+      return "hexk_valid_ready_monitor";
+   endfunction : get_type_name
+
    // Creates the monitor and its ports.
    function new(string name, uvm_component parent);
       super.new(name, parent);

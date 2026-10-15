@@ -26,6 +26,7 @@ module hexk_scoreboard_unit_test;
    import hexk_uvm_pkg::hexk_scoreboard;
    import hexk_uvm_pkg::hexk_scoreboard_cfg;
    import hexk_uvm_pkg::hexk_sb_stats;
+   import hexk_uvm_pkg::hexk_sb_stream;
    import hexk_uvm_pkg::hexk_sb_mode_e;
    import hexk_uvm_pkg::HEXK_SB_IN_ORDER;
    import hexk_uvm_pkg::HEXK_SB_OUT_OF_ORDER;
@@ -181,6 +182,7 @@ module hexk_scoreboard_unit_test;
    uvm_analysis_port #(hexk_ut_packet) expected_port;
    uvm_analysis_port #(hexk_ut_packet) actual_port;
    int unsigned                        created;
+   process                             run_process;
 
    function automatic void build();
       svunit_ut    = new(name);
@@ -201,6 +203,7 @@ module hexk_scoreboard_unit_test;
       catcher.expect_msg("^HEXK_SB_STREAM$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_SB_AGGREGATOR$", UVM_WARNING, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_SB_CLONE$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_SB_TIMEOUT$", UVM_ERROR, "", 0, -1, UVM_INFO);
       hexk_uid_pool::reset_for_test();
       hexk_ut_packet::names_fields = 0;
       created++;
@@ -214,6 +217,10 @@ module hexk_scoreboard_unit_test;
 
    task automatic teardown();
       svunit_ut.teardown();
+      if (run_process != null) begin
+         run_process.kill();
+         run_process = null;
+      end
       hexk_uid_pool::reset_for_test();
       catcher.clear();
    endtask : teardown
@@ -243,6 +250,73 @@ module hexk_scoreboard_unit_test;
    function automatic void set_max_latency(realtime max_latency);
       cfg.max_latency_ps = `hexk_ps(max_latency);
    endfunction : set_max_latency
+
+   // Sets the longest time an item may wait, given as a time of this module.
+   function automatic void set_max_wait(realtime max_wait);
+      cfg.max_wait_ps = `hexk_ps(max_wait);
+   endfunction : set_max_wait
+
+   // Starts run_phase of the scoreboard, as the run phase would; teardown stops it.
+   task automatic start_run_phase();
+      fork
+         begin
+            run_process = process::self();
+            scoreboard.run_phase(null);
+         end
+      join_none
+      wait (run_process != null);
+   endtask : start_run_phase
+
+   // timed_out of streams 0, 1 and 2 and of all streams: "<0> <1> <2> <all>".
+   function automatic string timed_out_counts();
+      return $sformatf(
+          "%0d %0d %0d %0d",
+          scoreboard.get_stats(
+              0
+          ).timed_out,
+          scoreboard.get_stats(
+              1
+          ).timed_out,
+          scoreboard.get_stats(
+              2
+          ).timed_out,
+          scoreboard.get_stats().timed_out
+      );
+   endfunction : timed_out_counts
+
+   // A stream with keys that keeps the order of the writes: waiters expected items under key 0 that wait, then 1000
+   // expected items under key 1 that are stored and taken one after the other. Gives "<few|number of entries>
+   // <key of the oldest waiting item>"; few is at most twice the waiting items and 33.
+   function automatic string wait_entries_behind_waiters(int unsigned waiters);
+      hexk_sb_stream #(.T(hexk_ut_packet), .KEY(int unsigned)) stream = new(1, 1);
+      longint unsigned                                         stamp_ps;
+      int unsigned                                             key;
+      bit                                                      is_actual;
+      int unsigned                                             position;
+      longint unsigned                                         written_ps;
+      int unsigned                                             entries;
+      for (int unsigned i = 0; i < waiters; i++) begin
+         stream.store_expected(0, packet(0, i), 0);
+      end
+      for (int unsigned i = 0; i < 1000; i++) begin
+         stream.store_expected(1, packet(1, i), 0);
+         void'(stream.take_expected(1, 0, stamp_ps));
+      end
+      entries = stream.num_wait_entries();
+      void'(stream.oldest_wait(key, is_actual, position, written_ps));
+      return $sformatf("%s %0d", (entries <= 2 * waiters + 34) ? "few" : $sformatf("%0d", entries), key);
+   endfunction : wait_entries_behind_waiters
+
+   // Number of HEXK_SB_TIMEOUT errors in this test.
+   function automatic string timeouts();
+      return $sformatf("%0d", catcher.get_count("^HEXK_SB_TIMEOUT$"));
+   endfunction : timeouts
+
+   // The latest message of the scoreboard up to the given text, which it must contain.
+   function automatic string headline_until(string marker);
+      int at = hexk_str::find(text_catcher.text, marker);
+      return (at < 0) ? text_catcher.text : text_catcher.text.substr(0, at - 1);
+   endfunction : headline_until
 
    // Clears one of the flags of the cfg that are set by default.
    function automatic void clear_flag(string which);
@@ -450,6 +524,7 @@ module hexk_scoreboard_unit_test;
       cfg.max_errors           = 4;
       cfg.max_outstanding      = 5;
       cfg.max_latency_ps       = 6000;
+      cfg.max_wait_ps          = 7000;
       cfg.allow_unexpected     = 1;
       cfg.hold_objection       = 0;
       cfg.flush_on_reset       = 0;
@@ -532,7 +607,7 @@ module hexk_scoreboard_unit_test;
       actual_packet(1, 10);
       actual_packet(2, 20);
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"2 expected, 2 actual, 2 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"2 expected, 2 actual, 2 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 0")
    `SVTEST_END
@@ -591,7 +666,7 @@ module hexk_scoreboard_unit_test;
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 1 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(message(), "stream 0: an actual item has no expected item | actual: | id=1 data=10")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"0 expected, 1 actual, 0 matched, 0 mismatched, 1 unexpected, 0 dropped, 0 late, ",
+         {"0 expected, 1 actual, 0 matched, 0 mismatched, 1 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
@@ -739,7 +814,7 @@ module hexk_scoreboard_unit_test;
       scoreboard.check_phase(null);
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 1 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"3 expected, 1 actual, 1 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"3 expected, 1 actual, 1 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "2 expected and 0 actual left over"})
    `SVTEST_END
 
@@ -751,7 +826,7 @@ module hexk_scoreboard_unit_test;
       scoreboard.check_phase(null);
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 2 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"1 expected, 1 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"1 expected, 1 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "1 expected and 1 actual left over"})
    `SVTEST_END
 
@@ -816,8 +891,17 @@ module hexk_scoreboard_unit_test;
       actual_packet(2, 20);
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 1 0 0")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"2 expected, 2 actual, 2 matched, 0 mismatched, 0 unexpected, 0 dropped, 1 late, ",
+         {"2 expected, 2 actual, 2 matched, 0 mismatched, 0 unexpected, 0 dropped, 1 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
+   `SVTEST_END
+
+   `SVTEST(the_latency_is_zero_when_the_actual_item_came_first_whatever_the_timestamp)
+      allow_unexpected();
+      build_scoreboard();
+      actual_packet(1, 10);
+      advance(100ns);
+      expect_seen_earlier(200ns);
+      `FAIL_UNLESS_STR_EQUAL(latencies(), "0 0 0")
    `SVTEST_END
 
    `SVTEST(get_timestamp_ps_decides_where_the_latency_starts)
@@ -837,7 +921,7 @@ module hexk_scoreboard_unit_test;
       scoreboard.on_reset();
       `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"2 expected, 1 actual, 0 matched, 0 mismatched, 0 unexpected, 3 dropped, 0 late, ",
+         {"2 expected, 1 actual, 0 matched, 0 mismatched, 0 unexpected, 3 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
       scoreboard.check_phase(null);
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 0")
@@ -864,7 +948,7 @@ module hexk_scoreboard_unit_test;
       `FAIL_UNLESS_STR_EQUAL(pairs(0), "1 0")
       `FAIL_UNLESS_STR_EQUAL(pairs(1), "1 0")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"2 expected, 3 actual, 2 matched, 0 mismatched, 1 unexpected, 0 dropped, 0 late, ",
+         {"2 expected, 3 actual, 2 matched, 0 mismatched, 1 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
@@ -874,7 +958,7 @@ module hexk_scoreboard_unit_test;
       actual_packet(1, 10, -1);
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 2")
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"0 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"0 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
@@ -882,11 +966,11 @@ module hexk_scoreboard_unit_test;
       build_scoreboard(HEXK_SB_IN_ORDER, 2);
       expect_packet(1, 10, 1);
       `FAIL_UNLESS_STR_EQUAL(stats(2),
-         {"0 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"0 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 1")
       `FAIL_UNLESS_STR_EQUAL(stats(1),
-         {"1 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"1 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
@@ -1020,15 +1104,15 @@ module hexk_scoreboard_unit_test;
       expect_packet(2, 20);
       actual_packet(2, 20);
       `FAIL_UNLESS_STR_EQUAL(stats(),
-         {"1 expected, 1 actual, 1 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, ",
+         {"1 expected, 1 actual, 1 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
    `SVTEST(a_new_cfg_has_the_defaults_and_a_clone_has_every_setting)
       `FAIL_UNLESS_STR_EQUAL(cfg_texts(),
-         {"mode=HEXK_SB_IN_ORDER num_streams=1 max_errors=10 max_outstanding=0 max_latency_ps=0",
+         {"mode=HEXK_SB_IN_ORDER num_streams=1 max_errors=10 max_outstanding=0 max_latency_ps=0 max_wait_ps=0",
           " allow_unexpected=0 hold_objection=1 flush_on_reset=1 leftover_print_limit=20 clone_expected=0 / ",
-          "mode=HEXK_SB_OUT_OF_ORDER num_streams=3 max_errors=4 max_outstanding=5 max_latency_ps=6000",
+          "mode=HEXK_SB_OUT_OF_ORDER num_streams=3 max_errors=4 max_outstanding=5 max_latency_ps=6000 max_wait_ps=7000",
           " allow_unexpected=1 hold_objection=0 flush_on_reset=0 leftover_print_limit=8 clone_expected=1"})
    `SVTEST_END
 
@@ -1050,6 +1134,203 @@ module hexk_scoreboard_unit_test;
       clone_expected();
       build_scoreboard();
       `FAIL_UNLESS_STR_EQUAL(reused_expected(1), "1 0 1")
+   `SVTEST_END
+
+   `SVTEST(an_expected_item_that_waits_longer_than_max_wait_is_an_error_and_is_dropped)
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(29ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "1 stream 0: 1 expected and 0 actual items are waiting")
+      advance(2ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      `FAIL_UNLESS_STR_EQUAL(headline_until(" within"), "stream 0: an expected item got no actual item")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
+      `FAIL_UNLESS_STR_EQUAL(stats(),
+         {"1 expected, 0 actual, 0 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 1 timed out, ",
+          "0 expected and 0 actual left over"})
+   `SVTEST_END
+
+   `SVTEST(an_actual_item_that_waits_longer_than_max_wait_is_an_error_and_is_dropped)
+      allow_unexpected();
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      advance(5ns);
+      actual_packet(1, 10);
+      advance(29ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+      advance(2ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      `FAIL_UNLESS_STR_EQUAL(headline_until(" within"), "stream 0: an actual item got no expected item")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
+   `SVTEST_END
+
+   `SVTEST(each_waiting_item_has_its_own_limit_from_its_write)
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(10ns);
+      expect_packet(2, 20);
+      advance(5ns);
+      actual_packet(1, 10);
+      advance(20ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+      advance(6ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      `FAIL_UNLESS_STR_EQUAL(pairs(), "1 0")
+   `SVTEST_END
+
+   `SVTEST(out_of_order_the_item_written_first_times_out_first)
+      set_max_wait(30ns);
+      build_scoreboard(HEXK_SB_OUT_OF_ORDER);
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(10ns);
+      expect_packet(2, 20);
+      advance(10ns);
+      expect_packet(3, 30);
+      actual_packet(2, 20);
+      advance(11ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      advance(10ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      actual_packet(3, 30);
+      `FAIL_UNLESS_STR_EQUAL(pairs(), "2 0")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
+   `SVTEST_END
+
+   `SVTEST(in_order_per_key_items_of_several_keys_time_out_in_the_order_of_their_writes)
+      set_max_wait(30ns);
+      build_scoreboard(HEXK_SB_IN_ORDER_PER_KEY);
+      start_run_phase();
+      expect_packet(2, 20);
+      advance(10ns);
+      expect_packet(1, 10);
+      advance(10ns);
+      expect_packet(2, 21);
+      advance(11ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      advance(10ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "2")
+      advance(10ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "3")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
+   `SVTEST_END
+
+   `SVTEST(every_stream_has_its_items_timed_out)
+      set_max_wait(30ns);
+      build_scoreboard(HEXK_SB_IN_ORDER, 3);
+      start_run_phase();
+      expect_packet(1, 10, 2);
+      advance(10ns);
+      expect_packet(2, 20, 1);
+      advance(5ns);
+      expect_packet(3, 30, 2);
+      actual_packet(1, 10, 2);
+      advance(26ns);
+      `FAIL_UNLESS_STR_EQUAL(timed_out_counts(), "0 1 0 1")
+      advance(5ns);
+      `FAIL_UNLESS_STR_EQUAL(timed_out_counts(), "0 1 1 2")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
+   `SVTEST_END
+
+   `SVTEST(the_entries_of_taken_items_do_not_pile_up_behind_a_waiting_one)
+      `FAIL_UNLESS_STR_EQUAL(wait_entries_behind_waiters(1), "few 0")
+      `FAIL_UNLESS_STR_EQUAL(wait_entries_behind_waiters(500), "few 0")
+   `SVTEST_END
+
+   `SVTEST(out_of_order_with_allow_unexpected_an_item_without_a_partner_waits_in_both_orders)
+      allow_unexpected();
+      build_scoreboard(HEXK_SB_OUT_OF_ORDER);
+      expect_packet(7, 10);
+      actual_packet(7, 11);
+      actual_packet(8, 21);
+      expect_packet(8, 20);
+      `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "1 stream 0: 2 expected and 2 actual items are waiting")
+      `FAIL_UNLESS_STR_EQUAL(pairs(), "0 0")
+   `SVTEST_END
+
+   `SVTEST(a_partner_at_the_limit_still_matches)
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(30ns);
+      actual_packet(1, 10);
+      advance(1ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+      `FAIL_UNLESS_STR_EQUAL(pairs(), "1 0")
+   `SVTEST_END
+
+   `SVTEST(a_write_drops_the_overdue_items_first_also_before_run_phase_did)
+      set_max_wait(30ns);
+      build_scoreboard();
+      expect_packet(1, 10);
+      advance(30001ps);
+      actual_packet(1, 10);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      `FAIL_UNLESS_STR_EQUAL(problems(), "0 1 0 0 0 0")
+   `SVTEST_END
+
+   `SVTEST(with_allow_unexpected_a_late_partner_waits_itself)
+      allow_unexpected();
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(31ns);
+      actual_packet(1, 10);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "1 stream 0: 0 expected and 1 actual items are waiting")
+   `SVTEST_END
+
+   `SVTEST(an_item_whose_partner_timed_out_is_unexpected)
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(31ns);
+      actual_packet(1, 10);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+      `FAIL_UNLESS_STR_EQUAL(problems(), "0 1 0 0 0 0")
+   `SVTEST_END
+
+   `SVTEST(without_max_wait_an_item_waits_until_the_check_phase)
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(1us);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+      `FAIL_UNLESS_STR_EQUAL(busy(), "1 stream 0: 1 expected and 0 actual items are waiting")
+   `SVTEST_END
+
+   `SVTEST(max_wait_is_read_at_the_build_phase)
+      build_scoreboard();
+      set_max_wait(30ns);
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(100ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+   `SVTEST_END
+
+   `SVTEST(on_reset_drops_the_items_and_their_limits)
+      set_max_wait(30ns);
+      build_scoreboard();
+      start_run_phase();
+      expect_packet(1, 10);
+      advance(10ns);
+      scoreboard.on_reset();
+      advance(10ns);
+      expect_packet(2, 20);
+      advance(11ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
+      advance(20ns);
+      `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

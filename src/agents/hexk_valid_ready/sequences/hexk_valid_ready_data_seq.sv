@@ -8,6 +8,11 @@
 // hexk_valid_ready_agent; it ends at the transfer of the last word. delay_cycles is the
 // delay of every item: below 0, which a plain randomize() gives, the driver takes the
 // delays from the cfg of the agent; 0 sends the words back to back.
+// An item is randomized before data and delay are assigned only when the factory gives a
+// class derived from hexk_valid_ready_item, whose own random fields then get values; a plain
+// item is not, since every random field of it is assigned (a randomization costs several
+// times the rest of the item). The factory is asked once per start of the sequence, and every
+// item of that start is made of the class it gave.
 //
 //! @module    hexk_valid_ready
 //! @since     0.7.0
@@ -47,10 +52,21 @@ class hexk_valid_ready_data_seq #(
 
    // Sends one item per word; returns at the transfer of the last one.
    task body();
+      // The class the factory gives for "req", asked once, the way create() asks it, and every item is made of that
+      // class: an override set while the sequence runs counts from its next start. get_object_type() would not
+      // do: a derived class without macros of its own gives the type of its base class there.
+      uvm_factory        factory = uvm_factory::get();
+      uvm_object_wrapper plain = hexk_valid_ready_item#(DATA_WIDTH)::get_type();
+      uvm_object_wrapper item_type = factory.find_override_by_type(plain, "req");
+      bit                derived = item_type != plain;
+      uvm_object         made;
       foreach (words[i]) begin
-         req = hexk_valid_ready_item#(DATA_WIDTH)::type_id::create("req");
+         made = item_type.create_object("req");
+         `hexk_cast_or_fatal(req, made, "HEXK_VALID_READY_RAND")
          start_item(req);
-         `hexk_randomize_or_fatal(req, "HEXK_VALID_READY_RAND")
+         if (derived) begin
+            `hexk_randomize_or_fatal(req, "HEXK_VALID_READY_RAND")
+         end
          req.data         = words[i];
          req.delay_cycles = delay_cycles;
          finish_item(req);

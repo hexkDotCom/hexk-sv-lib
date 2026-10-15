@@ -48,6 +48,11 @@ class hexk_valid_ready_agent #(
 
    `uvm_component_param_utils(hexk_valid_ready_agent#(DATA_WIDTH))
 
+   // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+   virtual function string get_type_name();
+      return "hexk_valid_ready_agent";
+   endfunction : get_type_name
+
    // Creates the agent and its ports; the children are created in build_phase.
    function new(string name, uvm_component parent);
       super.new(name, parent);

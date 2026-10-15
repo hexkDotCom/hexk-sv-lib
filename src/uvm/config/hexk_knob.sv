@@ -18,7 +18,7 @@
 class hexk_knob;
 
    // What a knob holds: an integer, a bit, any string, or one string of a list.
-   typedef enum {
+   typedef enum bit [1:0] {
       HEXK_KNOB_INT,
       HEXK_KNOB_BIT,
       HEXK_KNOB_STR,
@@ -26,7 +26,7 @@ class hexk_knob;
    } kind_e;
 
    // Where the value of a knob came from, from the weakest to the strongest.
-   typedef enum {
+   typedef enum bit [1:0] {
       HEXK_KNOB_FROM_DEFAULT,
       HEXK_KNOB_FROM_SET,
       HEXK_KNOB_FROM_PLUSARG

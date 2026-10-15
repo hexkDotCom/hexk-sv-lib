@@ -12,3 +12,8 @@ waive --rule=plusarg-assignment --location="src/core/hexk_plusarg.sv"
 # The test of hexk_check_q_eq compares arrays whose index ranges differ; one of them falls,
 # which is the case the check has to get right.
 waive --rule=unpacked-dimensions-range-ordering --location="tests/unit/hexk_check_macros/hexk_check_macros_unit_test.sv"
+
+# The test of the wait macros needs a package with a time unit of 1 ps and a class with a type
+# parameter in it (the case in which one simulator delays in the wrong unit); the build of the
+# unit tests takes one file per suite, so the package lives in the file of the test.
+waive --rule=package-filename --location="tests/unit/hexk_wait_macros/hexk_wait_macros_unit_test.sv"

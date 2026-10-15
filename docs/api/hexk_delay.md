@@ -45,7 +45,7 @@ From `src/uvm/stim/hexk_delay_cfg.sv`:
 
 ```systemverilog
 // Kind of delays a hexk_delay produces.
-typedef enum { HEXK_DELAY_NONE, HEXK_DELAY_CONSTANT, HEXK_DELAY_UNIFORM, HEXK_DELAY_NORMAL, HEXK_DELAY_EXPONENTIAL, ;
+typedef enum bit [2:0] { HEXK_DELAY_NONE, HEXK_DELAY_CONSTANT, HEXK_DELAY_UNIFORM, HEXK_DELAY_NORMAL, HEXK_DELAY_EXPONENTIAL, HEXK_DELAY_BURSTY, HEXK_DELAY_WEIGHTED } hexk_delay_mode_e;
 // Creates a cfg for uniform delays of 0 to 4.
 function new(string name = "hexk_delay_cfg");
 // What is wrong with the values for the current mode; empty when the cfg is legal.

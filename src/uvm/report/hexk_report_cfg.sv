@@ -22,14 +22,14 @@
 `define HEXK_REPORT_CFG_SV
 
 // Layout of a report line: UVM's own, the fixed-column layout of the library, or the fields listed in the cfg.
-typedef enum {
+typedef enum bit [1:0] {
    HEXK_FMT_UVM,
    HEXK_FMT_COMPACT,
    HEXK_FMT_CUSTOM
 } hexk_report_style_e;
 
 // One column of a report line.
-typedef enum {
+typedef enum bit [2:0] {
    HEXK_FLD_SEVERITY,
    HEXK_FLD_COUNTER,
    HEXK_FLD_TIME,
@@ -40,7 +40,7 @@ typedef enum {
 } hexk_report_field_e;
 
 // Unit of the time column of a report line.
-typedef enum {
+typedef enum bit [2:0] {
    HEXK_TIME_FS,
    HEXK_TIME_PS,
    HEXK_TIME_NS,
@@ -149,16 +149,21 @@ class hexk_report_cfg extends uvm_object;
       return 1;
    endfunction : time_unit_of
 
+   // Power of ten of a unit in seconds: -9 for HEXK_TIME_NS. The one table of the units.
+   static function int unit_exponent(hexk_time_unit_e unit);
+      case (unit)
+         HEXK_TIME_FS: return -15;
+         HEXK_TIME_PS: return -12;
+         HEXK_TIME_US: return -6;
+         HEXK_TIME_MS: return -3;
+         HEXK_TIME_S:  return 0;
+         default:      return -9;
+      endcase
+   endfunction : unit_exponent
+
    // Number of picoseconds in one of a unit: 0.001 for HEXK_TIME_FS.
    static function real ps_per_unit(hexk_time_unit_e unit);
-      case (unit)
-         HEXK_TIME_FS: return 1.0e-3;
-         HEXK_TIME_PS: return 1.0;
-         HEXK_TIME_US: return 1.0e6;
-         HEXK_TIME_MS: return 1.0e9;
-         HEXK_TIME_S:  return 1.0e12;
-         default:      return 1.0e3;
-      endcase
+      return 10.0 ** (unit_exponent(unit) + 12);
    endfunction : ps_per_unit
 
    // One-line summary of the layout settings, for log messages.

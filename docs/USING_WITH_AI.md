@@ -51,7 +51,8 @@ This project uses hexk-sv-lib ($HEXK_SV_LIB_HOME), a SystemVerilog/UVM utility l
   uvm_re_match (0 means match).
 - Do not test UVM version macros; use HEXK_UVM_VERSION_1_2 and HEXK_UVM_VERSION_IEEE.
 - Names starting with hexk_ or HEXK_ belong to the library. Do not create new ones in this
-  project.
+  project: the macros declare local variables with such names (hexk_check_act, ...), and a
+  variable of the same name passed to a macro silently reads the macro's own copy.
 ```
 
 The snippet covers the modules a project usually needs first. `llms.txt` lists every

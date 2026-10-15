@@ -156,16 +156,12 @@ module hexk_rand_once_example;
 
    // Stands for a helper that should only read the cfg.
    function automatic void careless_helper();
-      if (cfg.randomize() != 1) begin
-         `uvm_error("EXAMPLE", "randomization failed")
-      end
+      `hexk_randomize_or_fatal(cfg, "EXAMPLE")
    endfunction : careless_helper
 
    initial begin
       cfg = new("env_cfg");
-      if (cfg.randomize() != 1) begin
-         `uvm_error("EXAMPLE", "randomization failed")
-      end
+      `hexk_randomize_or_fatal(cfg, "EXAMPLE")
       `uvm_info("EXAMPLE", $sformatf("building %0d channels", cfg.num_channels), UVM_NONE)
 
       // Reported by the guard: the channels were built from the first value.
@@ -173,9 +169,7 @@ module hexk_rand_once_example;
 
       // Intended: the test asks for it first.
       cfg.rand_once.allow_rerandomize();
-      if (cfg.randomize() != 1) begin
-         `uvm_error("EXAMPLE", "randomization failed")
-      end
+      `hexk_randomize_or_fatal(cfg, "EXAMPLE")
    end
 
 endmodule : hexk_rand_once_example

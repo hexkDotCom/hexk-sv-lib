@@ -23,11 +23,29 @@
 
 virtual class hexk_wait_util;
 
+   // Largest simulation time in picoseconds that every simulator schedules: one of them keeps the time as a signed
+   // 64-bit number of steps of the simulation resolution, which may be as fine as 1 fs (about 2.56 hours).
+   localparam longint unsigned LAST_PS = 64'h7FFF_FFFF_FFFF_FFFF / 1000;
+
+   // Never triggered: what a wait past LAST_PS waits for. A lint rule reports an event that nothing triggers.
+   // verilator lint_off UNDRIVEN
+   local static event never;
+   // verilator lint_on UNDRIVEN
+
    // The simulation time in picoseconds.
    static function longint unsigned now_ps();
       // The time unit of the package is 1ps, so $time is a number of picoseconds here.
       return $time;
    endfunction : now_ps
+
+   // Waits duration_ps picoseconds; 0 returns at once. Classes with a type parameter delay through this task:
+   // VCS X-2025.06 scales a delay written in such a class by the time unit of the scope that declares the type
+   // given as parameter, and a delay here is always in picoseconds.
+   static task wait_ps(longint unsigned duration_ps);
+      if (duration_ps != 0) begin
+         sleep_ps(duration_ps);
+      end
+   endtask : wait_ps
 
    // Waits until flag is 1 or timeout_ps has passed; timed_out is 1 when the timeout came first.
    static task wait_or_timeout(ref bit flag, input longint unsigned timeout_ps, output bit timed_out);
@@ -38,7 +56,7 @@ virtual class hexk_wait_util;
          begin
             fork
                begin
-                  #(timeout_ps);
+                  sleep_ps(timeout_ps);
                   expired = 1;
                end
             join_none
@@ -57,7 +75,7 @@ virtual class hexk_wait_util;
             fork
                @(e);
                begin
-                  #(timeout_ps);
+                  sleep_ps(timeout_ps);
                   expired = 1;
                end
             join_any
@@ -66,6 +84,21 @@ virtual class hexk_wait_util;
       join
       timed_out = expired;
    endtask : wait_event_or_timeout
+
+   // 1 when a wait of duration_ps picoseconds that starts at from_ps would end after LAST_PS, so that it never ends;
+   // a wait of 0 never does.
+   static function bit ends_after_last(longint unsigned duration_ps, longint unsigned from_ps);
+      return duration_ps != 0 && (from_ps > LAST_PS || duration_ps > LAST_PS - from_ps);
+   endfunction : ends_after_last
+
+   // The delay of every wait: duration_ps picoseconds, or for ever when that would end after LAST_PS.
+   local static task sleep_ps(longint unsigned duration_ps);
+      if (ends_after_last(duration_ps, $time)) begin
+         @(never);
+      end else begin
+         #(duration_ps);
+      end
+   endtask : sleep_ps
 
 endclass : hexk_wait_util
 

@@ -31,7 +31,7 @@ them in hot paths; read once and keep the value.
 From `src/uvm/config/hexk_enum_knob.sv`:
 
 ```systemverilog
-// Defines the knob; its legal values are the texts of all members of E.
+// Defines the knob; its legal values are the texts of all members of E. Two members with the same text, such as MODE_A and MODE_a, could not be told apart on the command line: the error HEXK_KNOBS_ENUM, and the knob is not defined.
 static function void add(string name, E default_value, string help_text);
 // Sets the knob before hexk_knobs::lock(); a value from the command line is kept.
 static function void set(string name, E value);
@@ -150,6 +150,9 @@ Enumeration knobs:
   different types. A value that is no member of the enumeration is the error
   `HEXK_KNOBS_VALUE`, with the first member returned. The other errors and the fatals are
   those of `get_str`.
+- An enumeration with two members of the same text, such as `MODE_A` and `MODE_a` (both
+  `a`), cannot be told apart on the command line: `add` reports the error
+  `HEXK_KNOBS_ENUM` and does not define the knob.
 - `add_enum_str` stays for a list of values that is only known at run time.
 
 Other errors:
@@ -202,6 +205,7 @@ tests in one simulation.
 | ID | Severity | Meaning |
 |---|---|---|
 | `HEXK_KNOBS_DEFINE` | error |  |
+| `HEXK_KNOBS_ENUM` | error |  |
 | `HEXK_KNOBS_HELP` | info |  |
 | `HEXK_KNOBS_KEPT` | info |  |
 | `HEXK_KNOBS_LOCKED` | error |  |

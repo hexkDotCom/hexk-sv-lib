@@ -23,13 +23,13 @@
 
 // Default of the type parameter of hexk_enum_util: a placeholder that keeps the class legal when a
 // tool elaborates it without an override. Always give your own enum type.
-typedef enum {HEXK_ENUM_UTIL_NONE} hexk_enum_util_none_e;
+typedef enum bit {HEXK_ENUM_UTIL_NONE} hexk_enum_util_none_e;
 
 // Waiver for Verilator: it folds enum methods on a type parameter into constants and then reports
 // the variables that carried the enum value as partly unused. The waiver ends after the class.
 // verilator lint_off UNUSEDSIGNAL
 
-class hexk_enum_util #(
+virtual class hexk_enum_util #(
     type E = hexk_enum_util_none_e
 );
 

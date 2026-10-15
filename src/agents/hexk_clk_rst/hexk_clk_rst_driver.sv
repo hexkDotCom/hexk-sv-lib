@@ -77,6 +77,8 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
          HEXK_CLK_RST_CLOCK: drive_clock(item);
          HEXK_CLK_RST_STOP:  stop_clock(item);
          HEXK_CLK_RST_START: start_clock();
+         // Not reached while hexk_clk_rst_op_e has four values in two bits; a value added later without a branch here
+         // is reported.
          default: begin
             `uvm_error(
                 "HEXK_CLK_RST_ILLEGAL", $sformatf(
@@ -90,7 +92,7 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
       int unsigned hold_cycles = item.hold_cycles;
       bit          sync_assert = item.sync_assert;
       bit          sync_release = item.sync_release;
-      if (!vif.is_running() && (hold_cycles != 0 || sync_assert || sync_release)) begin
+      if (!vif.run_requested() && (hold_cycles != 0 || sync_assert || sync_release)) begin
          `uvm_error("HEXK_CLK_RST_STOPPED",
                     $sformatf("the clock is stopped, but the reset item needs rising edges (%s); they are left out",
                               item.convert2string()))
@@ -129,16 +131,17 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
       end
       vif.set_clock(item.period_ps, hexk_clk_rst_agent_cfg::high_time_ps(item.period_ps, item.duty_percent),
                     item.jitter_ps);
-      status.set_clock(item.period_ps, item.duty_percent, item.jitter_ps);
-      `uvm_info("HEXK_CLK_RST_CLOCK", $sformatf("clock set: %s", item.convert2string()), UVM_MEDIUM)
-      if (vif.is_running()) begin
+      // The status tells the clock that is driven: a running clock changes at its next rising edge.
+      if (vif.run_requested()) begin
          vif.wait_clks(1);
       end
+      status.set_clock(item.period_ps, item.duty_percent, item.jitter_ps);
+      `uvm_info("HEXK_CLK_RST_CLOCK", $sformatf("clock set: %s", item.convert2string()), UVM_MEDIUM)
    endtask : drive_clock
 
    // Stops the clock; with a hold time it starts the clock again after that time.
    local task stop_clock(hexk_clk_rst_item item);
-      if (vif.is_running()) begin
+      if (vif.run_requested()) begin
          vif.request_run(1'b0);
          vif.wait_stopped();
          `uvm_info("HEXK_CLK_RST_CLOCK", "clock stopped", UVM_MEDIUM)
@@ -151,7 +154,7 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
 
    // Starts a clock that is stopped; done at its first rising edge.
    local task start_clock();
-      if (!vif.is_running()) begin
+      if (!vif.run_requested()) begin
          vif.request_run(1'b1);
          `uvm_info("HEXK_CLK_RST_CLOCK", "clock started", UVM_MEDIUM)
          vif.wait_clks(1);

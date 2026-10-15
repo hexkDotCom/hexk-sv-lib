@@ -28,7 +28,7 @@
 class hexk_regex;
 
    // How a filter matches one of its expressions.
-   typedef enum {
+   typedef enum bit [2:0] {
       HEXK_REGEX_NOT_GIVEN,
       HEXK_REGEX_BY_UVM,
       HEXK_REGEX_CONTAINS,

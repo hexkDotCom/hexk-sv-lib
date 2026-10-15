@@ -8,7 +8,8 @@
 // that never comes. The global timeout of 100 us would end the test much later; the
 // inactivity limit of 200 ns ends it 200 ns after the last heartbeat, with a fatal that
 // names the busy scoreboard and the last heartbeat of the driver.
-// Run it with +hexk_timeout=1us to see the global timeout from the command line.
+// Run it with +hexk_timeout=250ns to see the global timeout from the command line: it ends
+// the test before the inactivity limit does, at 300 ns.
 // Needs UVM and src/uvm/hexk_uvm.f.
 
 `include "hexk_macros.svh"

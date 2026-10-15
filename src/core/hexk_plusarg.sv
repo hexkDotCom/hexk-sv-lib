@@ -24,7 +24,7 @@
 virtual class hexk_plusarg;
 
    // How a plusarg appears on the command line: not at all, as +name, or as +name=<value>.
-   typedef enum {
+   typedef enum bit [1:0] {
       HEXK_PLUSARG_ABSENT,
       HEXK_PLUSARG_BARE,
       HEXK_PLUSARG_VALUE

@@ -30,18 +30,23 @@ class hexk_delay_analysis_fifo #(
 ) extends uvm_tlm_analysis_fifo #(T) implements hexk_objectable;
 
    // Time in picoseconds after which a written item becomes visible; used for an item when latency_cycles is 0.
-   longint unsigned       latency_ps          = 0;
+   longint unsigned latency_ps     = 0;
 
    // Number of clock events after which a written item becomes visible; 0 selects latency_ps.
-   int unsigned           latency_cycles      = 0;
+   int unsigned     latency_cycles = 0;
 
-   // The items that are not visible yet, oldest first, when each was written, and when it
-   // becomes visible: at a time in picoseconds, or at a count of clock events.
-   local T                waiting_items  [$];
-   local longint unsigned written_times  [$];
-   local bit              waits_for_cycle[$];
-   local longint unsigned due_times      [$];
-   local longint unsigned due_cycles     [$];
+   // An item that is not visible yet: when it was written, and when it becomes visible, at a time in picoseconds
+   // (by_cycles 0) or at a count of clock events (by_cycles 1).
+   typedef struct {
+      T                item;
+      realtime         written;
+      bit              by_cycles;
+      longint unsigned due_ps;
+      longint unsigned due_cycles;
+   } waiting_t;
+
+   // The items that are not visible yet, oldest first.
+   local waiting_t        waiting        [$];
 
    // The clock event, whether one was given, and how many of its triggers have been seen.
    // The count has 64 bits: with any latency_cycles, the count at which an item is due does not wrap.
@@ -63,6 +68,11 @@ class hexk_delay_analysis_fifo #(
 
    `uvm_component_param_utils(hexk_delay_analysis_fifo#(T))
 
+   // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
+   virtual function string get_type_name();
+      return "hexk_delay_analysis_fifo";
+   endfunction : get_type_name
+
    // Creates the FIFO; without a latency it behaves like uvm_tlm_analysis_fifo.
    function new(string name, uvm_component parent = null);
       super.new(name, parent);
@@ -76,13 +86,14 @@ class hexk_delay_analysis_fifo #(
 
    // Number of items that were written and are not visible yet.
    function int unsigned num_in_flight();
-      return waiting_items.size();
+      return waiting.size();
    endfunction : num_in_flight
 
    // UVM FIFO method behind write() and put(): keeps the item aside until its delay is over.
    virtual function bit try_put(input T t);
       bit              by_cycles = (latency_cycles != 0);
       longint unsigned delay_ps = by_cycles ? 0 : latency_ps;
+      waiting_t        entry;
       if (by_cycles && !has_clock) begin
          if (!clock_reported) begin
             `uvm_error("HEXK_DELAY_FIFO_CLOCK",
@@ -94,14 +105,16 @@ class hexk_delay_analysis_fifo #(
          by_cycles = 0;
       end
       // No delay and nothing ahead in the queue: the item is visible at once.
-      if (!by_cycles && delay_ps == 0 && waiting_items.size() == 0) begin
+      if (!by_cycles && delay_ps == 0 && waiting.size() == 0) begin
          return super.try_put(t);
       end
-      waiting_items.push_back(t);
-      written_times.push_back($time);
-      waits_for_cycle.push_back(by_cycles);
-      due_times.push_back($time + delay_ps);
-      due_cycles.push_back(cycle_count + 64'(latency_cycles));
+      entry.item       = t;
+      entry.written    = $realtime;
+      entry.by_cycles  = by_cycles;
+      // A due time after hexk_wait_util::LAST_PS never comes: it is the largest time, which is never reached.
+      entry.due_ps     = hexk_wait_util::ends_after_last(delay_ps, $time) ? ~64'd0 : $time + delay_ps;
+      entry.due_cycles = cycle_count + 64'(latency_cycles);
+      waiting.push_back(entry);
       ->item_written;
       return 1;
    endfunction : try_put
@@ -114,11 +127,7 @@ class hexk_delay_analysis_fifo #(
 
    // UVM FIFO method: empties the FIFO and drops the items that are not visible yet.
    virtual function void flush();
-      waiting_items.delete();
-      written_times.delete();
-      waits_for_cycle.delete();
-      due_times.delete();
-      due_cycles.delete();
+      waiting.delete();
       flush_count++;
       ->flushed;
       super.flush();
@@ -126,16 +135,13 @@ class hexk_delay_analysis_fifo #(
 
    // hexk_objectable: 1 while items are waiting for the end of their delay or are visible and not yet read.
    virtual function bit is_busy();
-      return waiting_items.size() != 0 || used() != 0;
+      return waiting.size() != 0 || used() != 0;
    endfunction : is_busy
 
    // hexk_objectable: how many items are waiting and how many are visible and not yet read.
    virtual function string busy_reason();
-      return $sformatf(
-          "%0d items are waiting for the end of their delay, %0d are visible and not yet read",
-          waiting_items.size(),
-          used()
-      );
+      return $sformatf("%0d items are waiting for the end of their delay, %0d are visible and not yet read",
+                       waiting.size(), used());
    endfunction : busy_reason
 
    // UVM callback: counts the clock events and moves the items into the FIFO when their delay is over.
@@ -156,12 +162,13 @@ class hexk_delay_analysis_fifo #(
          @(clock);
          cycle_count++;
          // The newest items are at the end of the queue.
-         for (int i = waiting_items.size() - 1; i >= 0; i--) begin
-            if (written_times[i] != $time) begin
+         for (int i = waiting.size() - 1; i >= 0; i--) begin
+            // $realtime and not $time: it tells time steps apart that are less than 1 ps apart.
+            if (waiting[i].written != $realtime) begin
                break;
             end
-            if (waits_for_cycle[i]) begin
-               due_cycles[i]++;
+            if (waiting[i].by_cycles) begin
+               waiting[i].due_cycles++;
             end
          end
          ->cycle_counted;
@@ -172,34 +179,36 @@ class hexk_delay_analysis_fifo #(
    // A flush ends the wait at once, so that an item written after it does not wait for the delay of a dropped one.
    local task release_items();
       int unsigned flushes;
-      T            item;
+      waiting_t    entry;
       forever begin
-         while (waiting_items.size() == 0) begin
+         while (waiting.size() == 0) begin
             @(item_written);
          end
          flushes = flush_count;
-         if (waits_for_cycle[0]) begin
-            while (flushes == flush_count && cycle_count < due_cycles[0]) begin
+         if (waiting[0].by_cycles) begin
+            while (flushes == flush_count && cycle_count < waiting[0].due_cycles) begin
                @(cycle_counted or flushed);
             end
-         end else if ($time < due_times[0]) begin
-            // This thread has no other children, so "disable fork" ends only the branch that lost.
+         end else if ($time < waiting[0].due_ps) begin
+            // The delay through hexk_wait_util, where it is in picoseconds whatever T is (hexk_wait_util::wait_ps). The
+            // flush is waited for as a changed count, which a flush between the start of the two branches cannot
+            // slip past as it could past an event. The outer fork keeps "disable fork" to these two branches.
             fork
-               #(due_times[0] - $time);
-               @(flushed);
-            join_any
-            disable fork;
+               begin
+                  fork
+                     hexk_wait_util::wait_ps(waiting[0].due_ps - $time);
+                     wait (flush_count != flushes);
+                  join_any
+                  disable fork;
+               end
+            join
          end
          // A flush during the wait removed the item.
          if (flushes != flush_count) begin
             continue;
          end
-         item = waiting_items.pop_front();
-         void'(written_times.pop_front());
-         void'(waits_for_cycle.pop_front());
-         void'(due_times.pop_front());
-         void'(due_cycles.pop_front());
-         void'(super.try_put(item));
+         entry = waiting.pop_front();
+         void'(super.try_put(entry.item));
       end
    endtask : release_items
 

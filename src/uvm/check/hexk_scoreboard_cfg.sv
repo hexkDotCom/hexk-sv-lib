@@ -20,10 +20,11 @@
 `define HEXK_SCOREBOARD_CFG_SV
 
 // How a hexk_scoreboard pairs an actual item with an expected one.
-typedef enum {
+typedef enum bit [1:0] {
    // The oldest expected item of the stream.
    HEXK_SB_IN_ORDER,
-   // An expected item with the same key that compares equal, the oldest such one.
+   // The oldest expected item with the same key for which the scoreboard's is_partner() is 1 (by default: that
+   // compares equal); when there is none, the oldest with that key, or with allow_unexpected none.
    HEXK_SB_OUT_OF_ORDER,
    // The oldest expected item with the same key.
    HEXK_SB_IN_ORDER_PER_KEY
@@ -44,10 +45,13 @@ class hexk_scoreboard_cfg extends uvm_object;
    int unsigned     max_outstanding      = 0;
 
    // Longest time in picoseconds between an expected item and the actual item it is matched with; a pair that
-   // took longer is an error at the moment it is matched. 0 means no limit. This is no deadline: an expected
-   // item that never gets its actual item is reported in the check phase, and a watchdog ends a test that
-   // waits for it.
+   // took longer is an error at the moment it is matched. 0 means no limit. This is no deadline: max_wait_ps is.
    longint unsigned max_latency_ps       = 0;
+
+   // Longest time in picoseconds that an item may wait in the scoreboard for its partner, from its write; an
+   // item that waits longer is an error at that moment and is dropped, so that it does not keep the phase
+   // alive. 0 means no limit. Read in the build phase of the scoreboard.
+   longint unsigned max_wait_ps          = 0;
 
    // When 1, an actual item may come before its expected item and waits for it; when 0 that is an error.
    bit              allow_unexpected     = 0;
@@ -76,12 +80,13 @@ class hexk_scoreboard_cfg extends uvm_object;
    function string convert2string();
       // Two calls with literal formats: Verilator 5.046 garbles $sformatf with a format that is a concatenation.
       string sizes = $sformatf(
-          "mode=%s num_streams=%0d max_errors=%0d max_outstanding=%0d max_latency_ps=%0d",
+          "mode=%s num_streams=%0d max_errors=%0d max_outstanding=%0d max_latency_ps=%0d max_wait_ps=%0d",
           mode.name(),
           num_streams,
           max_errors,
           max_outstanding,
-          max_latency_ps
+          max_latency_ps,
+          max_wait_ps
       );
       return {
          sizes,
@@ -110,6 +115,7 @@ class hexk_scoreboard_cfg extends uvm_object;
       max_errors           = other.max_errors;
       max_outstanding      = other.max_outstanding;
       max_latency_ps       = other.max_latency_ps;
+      max_wait_ps          = other.max_wait_ps;
       allow_unexpected     = other.allow_unexpected;
       hold_objection       = other.hold_objection;
       flush_on_reset       = other.flush_on_reset;

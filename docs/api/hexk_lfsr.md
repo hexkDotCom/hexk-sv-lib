@@ -40,7 +40,7 @@ function longint unsigned period();
 <!-- HEXK_GEN:END api -->
 
 The form is `hexk_lfsr::HEXK_LFSR_GALOIS` (default) or `hexk_lfsr::HEXK_LFSR_FIBONACCI`, of
-type `hexk_lfsr::kind_e`.
+type `hexk_lfsr::kind_e` (`enum bit`).
 
 ## 4. Behaviour and invariants
 

@@ -22,7 +22,7 @@
 `define HEXK_DELAY_CFG_SV
 
 // Kind of delays a hexk_delay produces.
-typedef enum {
+typedef enum bit [2:0] {
    // Always 0.
    HEXK_DELAY_NONE,
    // Always fixed_value.

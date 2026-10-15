@@ -190,7 +190,7 @@ module hexk_util_macros_unit_test;
 
    `SVTEST(an_indexed_imp_has_the_type_name_of_its_class)
       `FAIL_UNLESS_STR_EQUAL(collector.stream_imps[0].get_type_name(), "hexk_analysis_imp_indexed_stream")
-      `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", collector.stream_imps[2].index), "2")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", collector.stream_imps[2].get_index()), "2")
    `SVTEST_END
 
    `SVTEST(a_virtual_interface_that_was_set_is_found)

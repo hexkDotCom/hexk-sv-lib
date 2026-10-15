@@ -24,4 +24,4 @@ subdirectories, each with a README that names the contracts.
 | `check/` | scoreboard |
 | `mem/` | memory model |
 | `cov/` | coverage helpers |
-| `csr/` | empty |
+| `csr/` | register accesses and checks for any `uvm_reg_block` |

@@ -9,9 +9,9 @@ Version of hexk-sv-lib as preprocessor defines.
 Use it to print the library version in a banner or log, and to make code that must work with
 several library versions adapt at compile or elaboration time.
 
-Do not use it to detect a single module: per-module feature-test defines
-(`HEXK_HAS_<MODULE>`) are not generated yet. Do not parse `HEXK_VERSION_STR` at run time; the
-three numeric defines exist so that nobody has to.
+To find out whether a release has a module, test its define `HEXK_HAS_<MODULE>`, such as
+`` `ifdef HEXK_HAS_CSR_UTIL ``, rather than a version number. Do not parse
+`HEXK_VERSION_STR` at run time; the three numeric defines exist so that nobody has to.
 
 ## 3. API
 
@@ -41,6 +41,8 @@ From `src/core/hexk_version.svh`:
 `define HEXK_HAS_COVERAGE
 // Defined when hexk_crc is part of this release.
 `define HEXK_HAS_CRC
+// Defined when hexk_csr_util is part of this release.
+`define HEXK_HAS_CSR_UTIL
 // Defined when hexk_delay is part of this release.
 `define HEXK_HAS_DELAY
 // Defined when hexk_delay_analysis_fifo is part of this release.

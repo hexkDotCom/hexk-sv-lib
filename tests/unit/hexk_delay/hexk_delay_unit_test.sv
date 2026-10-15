@@ -42,6 +42,7 @@ module hexk_delay_unit_test;
    hexk_delay          delay;
    event               clock_tick;
    realtime            start_time;
+   string              outcome;
 
    function automatic void build();
       svunit_ut = new(name);
@@ -235,6 +236,23 @@ module hexk_delay_unit_test;
    function automatic string elapsed();
       return $sformatf("%0.0fns", ($realtime - start_time) / 1ns);
    endfunction : elapsed
+
+   // wait_time(unit_ps), given 100 ns: outcome is "returned" or "waiting".
+   task automatic wait_time_for_100ns(longint unsigned unit_ps);
+      outcome = "waiting";
+      fork
+         begin
+            fork
+               begin
+                  delay.wait_time(unit_ps);
+                  outcome = "returned";
+               end
+               #100ns;
+            join_any
+            disable fork;
+         end
+      join
+   endtask : wait_time_for_100ns
 
    // Triggers clock_tick every 10 ns for a while.
    task automatic start_clock();
@@ -500,6 +518,12 @@ module hexk_delay_unit_test;
       set_mode(HEXK_DELAY_NONE);
       delay.wait_time(`hexk_ps(2ns));
       `FAIL_UNLESS_STR_EQUAL(elapsed(), "10ns")
+   `SVTEST_END
+
+   `SVTEST(a_wait_time_past_the_largest_number_does_not_wrap_around)
+      set_constant(4);
+      wait_time_for_100ns(64'h4000_0000_0000_0000);
+      `FAIL_UNLESS_STR_EQUAL(outcome, "waiting")
    `SVTEST_END
 
    `SVTEST(wait_cycles_waits_for_that_many_events)

@@ -53,6 +53,40 @@ module hexk_valid_ready_unit_test;
    typedef hexk_valid_ready_random_seq#(WIDTH) hexk_ut_random_seq_t;
    typedef hexk_valid_ready_data_seq#(WIDTH) hexk_ut_data_seq_t;
 
+   // An item of a derived class with a random field of its own, for a factory override of the item.
+   class hexk_ut_tagged_item extends hexk_valid_ready_item #(WIDTH);
+      rand bit [7:0] tag;
+
+      constraint tag_cstr {tag == 8'hA5;}
+
+      `uvm_object_utils(hexk_ut_tagged_item)
+
+      function new(string item_name = "hexk_ut_tagged_item");
+         super.new(item_name);
+      endfunction : new
+   endclass : hexk_ut_tagged_item
+
+   // A derived item registered with the factory by hand, without the macros: its get_object_type() is that of the
+   // base class.
+   class hexk_ut_bare_item extends hexk_valid_ready_item #(WIDTH);
+      typedef uvm_object_registry#(
+          .T    (hexk_ut_bare_item),
+          .Tname("hexk_ut_bare_item")
+      ) type_id;
+
+      rand bit [7:0] tag;
+
+      constraint tag_cstr {tag == 8'h5A;}
+
+      function new(string item_name = "hexk_ut_bare_item");
+         super.new(item_name);
+      endfunction : new
+
+      static function type_id get_type();
+         return type_id::get();
+      endfunction : get_type
+   endclass : hexk_ut_bare_item
+
    // A delay cfg of a derived class, to see that a clone keeps the class.
    class hexk_ut_delay_cfg extends hexk_delay_cfg;
       `uvm_object_utils(hexk_ut_delay_cfg)
@@ -455,6 +489,39 @@ module hexk_valid_ready_unit_test;
       return $sformatf("%0d %s", member.is_busy(), member.busy_reason());
    endfunction : busy
 
+   // Makes the factory give hexk_ut_tagged_item for the item of the agent, or ends that by overriding the item
+   // with itself, which UVM reports as the warning TYPDUP.
+   function automatic void override_item(bit on);
+      if (on) begin
+         hexk_ut_item_t::type_id::set_type_override(hexk_ut_tagged_item::get_type());
+      end else begin
+         hexk_ut_item_t::type_id::set_type_override(hexk_ut_item_t::get_type());
+      end
+   endfunction : override_item
+
+   // Makes the factory give hexk_ut_bare_item for the item of the agent; override_item(0) ends that.
+   function automatic void override_with_bare_item();
+      hexk_ut_item_t::type_id::set_type_override(hexk_ut_bare_item::get_type());
+   endfunction : override_with_bare_item
+
+   // "<word> <tag>" of the last item of the data sequence; "-" when it is no hexk_ut_bare_item.
+   function automatic string last_bare_tag();
+      hexk_ut_bare_item derived;
+      if (!$cast(derived, data_seq.req)) begin
+         return "-";
+      end
+      return $sformatf("%h %h", derived.data, derived.tag);
+   endfunction : last_bare_tag
+
+   // "<word> <tag>" of the last item of the data sequence; "-" when it is no hexk_ut_tagged_item.
+   function automatic string last_tag();
+      hexk_ut_tagged_item derived;
+      if (!$cast(derived, data_seq.req)) begin
+         return "-";
+      end
+      return $sformatf("%h %h", derived.data, derived.tag);
+   endfunction : last_tag
+
    // What the last item of the data sequence holds: "<word> <wait_cycles> <aborted>".
    function automatic string last_item();
       return $sformatf("%h %0d %0b", data_seq.req.data, data_seq.req.wait_cycles, data_seq.req.aborted);
@@ -644,6 +711,47 @@ module hexk_valid_ready_unit_test;
       `FAIL_UNLESS_STR_EQUAL(seen_words(), "a1(0) a2(0) a3(0) ")
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0b", seq_done), "1")
       `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 0")
+   `SVTEST_END
+
+   `SVTEST(the_data_sequence_randomizes_an_item_of_a_derived_class)
+      catcher.expect_msg("^TYPDUP$", UVM_WARNING, "", 0, -1, UVM_INFO);
+      hand_ready(1);
+      start_initiator();
+      override_item(1);
+      send(initiator, "e1 e2");
+      step(4);
+      override_item(0);
+      `FAIL_UNLESS_STR_EQUAL(last_tag(), "e2 a5")
+      `FAIL_UNLESS_STR_EQUAL(words, "e1 e2 ")
+      send(initiator, "e3");
+      step(3);
+      `FAIL_UNLESS_STR_EQUAL(last_tag(), "-")
+      `FAIL_UNLESS_STR_EQUAL(words, "e1 e2 e3 ")
+   `SVTEST_END
+
+   `SVTEST(the_data_sequence_randomizes_a_derived_class_registered_without_macros)
+      catcher.expect_msg("^TYPDUP$", UVM_WARNING, "", 0, -1, UVM_INFO);
+      hand_ready(1);
+      start_initiator();
+      override_with_bare_item();
+      send(initiator, "e4");
+      step(3);
+      override_item(0);
+      `FAIL_UNLESS_STR_EQUAL(last_bare_tag(), "e4 5a")
+   `SVTEST_END
+
+   `SVTEST(an_override_set_while_the_data_sequence_runs_counts_from_its_next_start)
+      catcher.expect_msg("^TYPDUP$", UVM_WARNING, "", 0, -1, UVM_INFO);
+      hand_ready(0);
+      start_initiator();
+      send(initiator, "e5 e6");
+      step(2);
+      override_item(1);
+      hand_ready(1);
+      step(4);
+      override_item(0);
+      `FAIL_UNLESS_STR_EQUAL(last_tag(), "-")
+      `FAIL_UNLESS_STR_EQUAL(words, "e5 e6 ")
    `SVTEST_END
 
    `SVTEST(the_delay_of_the_cfg_puts_gaps_before_valid)

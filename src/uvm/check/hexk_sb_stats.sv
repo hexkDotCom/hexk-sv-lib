@@ -4,10 +4,10 @@
 // hexk_sb_stats.sv
 //
 // Counters of one stream of a hexk_scoreboard, or of all its streams together: how many
-// items were written, matched, mismatched, unexpected, dropped by a flush or left over, and
-// the latency between an expected item and its actual item. hexk_scoreboard::get_stats()
-// returns one. A test uses it for the positive proof that work happened (guide rule TST-6):
-// no errors and a matched count above zero.
+// items were written, matched, mismatched, unexpected, dropped by a flush, timed out or left
+// over, and the latency between an expected item and its actual item.
+// hexk_scoreboard::get_stats() returns one. A test uses it for the positive proof that work
+// happened (guide rule TST-6): no errors and a matched count above zero.
 //
 //! @module    hexk_scoreboard
 //! @since     0.7.0
@@ -41,6 +41,9 @@ class hexk_sb_stats;
 
    // Matched pairs whose latency was above max_latency_ps.
    int unsigned late;
+
+   // Waiting items that were dropped because they waited longer than max_wait_ps.
+   int unsigned timed_out;
 
    // Expected and actual items that were still waiting in check_phase.
    int unsigned leftover_expected;
@@ -87,6 +90,7 @@ class hexk_sb_stats;
       unexpected += other.unexpected;
       dropped += other.dropped;
       late += other.late;
+      timed_out += other.timed_out;
       leftover_expected += other.leftover_expected;
       leftover_actual += other.leftover_actual;
       latency_sum_ps += other.latency_sum_ps;
@@ -104,7 +108,7 @@ class hexk_sb_stats;
           dropped,
           late,
           $sformatf(
-              "%0d expected and %0d actual left over", leftover_expected, leftover_actual
+              "%0d timed out, %0d expected and %0d actual left over", timed_out, leftover_expected, leftover_actual
           )
       );
    endfunction : convert2string

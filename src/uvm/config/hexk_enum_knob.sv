@@ -15,27 +15,39 @@
 //! @module    hexk_knobs
 //! @since     0.7.0
 //! @stability experimental
-//! @emits     HEXK_KNOBS_VALUE:error HEXK_KNOBS_TYPE:error
+//! @emits     HEXK_KNOBS_VALUE:error HEXK_KNOBS_TYPE:error HEXK_KNOBS_ENUM:error
 //! @plusargs  (none)
 
 `ifndef HEXK_ENUM_KNOB_SV
 `define HEXK_ENUM_KNOB_SV
 
-class hexk_enum_knob #(
+virtual class hexk_enum_knob #(
     type E = hexk_core_pkg::hexk_enum_util_none_e
 );
 
    // The member of E for each command-line text; filled when first needed.
    local static E values[string];
 
-   // Defines the knob; its legal values are the texts of all members of E.
+   // Defines the knob; its legal values are the texts of all members of E. Two members with the same text, such
+   // as MODE_A and MODE_a, could not be told apart on the command line: the error HEXK_KNOBS_ENUM, and the knob
+   // is not defined.
    static function void add(string name, E default_value, string help_text);
       hexk_knobs knobs = hexk_knobs::get();
       E          members                   [$];
       string     legal                     [$];
+      bit        seen                      [string];
       hexk_enum_util#(E)::all(members);
       foreach (members[i]) begin
-         legal.push_back(text_of(members[i]));
+         string text = text_of(members[i]);
+         if (seen.exists(text)) begin
+            `hexk_static_error(
+                "HEXK_KNOBS_ENUM",
+                $sformatf("knob '%s' is not defined: two members of %s have the text '%s' on the command line", name,
+                          $typename(E), text))
+            return;
+         end
+         seen[text] = 1;
+         legal.push_back(text);
       end
       knobs.add_enum_str(name, text_of(default_value), legal, help_text, $typename(E));
    endfunction : add
@@ -82,7 +94,8 @@ class hexk_enum_knob #(
       if (!knobs.has(name) || defined_as == $typename(E)) begin
          return 1;
       end
-      // An if and not ?:, which pads the shorter of two strings on one tool.
+      // An if and not ?: of two texts: ?: of two literals is a packed value, in which the shorter one is padded
+      // with NULs.
       if (defined_as.len() == 0) begin
          holds = "it holds a plain string";
       end

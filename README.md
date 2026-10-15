@@ -46,7 +46,8 @@ example in `examples/` and a contract in [docs/api/](docs/api/).
 - **UVM utilities:** check macros, report server and catcher, waits with a time limit, regex
   filters, end-of-test registry, objection aggregator, watchdog, knobs, delays, an optional
   base test, unique IDs, value wrappers, a delayed analysis FIFO, a scoreboard, a sparse
-  memory model, HDL access by path, coverage helpers.
+  memory model, register accesses and checks for any register model, HDL access by path,
+  coverage helpers.
 - **Agents:** clock and reset, valid/ready, a pins interface.
 
 Every global symbol starts with `hexk_`, every define and message ID with `HEXK_`, and every
@@ -98,13 +99,13 @@ Then pick a module in [docs/api/](docs/api/) and start from its minimal example 
 
 The library comes with its own tests: unit tests per module, every example, and a smoke
 testbench (a small UVM testbench that uses the library the way a project does). Results for
-version 0.7.0:
+version 0.8.0:
 
 | Simulator | UVM | Unit tests | Examples | Smoke testbench |
 |---|---|---|---|---|
-| Verilator 5.046 | none (core) and 2020.3.1 | 626 of 626 | elaborated with slang | elaborated with slang |
-| Questa 2024.1 | 1.2 and 2020.3.1 | 680 of 680 with each | 35 of 35 run with each | 3 of 3 tests with each |
-| VCS X-2025.06 | 1.2 and 2020.3.1 | 680 of 680 with each | 35 of 35 run with each | 3 of 3 tests with each |
+| Verilator 5.046 | none (core) and 2020.3.1 | 693 of 693 | elaborated with slang | elaborated with slang |
+| Questa 2024.1 | 1.2 and 2020.3.1 | 748 of 748 with each | 36 of 36 run with each | 3 of 3 tests with each |
+| VCS X-2025.06 | 1.2 and 2020.3.1 | 748 of 748 with each | 36 of 36 run with each | 3 of 3 tests with each |
 | Xcelium | | not run | not run | not run |
 
 Everything is written to lint, compile and simulate on Verilator. Where Verilator 5.046

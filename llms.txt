@@ -1,10 +1,11 @@
 # hexk-sv-lib
 
 > Vendor-neutral SystemVerilog/UVM utility library: checks, reporting, end-of-test logic,
-> delays, scoreboard, memory model, string helpers, clock/reset. Version 0.7.0, experimental:
-> APIs may still change before 1.0. Only the modules listed below exist. Every global symbol
-> starts with `hexk_` (defines and message IDs with `HEXK_`, plusargs of the library with
-> `+hexk_`; the optional base test also defines the knobs `+perf_mode` and `+coverage`).
+> delays, scoreboard, memory model, register accesses, string helpers, clock/reset. Version
+> 0.8.0, experimental: APIs may still change before 1.0. Only the modules listed below exist.
+> Every global symbol starts with `hexk_` (defines and message IDs with `HEXK_`, plusargs of
+> the library with `+hexk_`; the optional base test also defines the knobs `+perf_mode` and
+> `+coverage`).
 
 Each module has one contract
 document with a fixed layout: summary, when to use, API, behaviour and invariants,
@@ -62,6 +63,8 @@ configuration, messages emitted, minimal example, anti-patterns, status.
   by key or in order per key, streams, leftovers, latency, statistics, objection handling
 - [hexk_mem_model](docs/api/hexk_mem_model.md): sparse memory with byte enables, endianness,
   policies for reads of unwritten bytes, address range, $readmemh files
+- [hexk_csr_util](docs/api/hexk_csr_util.md): register accesses with the status checked, read
+  checks, spin-waits, reset value check, bit-bash and exclusions for any uvm_reg_block
 - [hexk_hdl_macros](docs/api/hexk_hdl_macros.md): read, deposit, force and release of a signal
   by its HDL path, with the return code checked and reported
 - [hexk_coverage](docs/api/hexk_coverage.md): coverage of a valid/ready handshake (states and

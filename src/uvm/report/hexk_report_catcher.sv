@@ -9,8 +9,9 @@
 // every message the test provokes on purpose and check_expectations() in the test's
 // check_phase. A message matches a rule when it has the rule's severity, its ID matches the
 // rule's regular expression and, if one is given, its text matches the text expression. The
-// first rule that matches wins. demote() changes the severity of matching messages without
-// counting them. Messages that match no rule pass through unchanged.
+// first rule that matches wins. demote() changes the severity of matching messages; its rule
+// counts them for get_count(), but check_expectations() does not check that count. Messages
+// that match no rule pass through unchanged.
 // Expressions are those of hexk_regex: a match anywhere counts, anchor with ^ and $.
 //
 //! @module    hexk_report_catcher

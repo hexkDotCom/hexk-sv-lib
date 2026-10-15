@@ -252,6 +252,7 @@ module hexk_math_unit_test;
       `FAIL_UNLESS_STR_EQUAL(hex(hexk_math::mask(MAX_WIDTH + 1)), hexk_str::repeat_str("f", HEX_DIGITS))
       `FAIL_UNLESS_STR_EQUAL(hex(hexk_math::reverse_bits('h1, MAX_WIDTH + 1)), high_hex("8", HEX_DIGITS - 1))
       `FAIL_UNLESS_STR_EQUAL(hex(hexk_math::swap_bytes('h01, MAX_WIDTH / 8 + 1)), high_hex("1", HEX_DIGITS - 2))
+      `FAIL_UNLESS_STR_EQUAL(hex(hexk_math::swap_bytes('h01, 32'h2000_0000)), high_hex("1", HEX_DIGITS - 2))
    `SVTEST_END
 
    `SVUNIT_TESTS_END
