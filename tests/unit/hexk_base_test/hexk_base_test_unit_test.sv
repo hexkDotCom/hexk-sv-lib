@@ -22,6 +22,7 @@
 module hexk_base_test_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
+   import hexk_core_pkg::hexk_str;
    import hexk_uvm_pkg::hexk_base_test;
    import hexk_uvm_pkg::hexk_check_stats;
    import hexk_uvm_pkg::hexk_eot_registry;
@@ -47,6 +48,10 @@ module hexk_base_test_unit_test;
          hook_log = {hook_log, "knobs "};
          knobs.add_int("ut_block_items", 5, "items of the block test");
       endfunction : define_knobs
+
+      virtual function void create_cfg();
+         hook_log = {hook_log, "create "};
+      endfunction : create_cfg
 
       virtual function void modify_cfg();
          hook_log                     = {hook_log, "cfg "};
@@ -98,6 +103,7 @@ module hexk_base_test_unit_test;
       catcher.expect_msg("^HEXK_TEST_NO_CHECKS$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_TEST_CHECK_FAILED$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^UT_BASE_FAIL$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_TEST_WARNING$", UVM_ERROR, "", 0, -1, UVM_INFO);
       hexk_knobs::reset_for_test();
       hexk_check_stats::reset_for_test();
       saved_errors = server.get_severity_count(UVM_ERROR);
@@ -163,6 +169,64 @@ module hexk_base_test_unit_test;
       int unsigned value = 4;
       `hexk_check_eq(value, 3, "UT_BASE_FAIL")
    endfunction : run_failing_check
+
+   // What get_verdict() gives: "<1 when a hexk_base_test was built> <verdict>".
+   function automatic string verdict();
+      hexk_base_test::verdict_e found;
+      bit                       known = hexk_base_test::get_verdict(found);
+      return $sformatf("%0d %s", known, found.name());
+   endfunction : verdict
+
+   // A banner of banner_text() with the counts "c", its blocks shown as '#': "<number of lines> | <second line> |
+   // <last line>"; the first line is empty or the colour codes, the second the top row of the letters.
+   function automatic string banner(hexk_base_test::verdict_e found, bit color, int unsigned face = 0);
+      string text = hexk_base_test::banner_text(found, "c", color, face);
+      string lines[$];
+      hexk_str::split(hexk_str::replace(text, "\342\226\210", "#"), lines, "\n");
+      return $sformatf("%0d | %s | %s", lines.size(), lines[1], lines[lines.size()-1]);
+   endfunction : banner
+
+   // The colour codes at the start of a coloured banner and its face, the line before the last:
+   // "<codes> <face> <1 when a '#' is left>"; the face is picked modulo the number of faces.
+   function automatic string banner_edges(hexk_base_test::verdict_e found, int unsigned face);
+      string text = hexk_base_test::banner_text(found, "c", 1, face);
+      string lines[$];
+      hexk_str::split(text, lines, "\n");
+      return $sformatf(
+          "%s %s %0d",
+          text.substr(
+              0, 8
+          ),
+          hexk_str::replace(
+              lines[lines.size()-2], "\033[0m", ""
+          ),
+          hexk_str::contains(
+              text, "#"
+          )
+      );
+   endfunction : banner_edges
+
+   // Issues a warning with the given ID, as a component of the testbench would.
+   function automatic void warn(string id);
+      `uvm_warning(id, "a warning of the unit test")
+   endfunction : warn
+
+   // Number of HEXK_TEST_WARNING errors in this test.
+   function automatic string warning_errors();
+      return $sformatf("%0d", catcher.get_count("^HEXK_TEST_WARNING$"));
+   endfunction : warning_errors
+
+   // A test with fail_on_warnings set to policy that allows UT_ALLOWED and sees UT_ALLOWED and UT_UNEXPECTED:
+   // "<HEXK_TEST_WARNING errors> <unexpected warnings counted>".
+   function automatic string warnings_with_policy(bit policy);
+      test.fail_on_warnings = policy;
+      test.allow_warning("^UT_ALLOWED$");
+      test.build_phase(null);
+      warn("UT_ALLOWED");
+      warn("UT_UNEXPECTED");
+      test.report_phase(null);
+      return $sformatf("%s %0d", warning_errors(), test.warnings.num_unexpected());
+   endfunction : warnings_with_policy
 
    // Number of HEXK_TEST_CHECK_FAILED errors in this test.
    function automatic string check_failed_errors();
@@ -245,7 +309,7 @@ module hexk_base_test_unit_test;
 
    `SVTEST(the_hooks_are_called_in_order_and_modify_cfg_can_read_knobs)
       test.build_phase(null);
-      `FAIL_UNLESS_STR_EQUAL(test.hook_log, "overrides knobs cfg ")
+      `FAIL_UNLESS_STR_EQUAL(test.hook_log, "overrides knobs create cfg ")
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", test.knobs_readable_in_modify_cfg), "1")
    `SVTEST_END
 
@@ -313,6 +377,14 @@ module hexk_base_test_unit_test;
          "TEST FAILED (0 errors, 0 fatals, 3 checks executed, 1 failed without an error)")
    `SVTEST_END
 
+   `SVTEST(a_failed_check_that_reported_its_error_is_not_called_one_without_an_error)
+      test.build_phase(null);
+      run_checks(2);
+      run_failing_check();
+      pretend_errors(1);
+      `FAIL_UNLESS_STR_EQUAL(test.result_text(), "TEST FAILED (1 errors, 0 fatals, 3 checks executed)")
+   `SVTEST_END
+
    `SVTEST(a_failed_check_that_the_test_expects_lets_it_pass)
       test.build_phase(null);
       run_checks(2);
@@ -323,6 +395,56 @@ module hexk_base_test_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result_catcher.text, "TEST PASSED (0 errors, 0 fatals, 3 checks executed)")
       run_failing_check();
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", test.has_passed()), "0")
+   `SVTEST_END
+
+   `SVTEST(a_test_whose_final_phase_did_not_run_is_aborted)
+      test.build_phase(null);
+      run_checks(1);
+      `FAIL_UNLESS_STR_EQUAL(verdict(), "1 HEXK_TEST_ABORTED")
+      test.final_phase(null);
+      `FAIL_UNLESS_STR_EQUAL(verdict(), "1 HEXK_TEST_PASSED")
+   `SVTEST_END
+
+   `SVTEST(after_its_final_phase_a_test_with_errors_has_failed)
+      test.build_phase(null);
+      run_checks(1);
+      pretend_errors(1);
+      test.final_phase(null);
+      `FAIL_UNLESS_STR_EQUAL(verdict(), "1 HEXK_TEST_FAILED")
+   `SVTEST_END
+
+   `SVTEST(the_plain_banner_has_letters_of_hash_signs_and_the_line_with_the_counts)
+      `FAIL_UNLESS_STR_EQUAL(banner(hexk_base_test::HEXK_TEST_PASSED, 0),
+         "7 |     ######   #####  ####### ####### ####### ###### | SIMULATION PASSED (c)")
+      `FAIL_UNLESS_STR_EQUAL(banner(hexk_base_test::HEXK_TEST_FAILED, 0),
+         "7 |     #######  #####  ## ##      ####### ###### | SIMULATION FAILED (c)")
+      `FAIL_UNLESS_STR_EQUAL(banner(hexk_base_test::HEXK_TEST_ABORTED, 0),
+         "7 |      #####  ######   ######  ######  ######## ####### ###### | SIMULATION FAILED - ABORTED (c)")
+   `SVTEST_END
+
+   `SVTEST(the_colored_banner_has_blocks_a_face_and_resets_the_color)
+      `FAIL_UNLESS_STR_EQUAL(banner(hexk_base_test::HEXK_TEST_FAILED, 1, 13),
+         "8 |     #######  #####  ## ##      ####### ###### | SIMULATION FAILED (c)")
+      `FAIL_UNLESS_STR_EQUAL(banner_edges(hexk_base_test::HEXK_TEST_FAILED, 13), "\033[31m\033[1m (._.) 0")
+      `FAIL_UNLESS_STR_EQUAL(banner_edges(hexk_base_test::HEXK_TEST_PASSED, 14 + 9), "\033[32m\033[1m \342\234\214 0")
+      // 14 faces for a pass and 20 otherwise: the index wraps to the first one, whose last line is shown.
+      `FAIL_UNLESS_STR_EQUAL(banner_edges(hexk_base_test::HEXK_TEST_PASSED, 14),
+         "\033[32m\033[1m (\342\214\220\342\226\240_\342\226\240) 0")
+      `FAIL_UNLESS_STR_EQUAL(banner_edges(hexk_base_test::HEXK_TEST_ABORTED, 20),
+         "\033[31m\033[1m \302\257\\_(\343\203\204)_/\302\257 0")
+   `SVTEST_END
+
+   `SVTEST(build_phase_gives_the_test_a_global_catcher)
+      test.build_phase(null);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", test.catcher != null), "1")
+   `SVTEST_END
+
+   `SVTEST(with_fail_on_warnings_a_warning_that_was_not_allowed_is_an_error)
+      `FAIL_UNLESS_STR_EQUAL(warnings_with_policy(1), "1 1")
+   `SVTEST_END
+
+   `SVTEST(without_fail_on_warnings_warnings_are_counted_but_not_errors)
+      `FAIL_UNLESS_STR_EQUAL(warnings_with_policy(0), "0 1")
    `SVTEST_END
 
    `SVTEST(a_test_without_checks_passes_when_checks_are_not_required)

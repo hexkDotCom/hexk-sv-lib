@@ -22,6 +22,7 @@ rule MSG-8). If only the default UVM text is wanted, there is no need to install
 - `src/uvm/report/hexk_msg_listener.sv`
 - `src/uvm/report/hexk_report_cfg.sv`
 - `src/uvm/report/hexk_report_server.sv`
+- `src/uvm/report/hexk_warning_audit.sv`
 <!-- HEXK_GEN:END files -->
 
 <!-- HEXK_GEN:BEGIN api -->
@@ -89,6 +90,21 @@ function void execute_report_message(uvm_report_message report_message, string c
 // Prints UVM's summary and then the summary table of this server; with a file other than the default, the table is also written to that file.
 function void report_summarize(UVM_FILE file = `HEXK_UVM_SUMMARY_FILE);
 ```
+
+From `src/uvm/report/hexk_warning_audit.sv`:
+
+```systemverilog
+// Allows the warnings whose ID matches id_regex, an expression as hexk_regex takes it ("^ID$" for one ID).
+function void allow(string id_regex);
+// Number of warnings that were not allowed, since the start or the last clear().
+function int unsigned num_unexpected();
+// The unexpected warnings, one per line ("ID: message"), the first MAX_KEPT of them, then how many more came.
+function string unexpected_text();
+// Forgets the unexpected warnings; the allowed IDs stay.
+function void clear();
+// hexk_msg_listener: notes a warning unless its ID is allowed.
+virtual function void on_message(uvm_report_message msg);
+```
 <!-- HEXK_GEN:END api -->
 
 ## 4. Behaviour and invariants
@@ -97,7 +113,9 @@ Installing:
 
 - `hexk_report_server::install(cfg)` creates the server and makes it the report server of
   the simulation. Call it before `run_test()`. The severity and ID counts that UVM has kept
-  so far are carried over.
+  so far are carried over (`get_severity_count`, `get_id_count`). The counts by severity and
+  ID that `get_count()` and the summary table show, and the first error, start with the
+  install: a message from before it is in the counts of UVM only.
 - Without a cfg (`install()`), and on a server created directly, the layout is
   `HEXK_FMT_UVM`. A cfg created by the user starts with `HEXK_FMT_COMPACT`.
 - `set_cfg` takes a copy of the cfg, including the trigger lists, at that moment: a later
@@ -182,6 +200,11 @@ Counts, listeners, summary:
   counted by severity and ID; `get_count` reads a count.
 - Listeners are called for warnings, errors and fatals, in the order they were added, before
   the message is printed.
+- `hexk_warning_audit` is a listener for a test that wants a clean log: `allow(id_regex)`
+  allows warnings by their ID (`hexk_regex`), `num_unexpected()` counts the others,
+  `unexpected_text()` gives the first 20 as "ID: message" lines and the number of the rest,
+  `clear()` forgets them. It reports nothing itself; `hexk_base_test` reports what it
+  collected when `fail_on_warnings` is set.
 - At the end of the test UVM calls `report_summarize`; the server prints UVM's summary and
   then its own (`summary()`) as the info `HEXK_REPORT_SUMMARY`: one line per severity and
   ID from fatal to info, the five IDs with the most messages (digit runs replaced by `#`, so
@@ -216,10 +239,10 @@ Plusargs, read by `cfg.apply_plusargs()` only:
 
 | Plusarg | Effect |
 |---|---|
-| `+hexk_report_style=uvm\|compact\|custom` | sets `style` |
+| `+hexk_report_style=uvm\|compact\|custom` | sets `style`; another text, also an empty one, is the warning `HEXK_REPORT_CFG` and changes nothing |
 | `+hexk_report_fields=<f>,<f>,...` | sets `fields`; names are `severity`, `counter`, `time`, `file_line`, `id`, `context`, `message` |
-| `+hexk_report_time_unit=fs\|ps\|ns\|us\|ms\|s` | sets `time_unit`; another text is the warning `HEXK_REPORT_CFG` and changes nothing |
-| `+hexk_report_color` | sets `color`; `+hexk_report_color=0` clears it |
+| `+hexk_report_time_unit=fs\|ps\|ns\|us\|ms\|s` | sets `time_unit`; another text, also an empty one, is the warning `HEXK_REPORT_CFG` and changes nothing |
+| `+hexk_report_color` | sets `color`; `+hexk_report_color=0` clears it; a value that is not a bit value is the warning `HEXK_REPORT_CFG` and keeps `color` |
 | `+hexk_stacktrace=<trigger>,<trigger>,...` | adds to `stacktrace_triggers` |
 | `+hexk_marker=<trigger>,<trigger>,...` | adds to `marker_triggers` |
 

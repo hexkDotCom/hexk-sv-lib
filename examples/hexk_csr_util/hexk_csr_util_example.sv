@@ -39,7 +39,7 @@ module hexk_csr_util_example;
          address = value;
       endfunction : set_address
 
-      virtual task body();
+      task body();
          #10ns;
          if (rw_info.kind == UVM_WRITE) begin
             dut_regs[address] = 32'(rw_info.value[0]);

@@ -21,7 +21,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    MSG-8 MSG-9
-//! @emits     HEXK_REPORT_SUMMARY:info
+//! @emits     HEXK_REPORT_SUMMARY:info HEXK_REPORT_CFG:warning
 //! @plusargs  (none)
 
 `ifndef HEXK_REPORT_SERVER_SV
@@ -100,7 +100,7 @@ class hexk_report_server extends uvm_default_report_server;
 
    // Creates a server, gives it cfg (UVM layout when null) and makes it the report server of the simulation.
    static function hexk_report_server install(hexk_report_cfg cfg = null);
-      hexk_report_server server = hexk_report_server::type_id::create("hexk_report_server");
+      hexk_report_server server = hexk_report_server::type_id::create("server");
       if (cfg != null) begin
          server.set_cfg(cfg);
       end

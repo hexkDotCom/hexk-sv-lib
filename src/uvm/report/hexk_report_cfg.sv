@@ -109,11 +109,16 @@ class hexk_report_cfg extends uvm_object;
    // Overrides fields from the command line; see the plusarg table in docs/api/hexk_report_server.md.
    function void apply_plusargs();
       string items[$];
-      apply_style(hexk_plusarg::get_str("hexk_report_style", ""));
+      // A plusarg that is given, also with an empty value, is checked; one that is absent changes nothing.
+      if (hexk_plusarg::has("hexk_report_style")) begin
+         apply_style(hexk_plusarg::get_str("hexk_report_style", ""));
+      end
       hexk_plusarg::get_list("hexk_report_fields", items);
       apply_fields(items);
-      apply_time_unit(hexk_plusarg::get_str("hexk_report_time_unit", ""));
-      color = hexk_plusarg::get_bit("hexk_report_color", color);
+      if (hexk_plusarg::has("hexk_report_time_unit")) begin
+         apply_time_unit(hexk_plusarg::get_str("hexk_report_time_unit", ""));
+      end
+      apply_color();
       hexk_plusarg::get_list("hexk_stacktrace", items);
       foreach (items[i]) begin
          stacktrace_triggers.push_back(items[i]);
@@ -210,13 +215,10 @@ class hexk_report_cfg extends uvm_object;
       marker_triggers            = other.marker_triggers;
    endfunction : do_copy
 
-   // Sets style from its short name (uvm, compact, custom); an empty text changes nothing.
+   // Sets style from its short name (uvm, compact, custom); another text, also an empty one, is a warning.
    local function void apply_style(string text);
       hexk_report_style_e names[string];
       string key = text.toupper();
-      if (text.len() == 0) begin
-         return;
-      end
       hexk_enum_util#(hexk_report_style_e)::to_map(names, 1);
       if (!names.exists(key)) begin
          `uvm_warning("HEXK_REPORT_CFG", $sformatf("+hexk_report_style=%s is not uvm, compact or custom; keeping %s",
@@ -226,13 +228,10 @@ class hexk_report_cfg extends uvm_object;
       style = names[key];
    endfunction : apply_style
 
-   // Sets time_unit from its short name (fs, ps, ns, us, ms, s); an empty text changes nothing.
+   // Sets time_unit from its short name (fs, ps, ns, us, ms, s); another text, also an empty one, is a warning.
    local function void apply_time_unit(string text);
       hexk_time_unit_e unit;
       string           kept = time_unit_text(time_unit);
-      if (text.len() == 0) begin
-         return;
-      end
       if (!time_unit_of(text, unit)) begin
          `uvm_warning("HEXK_REPORT_CFG",
                       $sformatf("+hexk_report_time_unit=%s is not fs, ps, ns, us, ms or s; keeping %s", text, kept))
@@ -240,6 +239,22 @@ class hexk_report_cfg extends uvm_object;
       end
       time_unit = unit;
    endfunction : apply_time_unit
+
+   // Sets color from +hexk_report_color (1) or +hexk_report_color=<bit value>; another value is a warning.
+   local function void apply_color();
+      bit    value;
+      string given = hexk_plusarg::get_str("hexk_report_color", "");
+      case (hexk_plusarg::try_get_bit(
+          "hexk_report_color", value
+      ))
+         hexk_plusarg::HEXK_PLUSARG_VALID: color = value;
+         hexk_plusarg::HEXK_PLUSARG_INVALID: begin
+            `uvm_warning("HEXK_REPORT_CFG", $sformatf(
+                         "+hexk_report_color=%s is not a bit value; keeping %0b", given, color))
+         end
+         default: ;
+      endcase
+   endfunction : apply_color
 
    // Sets fields from their short names (severity, counter, time, ...); an empty list changes nothing.
    local function void apply_fields(ref string items[$]);

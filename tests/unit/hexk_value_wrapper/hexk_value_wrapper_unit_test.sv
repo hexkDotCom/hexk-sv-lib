@@ -23,6 +23,9 @@ module hexk_value_wrapper_unit_test;
       logic [7:0] payload;
    } hexk_ut_header_t;
    typedef logic [1100:0] hexk_ut_wide_t;
+   // One bit wider than a word of 64 bits, so that a tolerance takes the way of the wide values.
+   typedef logic [64:0] hexk_ut_u65_t;
+   typedef logic signed [64:0] hexk_ut_s65_t;
    // A type that only the factory test wraps, so that its type override changes no other test.
    typedef logic [5:0] hexk_ut_code_t;
 
@@ -100,6 +103,35 @@ module hexk_value_wrapper_unit_test;
       end
       return "different";
    endfunction : compare_levels
+
+   // The same for unsigned values of 65 bits.
+   function automatic string compare_u65(hexk_ut_u65_t expected, hexk_ut_u65_t actual, longint unsigned tolerance);
+      hexk_value_wrapper #(hexk_ut_u65_t) expected_wrapper = hexk_value_wrapper#(hexk_ut_u65_t)::wrap(
+          expected, tolerance
+      );
+      hexk_value_wrapper #(hexk_ut_u65_t) actual_wrapper = hexk_value_wrapper#(hexk_ut_u65_t)::wrap(actual);
+      if (expected_wrapper.compare(actual_wrapper)) begin
+         return "equal";
+      end
+      return "different";
+   endfunction : compare_u65
+
+   // The same for signed values of 65 bits.
+   function automatic string compare_s65(hexk_ut_s65_t expected, hexk_ut_s65_t actual, longint unsigned tolerance);
+      hexk_value_wrapper #(hexk_ut_s65_t) expected_wrapper = hexk_value_wrapper#(hexk_ut_s65_t)::wrap(
+          expected, tolerance
+      );
+      hexk_value_wrapper #(hexk_ut_s65_t) actual_wrapper = hexk_value_wrapper#(hexk_ut_s65_t)::wrap(actual);
+      if (expected_wrapper.compare(actual_wrapper)) begin
+         return "equal";
+      end
+      return "different";
+   endfunction : compare_s65
+
+   // Number of HEXK_VALUE_WRAPPER_WIDTH errors in this test.
+   function automatic string width_errors();
+      return $sformatf("%0d", catcher.get_count("^HEXK_VALUE_WRAPPER_WIDTH$", UVM_ERROR));
+   endfunction : width_errors
 
    // Text of a wrapped packed struct, and of a clone of it after the original was changed.
    function automatic string struct_texts();
@@ -194,6 +226,39 @@ module hexk_value_wrapper_unit_test;
       `FAIL_UNLESS_STR_EQUAL(struct_texts(), "0xa00 0xa5c tolerance=3")
    `SVTEST_END
 
+   `SVTEST(an_unsigned_value_of_65_bits_is_compared_with_a_tolerance)
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h1_0000_0000_0000_0000, 65'h1_0000_0000_0000_0005, 5), "equal")
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h1_0000_0000_0000_0000, 65'h1_0000_0000_0000_0006, 5), "different")
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h1_0000_0000_0000_0005, 65'h1_0000_0000_0000_0000, 5), "equal")
+      // A difference of 1 across bit 64, and one of 2**64 in bit 64 only.
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h1_0000_0000_0000_0000, 65'h0_FFFF_FFFF_FFFF_FFFF, 1), "equal")
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h1_0000_0000_0000_0003, 65'h0_0000_0000_0000_0003,
+                                         64'hFFFF_FFFF_FFFF_FFFF), "different")
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h0_FFFF_FFFF_FFFF_FFFF, 65'h0_0000_0000_0000_0000,
+                                         64'hFFFF_FFFF_FFFF_FFFF), "equal")
+      `FAIL_UNLESS_STR_EQUAL(compare_u65(65'h0, 65'h1_FFFF_FFFF_FFFF_FFFF, 2), "different")
+      `FAIL_UNLESS_STR_EQUAL(width_errors(), "0")
+   `SVTEST_END
+
+   `SVTEST(a_signed_value_of_65_bits_is_compared_as_a_signed_number_with_a_tolerance)
+      // -1 and 1.
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h1_FFFF_FFFF_FFFF_FFFF, 65'h0_0000_0000_0000_0001, 2), "equal")
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h1_FFFF_FFFF_FFFF_FFFF, 65'h0_0000_0000_0000_0001, 1), "different")
+      // The smallest value, -2**64, and 3 above it.
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h1_0000_0000_0000_0000, 65'h1_0000_0000_0000_0003, 3), "equal")
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h1_0000_0000_0000_0000, 65'h1_0000_0000_0000_0003, 2), "different")
+      // The largest value, 2**64 - 1, and 4 below it.
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h0_FFFF_FFFF_FFFF_FFFF, 65'h0_FFFF_FFFF_FFFF_FFFB, 4), "equal")
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h0_FFFF_FFFF_FFFF_FFFF, 65'h0_FFFF_FFFF_FFFF_FFFA, 4), "different")
+      // The smallest and the largest value are 2**65 - 1 apart, more than any tolerance.
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h1_0000_0000_0000_0000, 65'h0_FFFF_FFFF_FFFF_FFFF,
+                                         64'hFFFF_FFFF_FFFF_FFFF), "different")
+      // -2**63 and 2**63 - 1 are 2**64 - 1 apart.
+      `FAIL_UNLESS_STR_EQUAL(compare_s65(65'h1_8000_0000_0000_0000, 65'h0_7FFF_FFFF_FFFF_FFFF,
+                                         64'hFFFF_FFFF_FFFF_FFFF), "equal")
+      `FAIL_UNLESS_STR_EQUAL(width_errors(), "0")
+   `SVTEST_END
+
    `SVTEST(a_value_wider_than_the_vector_width_is_compared_exactly_without_a_tolerance)
       `FAIL_UNLESS_STR_EQUAL(compare_wide(0, 0), "equal 0")
       `FAIL_UNLESS_STR_EQUAL(compare_wide(1, 0), "different 0")
@@ -210,7 +275,7 @@ module hexk_value_wrapper_unit_test;
 
    `SVTEST(a_difference_is_noted_in_the_comparer_as_one_of_the_field_value)
       `FAIL_UNLESS_STR_EQUAL(sample_difference(12'd100, 12'd104, 3),
-         "hexk_value_wrapper.value: lhs = 'h64 : rhs = 'h68")
+         "wrapper.value: lhs = 'h64 : rhs = 'h68")
       `FAIL_UNLESS_STR_EQUAL(sample_difference(12'd100, 12'd103, 3), "")
    `SVTEST_END
 

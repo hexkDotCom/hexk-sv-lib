@@ -36,13 +36,13 @@ class hexk_smoke_env_cfg extends uvm_object;
    // Number of words a test sends through the FIFO.
    rand int unsigned                        num_items;
 
+   `uvm_object_utils(hexk_smoke_env_cfg)
+
    // What every legal cfg keeps.
    constraint legal_values_cstr {num_items inside {[1 : 10000]};}
 
    // A plain randomize() gives 20 words; the knob num_items replaces it.
    constraint default_values_cstr {soft num_items == 20;}
-
-   `uvm_object_utils(hexk_smoke_env_cfg)
 
    // Creates the cfg with the cfgs of its children; the agent at the output is a responder.
    function new(string name = "hexk_smoke_env_cfg");

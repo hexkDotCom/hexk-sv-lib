@@ -32,22 +32,26 @@ From `src/uvm/report/hexk_report_catcher.sv`:
 function new(string name = "hexk_report_catcher");
 // Creates a catcher and registers it for the messages of every reporter.
 static function hexk_report_catcher add_global();
-// Expects min_count to max_count messages of severity sev, matching the expressions; they become demote_to.
-function void expect_msg(string id_regex, uvm_severity sev = UVM_ERROR, string msg_regex = "", int unsigned min_count = 1, int max_count = -1, uvm_severity demote_to = UVM_INFO);
+// Expects min_count to max_count messages of severity sev, matching the expressions; they become demote_to. max_count is min_count unless given: the shortest call expects exactly one message. NO_LIMIT has no maximum.
+function void expect_msg(string id_regex, uvm_severity sev = UVM_ERROR, string msg_regex = "", int unsigned min_count = 1, int max_count = SAME_AS_MIN, uvm_severity demote_to = UVM_INFO);
+// Expects a check with this ID to fail exactly count times, with messages of severity sev: they are demoted to info and counted as an expectation, and hexk_check_stats allows the failures. One call instead of expect_msg() and hexk_check_stats::expect_failures(). id is the ID itself, not an expression: the rule compares it as text, so an ID with characters such as "." or "[" matches only itself.
+function void expect_check(string id, int unsigned count = 1, uvm_severity sev = UVM_ERROR);
 // Changes the severity of matching messages from one severity to another; they are not counted as expected.
 function void demote(string id_regex, uvm_severity from, uvm_severity to, string msg_regex = "");
 // Reports every expectation that saw fewer messages than its minimum or more than its maximum. The verdicts go through the root reporter of UVM: the `uvm_error of a catcher would report through the reporter of the last message that UVM gave to a catcher, with the actions of that reporter.
 function void check_expectations();
 // Number of messages caught so far by the rules registered with this ID expression and severity.
 function int unsigned get_count(string id_regex, uvm_severity sev = UVM_ERROR);
-// Removes every rule and count; the catcher stays registered.
+// Removes every rule and count; the catcher stays registered, and check_unchecked() checks it again.
 function void clear();
+// Calls check_expectations() of every catcher created by add_global() whose expectations were not checked since its last clear(); hexk_base_test calls it in its report phase, so that a test cannot forget it.
+static function void check_unchecked();
 // Applies the first matching rule to the message being reported; the message is always passed on.
 function action_e catch();
 ```
 <!-- HEXK_GEN:END api -->
 
-`hexk_report_catcher_rule` is internal. Users call `expect_msg` and `demote`.
+`hexk_report_catcher_rule` is internal. Users call `expect_msg`, `expect_check` and `demote`.
 
 ## 4. Behaviour and invariants
 
@@ -62,11 +66,24 @@ function action_e catch();
   error, and a fatal demoted to info does not end the simulation.
 - `expect_msg` rules count their matches and are checked by `check_expectations`:
   fewer than `min_count` is reported as `HEXK_CATCHER_MISSING`, more than `max_count` as
-  `HEXK_CATCHER_EXCESS`. A `max_count` below 0 means no upper limit. `min_count` 0 with
-  `max_count` 0 means "must not occur".
+  `HEXK_CATCHER_EXCESS`. Without a `max_count` (its default is `SAME_AS_MIN`) the maximum is
+  the minimum, so `expect_msg("^DRV_PARITY$")` expects exactly one message and
+  `expect_msg("^DRV_PARITY$", UVM_ERROR, "", 2)` exactly two. `hexk_report_catcher::NO_LIMIT`
+  (-1) means no upper limit. `min_count` 0 with `max_count` 0 means "must not occur".
+- `expect_check(id, count = 1, sev = UVM_ERROR)` is for a check macro that the test makes fail
+  on purpose: it expects exactly `count` messages with exactly that ID and severity, demoted
+  to info, and calls `hexk_check_stats::expect_failures(id, count)`, so that the failures do
+  not fail the verdict of `hexk_base_test` either. `id` is the ID itself, not an expression: the
+  rule compares it as text, so `expect_check("DATA[0]")` matches the ID `DATA[0]` and nothing
+  else. `get_count` names the rule as `"^<id>$"`.
 - `demote` rules also count their matches (`get_count`), but are never checked.
 - `check_expectations` can be called more than once; it reports the state at each call and
   does not reset the counts. `clear` removes all rules and counts.
+- `hexk_report_catcher::check_unchecked()` calls `check_expectations` of every catcher created
+  by `add_global` that was not checked since it was created or last cleared.
+  `hexk_base_test` calls it in its report phase, so in a test derived from it the
+  expectations are checked even when the test does not call `check_expectations` itself; a
+  test that calls it in its check phase is not checked twice.
 - The verdicts of `check_expectations` are errors of the root reporter of UVM, whatever
   reported the last message before the check. No `hexk_report_catcher` applies a rule to a
   message with the ID `HEXK_CATCHER_MISSING` or `HEXK_CATCHER_EXCESS`, so no rule, however
@@ -106,10 +123,12 @@ None. No plusargs.
 // hexk_report_catcher_example.sv
 //
 // Minimal use of hexk_report_catcher in a negative test: two parity errors are provoked on
-// purpose, so exactly two errors with that ID are expected. They are demoted to info, and
-// check_expectations() reports an error if there were fewer or more.
-// In a real testbench expect_msg() is called by the test before the stimulus starts and
-// check_expectations() in its check_phase. Needs UVM and src/uvm/hexk_uvm.f.
+// purpose, so exactly two errors with that ID are expected: a count without a maximum is
+// exact. They are demoted to info, and check_expectations() reports an error if there were
+// fewer or more. In a real testbench expect_msg() is called by the test before the stimulus
+// starts; a test derived from hexk_base_test has the expectations checked in its report
+// phase, any other test calls check_expectations() in its check_phase. A check that fails on
+// purpose is declared with expect_check(id, count). Needs UVM and src/uvm/hexk_uvm.f.
 
 module hexk_report_catcher_example;
    timeunit 1ns / 1ps;
@@ -124,7 +143,7 @@ module hexk_report_catcher_example;
 
    initial begin
       catcher = hexk_report_catcher::add_global();
-      catcher.expect_msg("^DRV_PARITY$", UVM_ERROR, "", INJECTED_ERRORS, int'(INJECTED_ERRORS));
+      catcher.expect_msg("^DRV_PARITY$", UVM_ERROR, "", INJECTED_ERRORS);
 
       `uvm_error("DRV_PARITY", "parity error on beat 3")
       `uvm_error("DRV_PARITY", "parity error on beat 7")
@@ -138,8 +157,11 @@ endmodule : hexk_report_catcher_example
 
 ## 8. Anti-patterns
 
-- **Forgetting `check_expectations()`.** Without it a test that provokes nothing still
-  passes. Call it in the test's `check_phase`.
+- **Forgetting `check_expectations()` outside `hexk_base_test`.** Without it a test that
+  provokes nothing still passes. A test derived from `hexk_base_test` gets it in the report
+  phase; any other test calls it in its `check_phase`, or calls `check_unchecked()`.
+- **`expect_msg` with `NO_LIMIT` for a message that the test provokes a known number of
+  times.** An error storm then passes. Give the count, which is also the maximum.
 - **Unanchored ID expressions.** `expect_msg("SB")` also catches `SB_LEFTOVER` and
   `USB_ERROR`. Write `"^SB_MISMATCH$"`.
 - **`expect_msg(".*")`.** It demotes every error of the run. Expect the specific IDs the test
@@ -150,6 +172,8 @@ endmodule : hexk_report_catcher_example
   report. Create one in the test and pass the handle.
 - **Using `demote` where a count matters.** `demote` never fails a test. If the message must
   occur, use `expect_msg` with a `demote_to` severity.
+- **`expect_msg` and `expect_failures` for a failing check.** Two declarations that can
+  disagree; `expect_check(id, count)` makes both.
 
 ## 9. Status
 

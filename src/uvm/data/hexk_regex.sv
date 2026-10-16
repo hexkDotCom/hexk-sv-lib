@@ -64,9 +64,12 @@ class hexk_regex;
       return exclude_kind == HEXK_REGEX_NOT_GIVEN || !match_as(exclude_kind, exclude_pattern, exclude_text, s);
    endfunction : is_match
 
-   // True when the regular expression re matches s; a match anywhere in s counts.
+   // True when the regular expression re matches s; a match anywhere in s counts. An expression without an operator
+   // is compared as a string, with or without the regex DPI code of UVM.
    static function bit match(string re, string s);
-      return uvm_re_match(re, s) == 0;
+      string text;
+      kind_e kind = classify(re, text);
+      return match_as(kind, re, text, s);
    endfunction : match
 
    // Expression that matches exactly the strings the glob matches (* any text, ? any one character).
@@ -74,8 +77,16 @@ class hexk_regex;
 `ifdef HEXK_UVM_REGEX_NO_DPI
       // Without the regex DPI code UVM matches globs itself, so the glob is the expression. UVM removes
       // one leading "^" and takes an empty expression as "matches everything": the "^" added here is the
-      // one it removes, so a glob that starts with "^" keeps it and an empty glob matches the empty string.
-      return {"^", glob};
+      // one it removes, so a glob that starts with "^" keeps it. A glob without an operator is compared
+      // here as a string, as an anchored expression: "^<glob>$" is "equals", and an empty glob matches
+      // the empty string. A glob whose one operator is a "$" at its end ("cost$") becomes "^cost$" and so
+      // means "equals cost": no glob of UVM matches exactly "cost$" (see the contract).
+      foreach (glob[i]) begin
+         if (is_operator(glob[i])) begin
+            return {"^", glob};
+         end
+      end
+      return {"^", glob, "$"};
 `else
       string result = "^";
       foreach (glob[i]) begin
@@ -100,9 +111,6 @@ class hexk_regex;
       if (re.len() == 0) begin
          return HEXK_REGEX_NOT_GIVEN;
       end
-`ifdef HEXK_UVM_REGEX_NO_DPI
-      return HEXK_REGEX_BY_UVM;
-`else
       // UVM removes a "/" at both ends before it compiles the expression.
       if (re[0] == "/") begin
          return HEXK_REGEX_BY_UVM;
@@ -128,7 +136,6 @@ class hexk_regex;
          return HEXK_REGEX_STARTS_WITH;
       end
       return at_end ? HEXK_REGEX_ENDS_WITH : HEXK_REGEX_CONTAINS;
-`endif
    endfunction : classify
 
    // True when c is an operator of an extended regular expression.
@@ -149,7 +156,7 @@ class hexk_regex;
          HEXK_REGEX_STARTS_WITH: return hexk_str::starts_with(s, text);
          HEXK_REGEX_ENDS_WITH:   return hexk_str::ends_with(s, text);
          HEXK_REGEX_EQUALS:      return s == text;
-         default:                return match(re, s);
+         default:                return uvm_re_match(re, s) == 0;
       endcase
    endfunction : match_as
 

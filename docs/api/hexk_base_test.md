@@ -32,19 +32,23 @@ your own base test", has the steps with code, and the contract documents of
 From `src/uvm/base/hexk_base_test.sv`:
 
 ```systemverilog
-// Creates the test; everything else happens in build_phase.
+// Creates the test and its warning audit, so that allow_warning() works from the constructor on; everything else happens in build_phase.
 function new(string name, uvm_component parent);
+// Allows the warnings whose ID matches id_regex (as hexk_regex takes it; "^ID$" for one ID) with fail_on_warnings.
+function void allow_warning(string id_regex);
 // Hook: factory overrides of the test; called first in build_phase, before anything is created.
 virtual function void do_type_overrides();
 // Hook: knobs of the block or of the test; called in build_phase before the knobs are locked.
 virtual function void define_knobs();
+// Hook: creates the cfg of the block, through the factory; called after the factory overrides and the knobs, before modify_cfg(), so that an override of a derived test reaches the cfg.
+virtual function void create_cfg();
 // Hook: changes to the cfg of the block before it is randomized; called last in build_phase, when knobs can be read.
 virtual function void modify_cfg();
-// UVM callback: sets up report server, knobs, aggregator, registry and watchdog, and calls the hooks.
+// UVM callback: sets up report server, catcher, warning audit, knobs, aggregator, registry and watchdog, and calls the hooks.
 function void build_phase(uvm_phase phase);
 // UVM callback: stops the objections of the run-time phases from propagating up the hierarchy, unless stop_objection_propagation is 0.
 function void start_of_simulation_phase(uvm_phase phase);
-// UVM callback: reports the statistics of the check macros.
+// UVM callback: checks the expectations of the report catchers that nobody checked, and reports the statistics of the check macros.
 function void report_phase(uvm_phase phase);
 // UVM callback: reports the last line of the test, TEST PASSED or TEST FAILED.
 function void final_phase(uvm_phase phase);
@@ -52,6 +56,12 @@ function void final_phase(uvm_phase phase);
 function bit has_passed();
 // The last line of the test: "TEST PASSED" or "TEST FAILED" with the counts behind the verdict.
 function string result_text();
+// How the simulation of the test ended: 1 with the verdict when a hexk_base_test was built, else 0. ABORTED when the simulation ended before final_phase of the test, as after a fatal or a $finish; otherwise PASSED or FAILED as in the last line, by has_passed().
+static function bit get_verdict(output verdict_e verdict);
+// Prints the banner of the verdict with $display, after the last message: the verdict in block letters, then "SIMULATION PASSED", "SIMULATION FAILED" or "SIMULATION FAILED - ABORTED" with the counts of the last line. In colour, with a face picked at random, when the report server colours its messages (+hexk_report_color). The final block of hexk_tb_top_inc.svh calls it; it prints nothing when no hexk_base_test was built.
+static function void report_banner();
+// The banner of report_banner(): the verdict in block letters, then the line with counts, which are the counts of the last line. With color, the letters are blocks in green or red, and face picks one of the faces of the verdict (modulo their number) for the line before; without it, the letters are made of '#' and no face and no escape code is printed.
+static function string banner_text(verdict_e verdict, string counts, bit color, int unsigned face = 0);
 ```
 
 From `src/uvm/base/hexk_tb_top_inc.svh`:
@@ -75,29 +85,48 @@ declared in the module that includes `hexk_tb_top_inc.svh`; user code does not u
 2. If `install_report_server` is 1 and no `hexk_report_server` is installed, one is
    installed with a new `hexk_report_cfg` (compact style) and the `+hexk_report_*` plusargs.
    A server installed by the testbench top is left alone; with `install_report_server` 0 so
-   is any other report server.
+   is any other report server. Then `catcher`, a global `hexk_report_catcher` of the test, is
+   created, and `warnings`, the `hexk_warning_audit` of the test (created in `new()`), is added
+   to the installed `hexk_report_server` as a listener.
 3. The knobs: `perf_mode` (bit, default 0; `hexk_delay` honours it), `coverage` (bit,
-   default 1; `` `hexk_cg_new `` honours it) and `hexk_require_checks` (bit, default the
-   value of the member `require_checks`), each only if it is not defined yet. Then `define_knobs()`, the hook for the knobs of the block or of
+   default 1; `` `hexk_cg_new `` honours it), `hexk_require_checks` (bit, default the
+   value of the member `require_checks`) and `hexk_fail_on_warnings` (bit, default the value
+   of the member `fail_on_warnings`), each only if it is not defined yet. Then `define_knobs()`, the hook for the knobs of the block or of
    the test.
 4. `objections` (`hexk_objection_aggregator`), `watchdog` (`hexk_watchdog`, connected to the
    aggregator) and `eot_registry` (`hexk_eot_registry::get()`).
-5. `knobs.lock()`. From here on knobs can be read. `require_checks` takes the value of its
-   knob.
-6. `modify_cfg()`, the hook for changes to the cfg of the block (guide rule CFG-10). The
-   base test has no cfg of its own: a block base test creates its cfg in `new()`, changes it
-   in `modify_cfg()`, and randomizes it in its `build_phase` after `super.build_phase()`.
+5. `knobs.lock()`. From here on knobs can be read. `require_checks` and `fail_on_warnings`
+   take the values of their knobs; `fail_on_warnings` without an installed
+   `hexk_report_server` is the error `HEXK_TEST_WARNING`.
+6. `create_cfg()`, the hook in which a block base test creates its cfg with
+   `type_id::create()`. It comes after `do_type_overrides()`, so a factory override of the cfg
+   class, or of an object it creates, set by a derived test reaches the cfg; knobs can be read.
+7. `modify_cfg()`, the hook for changes to the cfg of the block (guide rule CFG-10). The
+   base test has no cfg of its own: a block base test creates its cfg in `create_cfg()`,
+   changes it in `modify_cfg()`, and randomizes it in its `build_phase` after
+   `super.build_phase()`. A cfg created in `new()` would miss the overrides of derived tests.
 
 A block base test overrides `build_phase` only to add to it, and calls
-`super.build_phase(phase)` first. The members `knobs`, `objections`, `eot_registry` and
-`watchdog` are set after that call; the limits of the watchdog can be set then.
+`super.build_phase(phase)` first. The members `knobs`, `objections`, `eot_registry`,
+`watchdog` and `catcher` are set after that call; the limits of the watchdog can be set then.
+A negative test expects its messages with `catcher` (`expect_check()`, `expect_msg()`), and
+`report_phase` checks it.
+
+Warnings: `allow_warning(id_regex)` allows the warnings whose ID matches the expression
+(`hexk_regex`; `"^ID$"` for one ID); it works from `new()` on. The audit sees what the report
+server issues after the report catchers, so a warning that a catcher demoted is not counted.
+With `fail_on_warnings` 1, `report_phase` reports every warning that was not allowed in one
+error `HEXK_TEST_WARNING` (the number, and the first 20 as "ID: message"), and the test fails.
+Warnings issued after the report phase of the test are not looked at.
 
 Later phases:
 
 - `start_of_simulation_phase` calls `set_propagate_mode(0)` on the objection of `run_phase`
   and of the twelve phases of the UVM run-time schedule (guide rule OBJ-5), unless
   `stop_objection_propagation` is 0. Phases of a user-defined domain are not touched.
-- `report_phase` reports the table of `hexk_check_stats` with `HEXK_TEST_CHECKS`.
+- `report_phase` calls `hexk_report_catcher::check_unchecked()`, which checks the
+  expectations of every global catcher that the test did not check itself, and reports the
+  table of `hexk_check_stats` with `HEXK_TEST_CHECKS`.
 - `final_phase` reports the result. When there is no error and no fatal, `require_checks`
   is 1 and no check was counted in `hexk_check_stats`, it first reports the error
   `HEXK_TEST_NO_CHECKS` (guide rule TST-6: no errors alone is not a pass). When there is no
@@ -105,17 +134,37 @@ Later phases:
   demoted its message or its ID was switched off, it reports the error
   `HEXK_TEST_CHECK_FAILED`. Then it reports `HEXK_TEST_RESULT`:
   `TEST PASSED (<e> errors, <f> fatals, <c> checks executed)` or the same with
-  `TEST FAILED`; `, <n> failed without an error` follows the counts when such checks exist.
+  `TEST FAILED`; `, <n> failed without an error` follows the counts when there is no error
+  and no fatal and such checks exist.
 - A test has passed when the report server has counted no error and no fatal,
   `hexk_check_stats::num_unexpected_failures()` is 0 and, if `require_checks` is 1,
   `hexk_check_stats::num_checks()` is above 0. The check macros count there, every
   comparison of a `hexk_scoreboard` counts there, and any other checker of the testbench can
   count there with `hexk_check_stats::record_pass(id)` and `record_fail(id)`. A negative test
-  that makes checks fail on purpose declares them with
-  `hexk_check_stats::expect_failures(id, count)`. `has_passed()` and `result_text()` give the
+  that makes checks fail on purpose declares them with `expect_check(id, count)` of its
+  `hexk_report_catcher`, which expects their messages and allows the failures
+  (`hexk_check_stats::expect_failures(id, count)`). `has_passed()` and `result_text()` give the
   verdict and the line at the moment they are called.
 - The counts are those of the whole simulation. Messages that a report catcher demoted are
   not errors. The result line itself is an info, so that it does not change the counts.
+
+The banner:
+
+- `get_verdict(verdict)` (static) says how the simulation of the test ended: it returns 0 when
+  no `hexk_base_test` was built, else 1 with `HEXK_TEST_ABORTED` when the simulation ended
+  before `final_phase` of the test ran (a fatal, a `$finish` of the testbench, the end of the
+  simulation time of the run script), else `HEXK_TEST_PASSED` or `HEXK_TEST_FAILED` by
+  `has_passed()`, as in the last line. The test is the one whose `build_phase` ran last.
+- `report_banner()` (static) prints, with `$display`, the verdict in block letters five lines
+  high and then `SIMULATION PASSED`, `SIMULATION FAILED` or `SIMULATION FAILED - ABORTED`
+  with the counts of the last line in parentheses. When the installed `hexk_report_server`
+  colours its messages (`+hexk_report_color=1`), the letters are UTF-8 blocks in bold green
+  (passed) or red, and a face picked at random for the verdict precedes the line; otherwise
+  the letters are `#` and nothing but ASCII is printed. It prints nothing when no
+  `hexk_base_test` was built. The face comes from `$urandom` of the calling process, so the
+  same seed gives the same face.
+- `banner_text(verdict, counts, color, face)` (static) gives that text without printing it;
+  `face` picks one of the faces of the verdict, modulo their number.
 
 `hexk_tb_top_inc.svh`:
 
@@ -124,8 +173,13 @@ Later phases:
 - It declares a variable whose initialiser installs the report server, with a new
   `hexk_report_cfg` and the `+hexk_report_*` plusargs. Initialisers run before all `initial`
   blocks, so every message of the simulation has the layout of the library.
-- It contains the `initial` block that calls `run_test()` without an argument; the test is
-  selected with `+UVM_TESTNAME` (guide rule TST-4).
+- It contains the `initial` block that calls `run_test()`; the test is selected with
+  `+UVM_TESTNAME` (guide rule TST-4). The include reads that plusarg itself and gives the name
+  to `run_test()`, so that the test is also found where UVM is compiled with
+  `UVM_CMDLINE_NO_DPI`, as on Verilator, and does not read the command line itself; elsewhere
+  UVM's own reading wins and names the same test.
+- It contains a `final` block that calls `hexk_base_test::report_banner()`, so the banner of
+  the verdict is the last output of every simulation that ends, also after a fatal.
 - If the macro `HEXK_TB_PRE_RUN_TEST` is defined, as the name of a task or function of the
   module without arguments, it is called in that `initial` block before `run_test()`. This
   is the place for `` `hexk_vif_set ``. Define it before the include or with `+define+`.
@@ -138,12 +192,14 @@ Later phases:
 | `require_checks` | 1 | A test passes only if at least one check was counted. Set it in `new()` of a derived test; the knob below overrides it. |
 | `install_report_server` | 1 | `build_phase` installs `hexk_report_server` unless it is installed already; 0 keeps whatever report server is installed. Set it in `new()`. |
 | `stop_objection_propagation` | 1 | `start_of_simulation_phase` stops the propagation of the phase objections; 0 leaves UVM's propagation. Set it in `new()`. |
+| `fail_on_warnings` | 0 | A warning that the test did not allow with `allow_warning()` fails the test. Set it in `new()`; the knob below overrides it. Off by default: UVM and its register layer warn about many harmless things, so turning it on is a choice of the project. |
 
 | Plusarg | Meaning |
 |---|---|
 | `+perf_mode` | Knob defined by the base test: every `hexk_delay` returns 0. |
 | `+coverage=0` | Knob defined by the base test: `` `hexk_cg_new `` creates no covergroup. |
 | `+hexk_require_checks=0` | Knob defined by the base test: a test without executed checks may pass. |
+| `+hexk_fail_on_warnings=1` | Knob defined by the base test: a warning that the test did not allow fails it. |
 
 | Define | Meaning |
 |---|---|
@@ -162,6 +218,7 @@ own documents. With `+define+HEXK_NO_CHECK_STATS` the check macros are not count
 | `HEXK_TEST_CHECK_FAILED` | error |  |
 | `HEXK_TEST_NO_CHECKS` | error |  |
 | `HEXK_TEST_RESULT` | info |  |
+| `HEXK_TEST_WARNING` | error |  |
 <!-- HEXK_GEN:END emits -->
 
 `HEXK_TEST_RESULT` has verbosity `UVM_NONE`, `HEXK_TEST_CHECKS` has `UVM_LOW`.
@@ -192,6 +249,7 @@ own documents. With `+define+HEXK_NO_CHECK_STATS` the check macros are not count
 interface hexk_example_dut_if (
     input logic clk
 );
+   timeunit 1ns; timeprecision 1ps;
    logic [7:0] data_in;
    logic [7:0] data_out;
 endinterface : hexk_example_dut_if
@@ -233,6 +291,7 @@ module hexk_base_test_example;
 
       task run_phase(uvm_phase phase);
          int unsigned num_items = 32'(knobs.get_int("num_items"));
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          for (int unsigned i = 0; i < num_items; i++) begin
             vif.data_in = 8'(10 * i);
@@ -285,9 +344,11 @@ endmodule : hexk_base_test_example
   it into the function named by `HEXK_TB_PRE_RUN_TEST`.
 - **Raising the watchdog timeout in the base test until the slowest test fits.** Set a
   moderate limit there and a longer one in the slow test.
+- **Overriding `final_phase` without calling `super.final_phase(phase)`.** The last line is
+  then missing and the banner says ABORTED for a test that ended normally.
 - **A negative test that only demotes the errors of the checks it fails on purpose.** The
   failed checks still count, and the test fails with `HEXK_TEST_CHECK_FAILED`. Declare them
-  with `hexk_check_stats::expect_failures(id, count)` as well.
+  with `expect_check(id, count)` of the catcher, which does both.
 
 ## 9. Status
 

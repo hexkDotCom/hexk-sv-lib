@@ -45,6 +45,8 @@ From `src/uvm/stim/hexk_wait_util.sv`:
 ```systemverilog
 // The simulation time in picoseconds.
 static function longint unsigned now_ps();
+// A time in picoseconds as %t formats it, in the unit and format that $timeformat set. Classes with a type parameter format a time through this function and read it through now_ps(): Questa 2024.1 takes $time and %t in such a class in the time unit of the scope that declares the type given as parameter.
+static function string format_ps(longint unsigned value_ps);
 // Waits duration_ps picoseconds; 0 returns at once. Classes with a type parameter delay through this task: VCS X-2025.06 scales a delay written in such a class by the time unit of the scope that declares the type given as parameter, and a delay here is always in picoseconds.
 static task wait_ps(longint unsigned duration_ps);
 // Waits until flag is 1 or timeout_ps has passed; timed_out is 1 when the timeout came first.
@@ -106,6 +108,8 @@ Macros:
   library (`docs/integration.md`, "Times"), so it means the same whatever the time unit of
   the caller is. Write it as `` `hexk_ps(10us) `` or as `10_000_000`.
 - `now_ps()` returns the simulation time in picoseconds.
+- `format_ps(value_ps)` formats a time in picoseconds as `%t` does, in the unit and format that
+  `$timeformat` set.
 - `wait_ps(duration_ps)` waits `duration_ps` picoseconds; 0 returns at once.
 - A wait or a timeout that would end after the simulation time `hexk_wait_util::LAST_PS`
   ((2^63 - 1) / 1000 ps, about 2.56 hours) never ends, so `wait_or_timeout()` and
@@ -121,6 +125,11 @@ Macros:
   makes a delay of 30000 in a class of a package with 1 ps last 30 us); the classes of the
   library with a type parameter delay through `wait_ps()` and `wait_event_or_timeout()`,
   whose delays are in picoseconds on every simulator. A class of your own with a type
+  parameter can do the same.
+- Questa 2024.1 has the same effect on `$time` and on `%t` in a class with a type parameter that
+  is specialized in a package with a type that the package declares: they take the time unit
+  of that package. The classes of the library with a type parameter therefore read the time
+  through `now_ps()` and format a time through `format_ps()`; a class of your own with a type
   parameter can do the same.
 
 `` `hexk_ps(T) ``:
@@ -216,8 +225,8 @@ endmodule : hexk_wait_macros_example
 - **Using `hexk_wait_timeout` to end the test.** End of test is decided by objections
   (guide rules OBJ-1 to OBJ-7), not by waiting for a fixed time.
 - **Ignoring that execution continues.** After a timeout the code after the macro runs with
-  the condition still false. Check it again, or use the `_fatal` variant, if continuing
-  makes no sense.
+  the condition still false. Check it again, or use `hexk_wait_timeout_fatal`, if continuing
+  makes no sense; `hexk_spinwait` has no fatal variant, so check the result of its body.
 
 ## 9. Status
 

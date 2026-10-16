@@ -223,14 +223,16 @@ interface hexk_valid_ready_if #(
    valid_held_a :
    assert property (@(posedge clk) disable iff (rst_n !== 1'b1 || !checks_enabled) valid && !ready |=> valid)
    else begin
-      `hexk_static_error("HEXK_VALID_READY_VALID_DROPPED", "valid went to 0 before ready accepted the transfer")
+      // %m names the assertion in its instance, so that the message tells which channel it is.
+      `hexk_static_error("HEXK_VALID_READY_VALID_DROPPED", $sformatf(
+                         "%m: valid went to 0 before ready accepted the transfer"))
    end
 
    // The data of a valid that waits for ready does not change.
    data_held_a :
    assert property (@(posedge clk) disable iff (rst_n !== 1'b1 || !checks_enabled) valid && !ready |=> $stable(data))
    else begin
-      `hexk_static_error("HEXK_VALID_READY_DATA_CHANGED", "data changed while valid waited for ready")
+      `hexk_static_error("HEXK_VALID_READY_DATA_CHANGED", $sformatf("%m: data changed while valid waited for ready"))
    end
 
    // valid and ready have a level, and so has every bit of data while valid is 1.
@@ -243,7 +245,7 @@ interface hexk_valid_ready_if #(
    else begin
       // The assertion looks at the values sampled at the edge; the signals may have changed since.
       `hexk_static_error("HEXK_VALID_READY_UNKNOWN", $sformatf(
-                         "valid, ready or the data of a valid is X or Z: valid=%b ready=%b data=0x%0h",
+                         "%m: valid, ready or the data of a valid is X or Z: valid=%b ready=%b data=0x%0h",
                          $sampled(
                              valid
                          ),

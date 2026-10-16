@@ -63,7 +63,9 @@ All four are included through `hexk_macros.svh`. None needs a semicolon after it
 
 - Written where a class may be declared, usually in the package of the component, once per
   suffix. `SUFFIX` is written without an underscore; the macro adds it: `stream` declares
-  class `hexk_analysis_imp_indexed_stream #(type T, type IMP)`.
+  class `hexk_analysis_imp_indexed_stream #(type T = int, type IMP = int)`, derived from
+  `uvm_port_base`. Its `get_type_name()` returns the name of the class,
+  `"hexk_analysis_imp_indexed_stream"`.
 - The constructor is `new(string imp_name, IMP imp_owner, int imp_index = 0)`.
   `get_index()` returns `imp_index`, which cannot be changed afterwards.
 - `write(t)` of the imp calls `imp_owner.write_stream(index, t)`; the component declares
@@ -133,6 +135,7 @@ None. There are no plusargs.
 interface hexk_example_bus_if (
     input logic clk
 );
+   timeunit 1ns; timeprecision 1ps;
    logic [7:0] data;
 endinterface : hexk_example_bus_if
 
@@ -221,6 +224,7 @@ module hexk_util_macros_example;
 
       task run_phase(uvm_phase phase);
          hexk_example_stats stats = hexk_example_stats::get();
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          `hexk_randomize_or_fatal(map, "EXAMPLE")
          foreach (map.first_addr[i]) begin

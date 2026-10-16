@@ -47,6 +47,7 @@ module hexk_knobs_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          `uvm_info("EXAMPLE", $sformatf("sending %0d items, gate_level=%0b", knobs.get_int("num_items"), knobs.get_bit(
                                         "gate_level")), UVM_NONE)

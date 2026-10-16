@@ -28,7 +28,7 @@ From `src/uvm/data/hexk_meta_item.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates an empty meta item.
 function new(string name = "hexk_meta_item");
 // Creates a meta item through the factory for the given item, stamped with the current simulation time.
@@ -124,11 +124,11 @@ module hexk_meta_item_example;
          data = value;
       endfunction : set_data
 
-      virtual function string convert2string();
+      function string convert2string();
          return $sformatf("data=%0d", data);
       endfunction : convert2string
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_packet other;
          if (!$cast(other, rhs)) begin
             return 0;

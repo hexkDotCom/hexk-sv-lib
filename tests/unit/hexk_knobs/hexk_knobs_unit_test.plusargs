@@ -8,3 +8,5 @@
 +hexk_ut_knob_big=500
 +hexk_ut_knob_bad_mode=fpga
 +hexk_ut_knob_netlist=power
++hexk_ut_knob_garbage=12abc
++hexk_ut_knob_bad_bit=maybe

@@ -30,11 +30,11 @@ module hexk_meta_item_example;
          data = value;
       endfunction : set_data
 
-      virtual function string convert2string();
+      function string convert2string();
          return $sformatf("data=%0d", data);
       endfunction : convert2string
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_packet other;
          if (!$cast(other, rhs)) begin
             return 0;

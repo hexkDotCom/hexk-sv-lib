@@ -133,6 +133,27 @@ module hexk_knobs_unit_test;
       knobs.add_enum_str("hexk_ut_knob_mode", "rtl", modes, "kind of netlist");
    endfunction : define_cli_knobs
 
+   // Defines an integer and a bit knob whose plusargs cannot be read, then sets the integer knob:
+   // "<HEXK_KNOBS_VALUE errors> <integer knob> <bit knob>".
+   function automatic string knobs_with_unreadable_plusargs();
+      knobs.add_int("hexk_ut_knob_garbage", 3, "plusarg 12abc");
+      knobs.add_bit("hexk_ut_knob_bad_bit", 1, "plusarg maybe");
+      knobs.set_int("hexk_ut_knob_garbage", 9);
+      knobs.lock();
+      return $sformatf(
+          "%0d %0d %0b",
+          catcher.get_count(
+              "^HEXK_KNOBS_VALUE$"
+          ),
+          knobs.get_int(
+              "hexk_ut_knob_garbage"
+          ),
+          knobs.get_bit(
+              "hexk_ut_knob_bad_bit"
+          )
+      );
+   endfunction : knobs_with_unreadable_plusargs
+
    // Defines a knob of an enumeration with two members of one text: "<HEXK_KNOBS_ENUM errors> <knob exists>".
    function automatic string define_ambiguous_enum_knob();
       hexk_enum_knob#(hexk_ut_knob_case_e)::add("ut_case", HEXK_UT_KNOB_CASE_X, "two members of one text");
@@ -291,6 +312,10 @@ module hexk_knobs_unit_test;
       `FAIL_UNLESS_STR_EQUAL(knobs.get_str("hexk_ut_knob_label"), "from_cli")
       `FAIL_UNLESS_STR_EQUAL(knobs.get_str("hexk_ut_knob_mode"), "gate")
       `FAIL_UNLESS_STR_EQUAL(messages(), "define=0 locked=0 value=0 strict=0 read=0")
+   `SVTEST_END
+
+   `SVTEST(a_plusarg_that_cannot_be_read_is_an_error_and_the_knob_can_still_be_set)
+      `FAIL_UNLESS_STR_EQUAL(knobs_with_unreadable_plusargs(), "2 9 1")
    `SVTEST_END
 
    `SVTEST(an_integer_outside_its_limits_is_rejected)

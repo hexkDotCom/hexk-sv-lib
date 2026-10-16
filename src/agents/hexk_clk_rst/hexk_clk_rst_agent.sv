@@ -7,7 +7,8 @@
 // watched by a monitor.
 // The parent creates the agent and assigns cfg, with the interface in it, before the build
 // phase; without that the agent takes the cfg that uvm_config_db holds for it under "cfg".
-// A test starts the sequences of the package on sqr; consumers connect to ap or wait for the
+// A test starts the sequences of the package on sqr; consumers connect to ap, the port of the
+// monitor that the agent hands on from its build phase (guide rule CMP-10), or wait for the
 // events of status, which also holds the clock that is being driven; the cfg is only read.
 // In passive mode the agent has the monitor only and the interface follows a clock and a
 // reset of the DUT. The agent is a hexk_clk_countable: give it to a component that counts
@@ -35,7 +36,8 @@ class hexk_clk_rst_agent extends uvm_agent implements hexk_clk_countable;
    // The monitor.
    hexk_clk_rst_monitor                   mon;
 
-   // One item per assertion and per release of the reset; the monitor writes to it.
+   // One item per assertion and per release of the reset: the port of the monitor, set in the build phase, so a
+   // consumer connects to it in its connect phase.
    uvm_analysis_port #(hexk_clk_rst_item) ap;
 
    // The reset and the clock during the run; created with the agent, so it is there before the build phase.
@@ -43,10 +45,9 @@ class hexk_clk_rst_agent extends uvm_agent implements hexk_clk_countable;
 
    `uvm_component_utils(hexk_clk_rst_agent)
 
-   // Creates the agent, its port and its status; the children are created in build_phase.
+   // Creates the agent and its status; the children, and with the monitor the port, come in build_phase.
    function new(string name, uvm_component parent);
       super.new(name, parent);
-      ap     = new("ap", this);
       status = hexk_clk_rst_status::type_id::create("status");
    endfunction : new
 
@@ -67,9 +68,10 @@ class hexk_clk_rst_agent extends uvm_agent implements hexk_clk_countable;
          return;
       end
       status.set_clock(cfg.period_ps, cfg.duty_percent, cfg.jitter_ps);
-      mon        = hexk_clk_rst_monitor::type_id::create("mon", this);
-      mon.cfg    = cfg;
+      mon = hexk_clk_rst_monitor::type_id::create("mon", this);
+      mon.cfg = cfg;
       mon.status = status;
+      ap = mon.ap;
       if (get_is_active() == UVM_ACTIVE) begin
          sqr        = uvm_sequencer#(hexk_clk_rst_item)::type_id::create("sqr", this);
          drv        = hexk_clk_rst_driver::type_id::create("drv", this);
@@ -78,10 +80,9 @@ class hexk_clk_rst_agent extends uvm_agent implements hexk_clk_countable;
       end
    endfunction : build_phase
 
-   // UVM callback: connects the driver to the sequencer and the port of the monitor to the port of the agent.
+   // UVM callback: connects the driver to the sequencer.
    function void connect_phase(uvm_phase phase);
       super.connect_phase(phase);
-      mon.ap.connect(ap);
       if (get_is_active() == UVM_ACTIVE) begin
          drv.seq_item_port.connect(sqr.seq_item_export);
       end
@@ -98,7 +99,7 @@ class hexk_clk_rst_agent extends uvm_agent implements hexk_clk_countable;
    endfunction : start_of_simulation_phase
 
    // UVM hook: the mode of the cfg.
-   virtual function uvm_active_passive_enum get_is_active();
+   function uvm_active_passive_enum get_is_active();
       return cfg.is_active;
    endfunction : get_is_active
 

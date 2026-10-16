@@ -38,7 +38,7 @@ class hexk_valid_ready_driver #(
    `uvm_component_param_utils(hexk_valid_ready_driver#(DATA_WIDTH))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_valid_ready_driver";
    endfunction : get_type_name
 
@@ -56,6 +56,7 @@ class hexk_valid_ready_driver #(
 
    // UVM callback: drives the side of the channel that the role of the cfg names, until the phase ends.
    task run_phase(uvm_phase phase);
+      super.run_phase(phase);
       if (cfg.role == HEXK_VALID_READY_INITIATOR) begin
          run_initiator();
       end else begin

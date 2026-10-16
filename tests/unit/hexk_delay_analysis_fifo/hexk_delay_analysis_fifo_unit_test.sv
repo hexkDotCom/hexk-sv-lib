@@ -16,6 +16,23 @@
 `include "svunit_defines.svh"
 `include "hexk_macros.svh"
 
+// A FIFO specialized in a package with the time unit of the command line, 1 ns in the tests, for an item class of
+// that package: Questa 2024.1 then takes $time in the FIFO in the time unit of the package.
+package hexk_delay_analysis_fifo_ut_item_pkg;
+   import hexk_uvm_pkg::hexk_delay_analysis_fifo;
+   // Item class of this package.
+   class hexk_ut_pkg_fifo_item;
+      int unsigned value;
+   endclass : hexk_ut_pkg_fifo_item
+
+   // The FIFO of these items.
+   class hexk_ut_pkg_fifo extends hexk_delay_analysis_fifo #(hexk_ut_pkg_fifo_item);
+      function new(string name, uvm_pkg::uvm_component parent);
+         super.new(name, parent);
+      endfunction : new
+   endclass : hexk_ut_pkg_fifo
+endpackage : hexk_delay_analysis_fifo_ut_item_pkg
+
 module hexk_delay_analysis_fifo_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
@@ -207,6 +224,26 @@ module hexk_delay_analysis_fifo_unit_test;
       item_counts = $sformatf("%s %0d", item_counts, item_fifo.used());
    endtask : latency_with_a_class_of_this_module
 
+   // latency_with_a_class_of_this_module() with the FIFO of hexk_delay_analysis_fifo_ut_item_pkg.
+   task automatic latency_with_a_class_of_a_package();
+      hexk_delay_analysis_fifo_ut_item_pkg::hexk_ut_pkg_fifo      item_fifo;
+      hexk_delay_analysis_fifo_ut_item_pkg::hexk_ut_pkg_fifo_item item = new();
+      item_fifo            = new($sformatf("ut_delay_pkg_item_fifo_%0d", created), null);
+      item_fifo.latency_ps = `hexk_ps(30ns);
+      fork
+         begin
+            item_fifo_process = process::self();
+            item_fifo.run_phase(null);
+         end
+      join_none
+      wait (item_fifo_process != null);
+      void'(item_fifo.try_put(item));
+      #29ns;
+      item_counts = $sformatf("%0d", item_fifo.used());
+      #2ns;
+      item_counts = $sformatf("%s %0d", item_counts, item_fifo.used());
+   endtask : latency_with_a_class_of_a_package
+
    // Number of HEXK_DELAY_FIFO_CLOCK errors in this test.
    function automatic string clock_errors();
       return $sformatf("%0d", catcher.get_count("^HEXK_DELAY_FIFO_CLOCK$"));
@@ -301,6 +338,7 @@ module hexk_delay_analysis_fifo_unit_test;
       `FAIL_UNLESS_STR_EQUAL(visible(), "-")
       advance(6ns);
       `FAIL_UNLESS_STR_EQUAL(visible(), "11 ")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(the_largest_latency_in_cycles_does_not_wrap_to_an_early_one)
@@ -312,6 +350,7 @@ module hexk_delay_analysis_fifo_unit_test;
       tick();
       `FAIL_UNLESS_STR_EQUAL(visible(), "-")
       `FAIL_UNLESS_STR_EQUAL(in_flight(), "1 1")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(latency_cycles_is_used_instead_of_the_time)
@@ -321,6 +360,7 @@ module hexk_delay_analysis_fifo_unit_test;
       port.write(11);
       advance(11ns);
       `FAIL_UNLESS_STR_EQUAL(visible(), "11 ")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(a_clock_event_in_the_time_step_of_the_write_does_not_count)
@@ -331,6 +371,7 @@ module hexk_delay_analysis_fifo_unit_test;
       `FAIL_UNLESS_STR_EQUAL(visible(), "-")
       tick();
       `FAIL_UNLESS_STR_EQUAL(visible(), "11 ")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(the_latency_in_cycles_is_the_same_when_the_clock_event_comes_first)
@@ -341,6 +382,7 @@ module hexk_delay_analysis_fifo_unit_test;
       `FAIL_UNLESS_STR_EQUAL(visible(), "-")
       tick();
       `FAIL_UNLESS_STR_EQUAL(visible(), "11 ")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(items_of_one_time_step_wait_for_the_same_clock_event)
@@ -351,6 +393,7 @@ module hexk_delay_analysis_fifo_unit_test;
       `FAIL_UNLESS_STR_EQUAL(visible(), "-")
       tick();
       `FAIL_UNLESS_STR_EQUAL(visible(), "1 2 ")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(latency_cycles_without_a_clock_is_an_error_and_does_not_delay)
@@ -401,6 +444,7 @@ module hexk_delay_analysis_fifo_unit_test;
       port.write(2);
       advance(11ns);
       `FAIL_UNLESS_STR_EQUAL(visible(), "2 ")
+      `FAIL_UNLESS_STR_EQUAL(clock_errors(), "0")
    `SVTEST_END
 
    `SVTEST(put_delays_an_item_like_write_and_keeps_the_order)
@@ -442,6 +486,11 @@ module hexk_delay_analysis_fifo_unit_test;
 
    `SVTEST(the_latency_is_the_same_with_an_item_class_of_a_scope_with_another_time_unit)
       latency_with_a_class_of_this_module();
+      `FAIL_UNLESS_STR_EQUAL(item_counts, "0 1")
+   `SVTEST_END
+
+   `SVTEST(the_latency_is_the_same_with_an_item_class_of_a_package)
+      latency_with_a_class_of_a_package();
       `FAIL_UNLESS_STR_EQUAL(item_counts, "0 1")
    `SVTEST_END
 

@@ -55,6 +55,27 @@ module hexk_plusarg_unit_test;
       return {bit_text(hexk_plusarg::get_bit(plusarg, 0)), bit_text(hexk_plusarg::get_bit(plusarg, 1))};
    endfunction : bit_of
 
+   // try_get_int as "<status> <value>".
+   function automatic string try_int_of(string plusarg);
+      longint                value;
+      hexk_plusarg::status_e status = hexk_plusarg::try_get_int(plusarg, value);
+      return $sformatf("%s %0d", status.name(), value);
+   endfunction : try_int_of
+
+   // try_get_bit as "<status> <value>".
+   function automatic string try_bit_of(string plusarg);
+      bit                    value;
+      hexk_plusarg::status_e status = hexk_plusarg::try_get_bit(plusarg, value);
+      return $sformatf("%s %0b", status.name(), value);
+   endfunction : try_bit_of
+
+   // try_get_real as "<status> <value>" with three decimals.
+   function automatic string try_real_of(string plusarg);
+      real                   value;
+      hexk_plusarg::status_e status = hexk_plusarg::try_get_real(plusarg, value);
+      return $sformatf("%s %0.3f", status.name(), value);
+   endfunction : try_real_of
+
    // get_list as "<count>:<field>|<field>...", starting from a queue that is not empty.
    function automatic string list_of(string plusarg, byte sep = ",");
       string values[$];
@@ -123,6 +144,24 @@ module hexk_plusarg_unit_test;
       `FAIL_UNLESS_STR_EQUAL(int_of("hexk_ut_str"), "-999")
       `FAIL_UNLESS_STR_EQUAL(int_of("hexk_ut_flag"), "-999")
       `FAIL_UNLESS_STR_EQUAL(int_of("hexk_ut_empty"), "-999")
+   `SVTEST_END
+
+   `SVTEST(try_get_int_says_what_it_found_without_reporting)
+      `FAIL_UNLESS_STR_EQUAL(try_int_of("hexk_ut_int"), "HEXK_PLUSARG_VALID 42")
+      `FAIL_UNLESS_STR_EQUAL(try_int_of("hexk_ut_absent"), "HEXK_PLUSARG_NOT_GIVEN 0")
+      `FAIL_UNLESS_STR_EQUAL(try_int_of("hexk_ut_bad_int"), "HEXK_PLUSARG_INVALID 0")
+      `FAIL_UNLESS_STR_EQUAL(try_int_of("hexk_ut_flag"), "HEXK_PLUSARG_INVALID 0")
+      `FAIL_UNLESS_STR_EQUAL(try_int_of("hexk_ut_empty"), "HEXK_PLUSARG_INVALID 0")
+   `SVTEST_END
+
+   `SVTEST(try_get_bit_and_try_get_real_say_what_they_found_without_reporting)
+      `FAIL_UNLESS_STR_EQUAL(try_bit_of("hexk_ut_flag"), "HEXK_PLUSARG_VALID 1")
+      `FAIL_UNLESS_STR_EQUAL(try_bit_of("hexk_ut_off"), "HEXK_PLUSARG_VALID 0")
+      `FAIL_UNLESS_STR_EQUAL(try_bit_of("hexk_ut_str"), "HEXK_PLUSARG_INVALID 0")
+      `FAIL_UNLESS_STR_EQUAL(try_bit_of("hexk_ut_absent"), "HEXK_PLUSARG_NOT_GIVEN 0")
+      `FAIL_UNLESS_STR_EQUAL(try_real_of("hexk_ut_real"), "HEXK_PLUSARG_VALID 2.500")
+      `FAIL_UNLESS_STR_EQUAL(try_real_of("hexk_ut_bad_real"), "HEXK_PLUSARG_INVALID 0.000")
+      `FAIL_UNLESS_STR_EQUAL(try_real_of("hexk_ut_absent"), "HEXK_PLUSARG_NOT_GIVEN 0.000")
    `SVTEST_END
 
    `SVTEST(get_str_returns_the_value)

@@ -16,6 +16,7 @@
 
 // Interface for the virtual interface macros.
 interface hexk_ut_util_if;
+   timeunit 1ns; timeprecision 1ps;
    logic [7:0] data;
 endinterface : hexk_ut_util_if
 

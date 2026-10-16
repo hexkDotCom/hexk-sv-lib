@@ -40,17 +40,17 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_agent.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
-// Creates the agent and its ports; the children are created in build_phase.
+function string get_type_name();
+// Creates the agent; the children, and with the monitor the ports, come in build_phase.
 function new(string name, uvm_component parent);
 // UVM callback: checks the cfg and its interface, creates the monitor, the coverage and, in active mode, the rest.
 function void build_phase(uvm_phase phase);
-// UVM callback: connects the ports of the monitor to those of the agent and to the coverage, and the driver to the sequencer.
+// UVM callback: connects the coverage to the records of the monitor, and the driver to the sequencer.
 function void connect_phase(uvm_phase phase);
 // UVM callback: tells the interface which side this agent drives and whether its protocol assertions are on.
 function void start_of_simulation_phase(uvm_phase phase);
 // UVM hook: the mode of the cfg.
-virtual function uvm_active_passive_enum get_is_active();
+function uvm_active_passive_enum get_is_active();
 // hexk_objectable: 1 while the driver holds an item of a sequence (also during its delay), or while a transfer is offered and not yet accepted. A responder that waits for traffic without an item is not busy.
 virtual function bit is_busy();
 // hexk_objectable: whether the driver holds an item, and for how long the transfer has waited.
@@ -61,7 +61,7 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_agent_cfg.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates a cfg for an active initiator with uniform delays of 0 to 4, checks and coverage.
 function new(string name = "hexk_valid_ready_agent_cfg");
 // The mode, the role, the switches and the delays, on one line.
@@ -74,7 +74,7 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_driver.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates the driver.
 function new(string name, uvm_component parent);
 // UVM callback: takes the interface from the cfg, which the agent has checked, and creates the delay generator.
@@ -116,7 +116,7 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_item.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates an item; the delay is that of the cfg until it is randomized or assigned.
 function new(string name = "hexk_valid_ready_item");
 // The word and the timing of the transfer, on one line.
@@ -137,7 +137,7 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_monitor.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates the monitor and its ports.
 function new(string name, uvm_component parent);
 // UVM callback: takes the interface from the cfg; the agent has checked both.
@@ -159,7 +159,7 @@ From `src/agents/hexk_valid_ready/sequences/hexk_valid_ready_data_seq.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates the sequence without words.
 function new(string name = "hexk_valid_ready_data_seq");
 // Sends one item per word; returns at the transfer of the last one.
@@ -170,7 +170,7 @@ From `src/agents/hexk_valid_ready/sequences/hexk_valid_ready_random_seq.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates the sequence.
 function new(string name = "hexk_valid_ready_random_seq");
 // Sends num_items items with random words; returns at the transfer of the last one.
@@ -278,7 +278,9 @@ Delays:
   which is the default of the item and of the sequences, the driver draws it from a
   `hexk_delay` with `cfg.delay_cfg`: uniform 0 to 4 unless the test changes the cfg.
   `delay_cfg` is created with the cfg and randomized with it; the knob `perf_mode` makes
-  every drawn delay 0 (see `hexk_delay`).
+  every drawn delay 0 (see `hexk_delay`). The driver takes the `delay_cfg` object in its
+  connect phase: a change to that object applies to the next draw, while another object
+  assigned to `cfg.delay_cfg` later is not used.
 - The draws come from a random stream of the driver that is seeded from the full name of
   the driver, so they do not depend on other randomization.
 
@@ -289,6 +291,9 @@ Reset:
 - An item that has not had its transfer when the reset is asserted is ended: it is done
   with `aborted` 1. An item that arrives during a reset waits; the driver goes on when the
   reset is released. A sequence that must not go on after a reset is ended by the test.
+  The sequences of the library do not look at `aborted`: they send all their items, and
+  "returns at the transfer of the last one" means, after a reset, at the end of the last
+  item, transferred or aborted.
 - The monitor reports no transfer during a reset, forgets a transfer that was waiting, and
   marks the first edge after a reset began in its record on `cycle_ap` (`reset_began`). It looks at the channel at the rising edges of the
   clock; a reset that is asserted and released between two edges counts as well, because
@@ -327,7 +332,8 @@ Protocol assertions, in the interface, with `has_checks` and out of reset:
 - `valid` and `ready` are not X or Z, and `data` has no X or Z bit while `valid` is 1
   (`HEXK_VALID_READY_UNKNOWN`), at every edge.
 - They hold for both sides of the channel, also for a DUT that drives it, and are errors of
-  the root reporter of UVM. Every agent on an interface sets the switch of that interface at
+  the root reporter of UVM. Each message starts with the hierarchical name of the assertion
+  in its interface instance (`%m`), so that it tells which channel broke the rule. Every agent on an interface sets the switch of that interface at
   the start of the simulation: give the agents of one interface the same `has_checks`.
 
 The agent:
@@ -337,22 +343,27 @@ The agent:
   `uvm_config_db#(hexk_valid_ready_agent_cfg#(W))::set(this, "<agent path>", "cfg", cfg)`;
   the agent looks there only when nothing was assigned (CFG-4). A `cfg` that is still null,
   or a null `cfg.vif`, in the build phase is the fatal `HEXK_VALID_READY_CFG`.
-- The agent creates `ap` and `cycle_ap` in its constructor, so a consumer can connect to them
-  at any time; the agent connects the ports of the monitor to them. It builds `mon` always,
+- `ap` and `cycle_ap` of the agent are the ports of its monitor (guide rule CMP-10): the agent
+  sets them in its build phase, when it creates the monitor, so a consumer connects to them in
+  its connect phase; before the build phase they are null. It builds `mon` always,
   `cov` with `has_coverage`, and `sqr` and `drv` in active mode. `get_is_active()` returns
   `cfg.is_active`. An
   active agent takes its side of the interface at the start of the simulation.
 - An initiator and a responder agent may share one interface, for a channel inside the
   testbench. Two active agents with the same role on one interface are not allowed.
-- Driver and monitor work in the run phase only; the sequences raise no objections. A
-  sequence sends one item per transfer; a failed randomization of an item is the fatal
-  `HEXK_VALID_READY_RAND`. `hexk_valid_ready_data_seq` randomizes an item only when the
+- Driver and monitor work in the run phase only; the sequences raise no objections. The
+  members of the sequences start at their defaults, which are also soft constraints, so a
+  sequence works with or without `randomize()`. A sequence sends one item per transfer; a
+  failed randomization of an item is the fatal `HEXK_VALID_READY_RAND`. `hexk_valid_ready_data_seq` randomizes an item only when the
   factory gives a class derived from `hexk_valid_ready_item`, so that its own random fields
   get values; a plain item is not randomized, since the sequence assigns both its random
   fields. A randomization costs several times as much as the rest of an item. The sequence
-  asks the factory once when it starts, for the instance name `req`, as `create()` does, and
+  asks the factory once when it starts, for `<sequencer path>.req`, as `create()` does, and
   makes every item of that start of the class it gave; an override set while it runs counts
   from its next start. A failed cast of such an item is the fatal `HEXK_VALID_READY_RAND`.
+- The sequences create their items as `<sequencer path>.req`, and the monitor as
+  `<monitor path>.item`, so that a factory instance override can change the items of one
+  agent: `item_t::type_id::set_inst_override(my_item_t::get_type(), "*.in_agent.sqr.req")`.
 
 Items and cfg:
 

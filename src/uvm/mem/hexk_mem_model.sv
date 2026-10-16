@@ -16,6 +16,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @emits     HEXK_MEM_UNINIT:error HEXK_MEM_RANGE:error HEXK_MEM_FILE:error HEXK_MEM_WIDTH:error
+//! @emits     HEXK_MEM_UNKNOWN:error
 //! @emits     HEXK_MEM_SUMMARY:info HEXK_COPY_TYPE:error
 //! @plusargs  (none)
 
@@ -44,33 +45,36 @@ class hexk_mem_model #(
    // Number of bytes of a word.
    localparam int unsigned WORD_BYTES = DATA_WIDTH / 8;
 
-   typedef bit [ADDR_WIDTH-1:0] addr_t;
+   // Four-state, so that an address or a byte enable with an X or Z bit, as a monitor may see it, is noticed.
+   typedef logic [ADDR_WIDTH-1:0] addr_t;
    typedef logic [DATA_WIDTH-1:0] data_t;
-   typedef bit [DATA_WIDTH/8-1:0] strobe_t;
+   typedef logic [DATA_WIDTH/8-1:0] strobe_t;
+   // The address of a stored byte, after the check for X and Z; internal.
+   typedef bit [ADDR_WIDTH-1:0] index_t;
    // Wide enough for an address or a word read from a file.
    typedef logic [ADDR_WIDTH+DATA_WIDTH-1:0] file_value_t;
    // Wide enough for the byte address of any word of a file, also of one beyond the address space.
    typedef bit [ADDR_WIDTH+DATA_WIDTH:0] file_addr_t;
 
    // What a read of a byte that was never written does.
-   hexk_mem_uninit_e            uninit_policy           = HEXK_MEM_UNINIT_ERROR;
+   hexk_mem_uninit_e            uninit_policy            = HEXK_MEM_UNINIT_ERROR;
 
    // The byte that policy HEXK_MEM_UNINIT_PATTERN returns.
-   logic                  [7:0] uninit_pattern          = 8'hA5;
+   logic                  [7:0] uninit_pattern           = 8'hA5;
 
    // When 1, the most significant byte of a word has the lowest address; when 0, the least significant.
-   bit                          big_endian              = 0;
+   bit                          big_endian               = 0;
 
    // Seed of the values of policy HEXK_MEM_UNINIT_RANDOM.
    int unsigned                 seed;
 
    // The written bytes by address.
-   local logic            [7:0] bytes         [addr_t];
+   local logic            [7:0] bytes         [index_t];
 
    // Address limits of set_range(), and whether they are in use.
    local bit                    has_range;
-   local addr_t                 range_lo;
-   local addr_t                 range_hi;
+   local index_t                range_lo;
+   local index_t                range_hi;
 
    // Number of reads that touched a byte that was never written.
    local int unsigned           uninit_reads;
@@ -84,7 +88,7 @@ class hexk_mem_model #(
                                            .DATA_WIDTH(DATA_WIDTH)))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_mem_model";
    endfunction : get_type_name
 
@@ -130,6 +134,9 @@ class hexk_mem_model #(
 
    // Limits the legal addresses to lo..hi; an access outside is an error and is not carried out.
    function void set_range(addr_t lo, addr_t hi);
+      if (!is_known(lo, "set_range") || !is_known(hi, "set_range")) begin
+         return;
+      end
       has_range = 1;
       range_lo  = lo;
       range_hi  = hi;
@@ -137,7 +144,12 @@ class hexk_mem_model #(
 
    // Writes the bytes of a word whose byte enable is set; addr is the address of the first byte of the word.
    function void write(addr_t addr, data_t data, strobe_t byte_en = '1);
-      if (!is_legal(addr, WORD_BYTES, "write")) begin
+      if (!is_known(addr, "write") || !is_legal(addr, WORD_BYTES, "write")) begin
+         return;
+      end
+      if ($isunknown(byte_en)) begin
+         `uvm_error("HEXK_MEM_UNKNOWN", $sformatf("%s: write at address 0x%0h with X or Z in the byte enable 'b%b; %s",
+                                                  get_name(), addr, byte_en, "not carried out"))
          return;
       end
       for (int unsigned lane = 0; lane < WORD_BYTES; lane++) begin
@@ -151,7 +163,7 @@ class hexk_mem_model #(
    function data_t read(addr_t addr);
       data_t data = 'x;
       bit    missing = 0;
-      if (!is_legal(addr, WORD_BYTES, "read")) begin
+      if (!is_known(addr, "read") || !is_legal(addr, WORD_BYTES, "read")) begin
          return data;
       end
       for (int unsigned lane = 0; lane < WORD_BYTES; lane++) begin
@@ -163,7 +175,7 @@ class hexk_mem_model #(
 
    // Writes one byte.
    function void write_byte(addr_t byte_addr, logic [7:0] data);
-      if (is_legal(byte_addr, 1, "write")) begin
+      if (is_known(byte_addr, "write") && is_legal(byte_addr, 1, "write")) begin
          bytes[byte_addr] = data;
       end
    endfunction : write_byte
@@ -172,7 +184,7 @@ class hexk_mem_model #(
    function logic [7:0] read_byte(addr_t byte_addr);
       logic [7:0] data = 'x;
       bit         missing = 0;
-      if (is_legal(byte_addr, 1, "read")) begin
+      if (is_known(byte_addr, "read") && is_legal(byte_addr, 1, "read")) begin
          data = byte_at(byte_addr, missing);
          note_uninit_read(byte_addr, missing);
       end
@@ -181,11 +193,11 @@ class hexk_mem_model #(
 
    // 1 when every byte of the word at addr was written; 0 for a word that does not fit below the top address.
    function bit is_written(addr_t addr);
-      if (unusable || !fits_below_top(addr, WORD_BYTES)) begin
+      if (unusable || !is_known(addr, "is_written") || !fits_below_top(addr, WORD_BYTES)) begin
          return 0;
       end
       for (int unsigned lane = 0; lane < WORD_BYTES; lane++) begin
-         if (!bytes.exists(addr + addr_t'(lane))) begin
+         if (!bytes.exists(index_t'(addr) + index_t'(lane))) begin
             return 0;
          end
       end
@@ -210,9 +222,9 @@ class hexk_mem_model #(
 
    // Loads a file in the format of $readmemh with words of DATA_WIDTH bits; word n goes to base + n * WORD_BYTES.
    function void load_hex(string file, addr_t base = 0);
-      int          handle = $fopen(file, "r");
+      int          handle;
       string       line;
-      string       tokens                     [$];
+      string       tokens              [$];
       file_addr_t  word_index = 0;
       file_addr_t  byte_addr;
       file_value_t word;
@@ -220,6 +232,10 @@ class hexk_mem_model #(
       bit          has_xz;
       bit          beyond_reported = 0;
       int          line_number = 0;
+      if (!is_known(base, "load_hex")) begin
+         return;
+      end
+      handle = $fopen(file, "r");
       if (handle == 0) begin
          `uvm_error("HEXK_MEM_FILE", $sformatf("%s cannot be opened for reading", file))
          return;
@@ -301,8 +317,8 @@ class hexk_mem_model #(
          text = "";
          for (int lane = int'(WORD_BYTES) - 1; lane >= 0; lane--) begin
             lane_byte = file_lane_addr(word_start, $unsigned(lane));
-            missing   = (lane_byte >> ADDR_WIDTH) != 0 || !bytes.exists(addr_t'(lane_byte));
-            text      = {text, missing ? "xx" : $sformatf("%02h", bytes[addr_t'(lane_byte)])};
+            missing   = (lane_byte >> ADDR_WIDTH) != 0 || !bytes.exists(index_t'(lane_byte));
+            text      = {text, missing ? "xx" : $sformatf("%02h", bytes[index_t'(lane_byte)])};
          end
          $fdisplay(handle, "%s", text);
          next_index = word_index + 1;
@@ -334,9 +350,9 @@ class hexk_mem_model #(
    endfunction : eot_check
 
    // Address of the byte that holds bits 8*lane+7..8*lane of the word at addr.
-   local function addr_t lane_addr(addr_t addr, int unsigned lane);
+   local function index_t lane_addr(index_t addr, int unsigned lane);
       int unsigned offset = big_endian ? (WORD_BYTES - 1 - lane) : lane;
-      return addr + addr_t'(offset);
+      return addr + index_t'(offset);
    endfunction : lane_addr
 
    // As lane_addr, for a word of a file: in a type wider than an address, so that a byte beyond the top address
@@ -354,7 +370,7 @@ class hexk_mem_model #(
       strobe_t    lanes = ~skip;
       file_addr_t lane_byte;
       bit         beyond = 0;
-      if (fits_below_top(addr_t'(start), WORD_BYTES)) begin
+      if (fits_below_top(index_t'(start), WORD_BYTES)) begin
          if (lanes != '0) begin
             write(addr_t'(start), data, lanes);
          end
@@ -409,7 +425,7 @@ class hexk_mem_model #(
    endfunction : is_x_digit
 
    // The byte at an address, by uninit_policy when it was never written; missing is set for such a byte.
-   local function logic [7:0] byte_at(addr_t addr, ref bit missing);
+   local function logic [7:0] byte_at(index_t addr, ref bit missing);
       int unsigned folded = seed;
       if (bytes.exists(addr)) begin
          return bytes[addr];
@@ -435,7 +451,7 @@ class hexk_mem_model #(
    endfunction : byte_at
 
    // Counts a read that touched a byte that was never written, and reports it under policy HEXK_MEM_UNINIT_ERROR.
-   local function void note_uninit_read(addr_t addr, bit missing);
+   local function void note_uninit_read(index_t addr, bit missing);
       if (!missing) begin
          return;
       end
@@ -446,9 +462,19 @@ class hexk_mem_model #(
       end
    endfunction : note_uninit_read
 
+   // 1 when the address has no X or Z bit; otherwise the error HEXK_MEM_UNKNOWN, and the access is not carried out.
+   local function bit is_known(addr_t addr, string access);
+      if (!$isunknown(addr)) begin
+         return 1;
+      end
+      `uvm_error("HEXK_MEM_UNKNOWN", $sformatf(
+                 "%s: %s at address 'h%h, which has X or Z bits; not carried out", get_name(), access, addr))
+      return 0;
+   endfunction : is_known
+
    // 1 when the bytes addr..addr+size-1 are all at or below the top address; computed in a type wider than an
    // address, so that a span larger than the address space is not cut short.
-   local function bit fits_below_top(addr_t addr, int unsigned size);
+   local function bit fits_below_top(index_t addr, int unsigned size);
       int unsigned span = size - 1;
       file_addr_t  last = file_addr_t'(addr) + file_addr_t'(span);
       return (last >> ADDR_WIDTH) == 0;
@@ -456,9 +482,9 @@ class hexk_mem_model #(
 
    // 1 when the bytes addr..addr+size-1 exist and are inside the range of set_range(), if one is set.
    // An access that would go on at address 0 after the top address is never legal.
-   local function bit is_legal(addr_t addr, int unsigned size, string access);
+   local function bit is_legal(index_t addr, int unsigned size, string access);
       int unsigned span = size - 1;
-      addr_t       last = addr + addr_t'(span);
+      index_t      last = addr + index_t'(span);
       if (unusable) begin
          return 0;
       end

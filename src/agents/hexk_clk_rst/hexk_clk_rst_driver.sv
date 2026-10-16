@@ -43,6 +43,7 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
 
    // UVM callback: applies the cfg, then carries out the items.
    task run_phase(uvm_phase phase);
+      super.run_phase(phase);
       apply_cfg();
       forever begin
          seq_item_port.get_next_item(req);
@@ -75,10 +76,11 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
       case (item.op)
          HEXK_CLK_RST_RESET: drive_reset(item);
          HEXK_CLK_RST_CLOCK: drive_clock(item);
-         HEXK_CLK_RST_STOP:  stop_clock(item);
+         HEXK_CLK_RST_STOP: stop_clock(item);
          HEXK_CLK_RST_START: start_clock();
-         // Not reached while hexk_clk_rst_op_e has four values in two bits; a value added later without a branch here
-         // is reported.
+         HEXK_CLK_RST_ASSERT: assert_reset(item);
+         HEXK_CLK_RST_RELEASE: release_reset(item);
+         // Reached by a value of the three bits that is no member, or one added later without a branch here.
          default: begin
             `uvm_error(
                 "HEXK_CLK_RST_ILLEGAL", $sformatf(
@@ -93,9 +95,7 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
       bit          sync_assert = item.sync_assert;
       bit          sync_release = item.sync_release;
       if (!vif.run_requested() && (hold_cycles != 0 || sync_assert || sync_release)) begin
-         `uvm_error("HEXK_CLK_RST_STOPPED",
-                    $sformatf("the clock is stopped, but the reset item needs rising edges (%s); they are left out",
-                              item.convert2string()))
+         report_stopped(item);
          hold_cycles  = 0;
          sync_assert  = 0;
          sync_release = 0;
@@ -120,6 +120,37 @@ class hexk_clk_rst_driver extends uvm_driver #(hexk_clk_rst_item);
          vif.drive_reset(1'b0);
       end
    endtask : drive_reset
+
+   // Asserts the reset and leaves it asserted; with sync_assert at the next rising edge, else at once.
+   local task assert_reset(hexk_clk_rst_item item);
+      drive_reset_to(1'b1, item.sync_assert, item);
+   endtask : assert_reset
+
+   // Releases the reset; with sync_release at the next rising edge, else at once.
+   local task release_reset(hexk_clk_rst_item item);
+      drive_reset_to(1'b0, item.sync_release, item);
+   endtask : release_reset
+
+   // Drives the reset to active (1) or released (0), at the next rising edge or at once. A stopped clock has no
+   // edge: the reset then changes at once, after the error HEXK_CLK_RST_STOPPED.
+   local task drive_reset_to(bit active, bit at_edge, hexk_clk_rst_item item);
+      if (at_edge && !vif.run_requested()) begin
+         report_stopped(item);
+         at_edge = 0;
+      end
+      if (at_edge) begin
+         vif.drive_reset_at_edge(active, 1'b1);
+      end else begin
+         vif.drive_reset(active);
+      end
+   endtask : drive_reset_to
+
+   // Reports a reset item that needs rising edges of a clock that is stopped; the edges are left out.
+   local function void report_stopped(hexk_clk_rst_item item);
+      `uvm_error(
+          "HEXK_CLK_RST_STOPPED", $sformatf(
+          "the clock is stopped, but the reset item needs rising edges (%s); they are left out", item.convert2string()))
+   endfunction : report_stopped
 
    // Gives the clock a new period, duty cycle and jitter; done at the rising edge from which they hold.
    local task drive_clock(hexk_clk_rst_item item);

@@ -70,6 +70,9 @@ interface hexk_clk_rst_if;
    // Number of rising edges of clk.
    longint unsigned clk_count;
 
+   // Number of starts of the generator, the first one included.
+   int unsigned     start_count;
+
    hexk_rand_stream jitter_stream = new("hexk_clk_rst_if");
 
    // The reset sampled at the rising edge of the clock; @(mon_cb) is "the next clock edge" for testbench code.
@@ -84,6 +87,7 @@ interface hexk_clk_rst_if;
       forever begin
          wait (run_request);
          generating = 1'b1;
+         start_count++;
          // The long waits through hexk_wait_util, where a time after hexk_wait_util::LAST_PS never comes; the half
          // periods below are short and are delays of their own, the hottest path of a simulation.
          hexk_uvm_pkg::hexk_wait_util::wait_ps(start_delay_ps);
@@ -196,12 +200,14 @@ interface hexk_clk_rst_if;
    endfunction : drive_reset
 
    // Asserts or releases the reset in the time step of a rising edge, after the edge: the DUT sees it at the next
-   // edge. With wait_for_edge it waits for the next rising edge first; without, the caller is at an edge.
+   // edge. With wait_for_edge it waits for the next rising edge first; without, the caller is at an edge. Returns
+   // when the pin has its new value, still in that time step.
    task automatic drive_reset_at_edge(bit active, bit wait_for_edge);
       if (wait_for_edge) begin
          @(clk_count);
       end
       rst <= pin_value(active);
+      wait (rst === pin_value(active));
    endtask : drive_reset_at_edge
 
    // 1 when the pin has a level; active then says whether the reset is asserted.
@@ -224,6 +230,11 @@ interface hexk_clk_rst_if;
    function automatic longint unsigned get_clk_count();
       return clk_count;
    endfunction : get_clk_count
+
+   // Number of times the generator started the clock; a check of the period skips the interval across a stop.
+   function automatic int unsigned get_start_count();
+      return start_count;
+   endfunction : get_start_count
 
    // Waits for n rising edges of clk; returns at once when n is 0.
    task automatic wait_clks(int unsigned n);

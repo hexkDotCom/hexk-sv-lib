@@ -111,8 +111,9 @@ The modes of `hexk_delay_cfg`:
 - A cfg is illegal for its mode when: uniform with `lo` above `hi`; bursty with a minimum
   above its maximum; weighted without a weight above 0; normal or exponential with `mean` or
   `std_dev` above 2147483647; and with a `mode` that is no value of `hexk_delay_mode_e`.
-  The hard constraints keep a randomized cfg legal; `illegal_reason()` says what is wrong
-  with one that was assigned by hand.
+  The hard constraints keep a randomized cfg legal, except in weighted mode: `weights` is not
+  random, so a cfg randomized into that mode is legal only once a weight above 0 is given.
+  `illegal_reason()` says what is wrong with a cfg.
 - `convert2string()` shows the mode and the members that the mode uses. `copy()` and
   `clone()` copy every member, the weights included.
 

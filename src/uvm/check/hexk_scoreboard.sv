@@ -92,7 +92,7 @@ class hexk_scoreboard #(
    `uvm_component_param_utils(hexk_scoreboard#(T, KEY))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_scoreboard";
    endfunction : get_type_name
 
@@ -140,7 +140,7 @@ class hexk_scoreboard #(
    // Hook: the time in picoseconds from which the latency of an expected item counts; the default is the time
    // of the write. An override returns a time in picoseconds, such as hexk_meta_item::timestamp_ps.
    virtual function longint unsigned get_timestamp_ps(T item);
-      return $time;
+      return hexk_wait_util::now_ps();
    endfunction : get_timestamp_ps
 
    // Hook: the unique ID of an item for messages; the default is none.
@@ -156,12 +156,13 @@ class hexk_scoreboard #(
 
    // Analysis write of an expected export: the item waits for its actual item, or meets one that came early.
    function void write_expected_idx(int idx, T t);
-      stream_t stream = stream_of(idx);
-      T        item;
-      T        actual;
-      KEY      key;
-      int      position;
-      bit      known_equal;
+      stream_t         stream = stream_of(idx);
+      T                item;
+      T                actual;
+      KEY              key;
+      int              position;
+      bit              known_equal;
+      longint unsigned arrived_ps;
       if (stream == null) begin
          return;
       end
@@ -174,9 +175,9 @@ class hexk_scoreboard #(
       key      = key_of(item);
       position = find_partner(stream, key, item, 1, known_equal);
       if (position >= 0) begin
-         actual = stream.take_actual(key, $unsigned(position));
-         // The actual item came first: the latency is 0, whatever get_timestamp_ps() says.
-         finish_pair(stream, idx, item, actual, $time, known_equal);
+         // The actual item came first: the latency runs from the timestamp of the expected item to its arrival.
+         actual = stream.take_actual(key, $unsigned(position), arrived_ps);
+         finish_pair(stream, idx, item, actual, get_timestamp_ps(item), arrived_ps, known_equal);
          check_outstanding(stream, idx);
          return;
       end
@@ -221,7 +222,7 @@ class hexk_scoreboard #(
       key      = key_of(t);
       position = find_partner(stream, key, t, 0, known_equal);
       if (position < 0 && cfg.allow_unexpected) begin
-         stream.store_actual(key, t);
+         stream.store_actual(key, t, hexk_wait_util::now_ps());
          if (max_wait_ps != 0) begin
             ->item_stored;
          end
@@ -240,7 +241,7 @@ class hexk_scoreboard #(
          known_equal = 0;
       end
       expected = stream.take_expected(key, $unsigned(position), stamp_ps);
-      finish_pair(stream, idx, expected, t, stamp_ps, known_equal);
+      finish_pair(stream, idx, expected, t, stamp_ps, hexk_wait_util::now_ps(), known_equal);
       check_outstanding(stream, idx);
    endfunction : write_actual_idx
 
@@ -306,18 +307,22 @@ class hexk_scoreboard #(
                          i,
                          streams[i].num_expected,
                          streams[i].num_actual,
-                         found ? $sformatf(
-                             ", the oldest expected one since %0t", oldest_ps
-                         ) : ""
+                         found ? {", the oldest expected one since ", hexk_wait_util::format_ps(
+                             oldest_ps
+                         )} : ""
                          ));
       end
       return hexk_str::join_str(lines, "\n");
    endfunction : busy_reason
 
-   // UVM callback: creates the cfg if none was assigned, the streams and their exports.
+   // UVM callback: takes the cfg that was assigned, else the one in uvm_config_db under "cfg", else one with the
+   // defaults; then creates the streams and their exports.
    function void build_phase(uvm_phase phase);
       int unsigned count;
       super.build_phase(phase);
+      if (cfg == null) begin
+         void'(uvm_config_db#(hexk_scoreboard_cfg)::get(this, "", "cfg", cfg));
+      end
       if (cfg == null) begin
          cfg = hexk_scoreboard_cfg::type_id::create("cfg");
       end
@@ -373,7 +378,7 @@ class hexk_scoreboard #(
       end
       forever begin
          if (drop_overdue(next_ps)) begin
-            hexk_wait_util::wait_ps(next_ps - $time);
+            hexk_wait_util::wait_ps(next_ps - hexk_wait_util::now_ps());
          end else begin
             @(item_stored);
          end
@@ -387,12 +392,18 @@ class hexk_scoreboard #(
       foreach (streams[i]) begin
          report_leftovers(i);
          lines.push_back($sformatf(
-                         "stream %0d: %s; latency min %0t, mean %0t, max %0t",
+                         "stream %0d: %s; latency min %s, mean %s, max %s",
                          i,
                          streams[i].stats.convert2string(),
-                         streams[i].stats.latency_min_ps,
-                         streams[i].stats.latency_avg_ps(),
-                         streams[i].stats.latency_max_ps
+                         hexk_wait_util::format_ps(
+                             streams[i].stats.latency_min_ps
+                         ),
+                         hexk_wait_util::format_ps(
+                             streams[i].stats.latency_avg_ps()
+                         ),
+                         hexk_wait_util::format_ps(
+                             streams[i].stats.latency_max_ps
+                         )
                          ));
       end
       `uvm_info("HEXK_SB_SUMMARY", {"\n", hexk_str::join_str(lines, "\n")}, UVM_LOW)
@@ -446,12 +457,14 @@ class hexk_scoreboard #(
    endfunction : find_partner
 
    // Compares a pair, counts it here and as a check in hexk_check_stats, and reports a mismatch or a latency above
-   // the limit. With known_equal the search for the pair has compared it already, and it is not compared again.
+   // the limit. The latency runs from stamp_ps, the timestamp of the expected item, to arrived_ps, the arrival of
+   // the actual item. With known_equal the search for the pair has compared it already, and it is not compared again.
    local function void finish_pair(stream_t stream, int idx, T expected, T actual, longint unsigned stamp_ps,
-                                   bit known_equal);
+                                   longint unsigned arrived_ps, bit known_equal);
       string           diff;
-      // A timestamp of an override that lies in the future counts as a latency of 0.
-      longint unsigned latency_ps = ($time > stamp_ps) ? $time - stamp_ps : 0;
+      // A timestamp after the arrival, such as that of an expected item written after its actual item, is a latency
+      // of 0.
+      longint unsigned latency_ps = (arrived_ps > stamp_ps) ? arrived_ps - stamp_ps : 0;
       if (!known_equal && !compare_items(expected, actual, diff)) begin
          hexk_check_stats::record_fail("HEXK_SB_MISMATCH");
          stream.stats.mismatched++;
@@ -464,23 +477,34 @@ class hexk_scoreboard #(
       stream.stats.add_latency_ps(latency_ps);
       if (cfg.max_latency_ps != 0 && latency_ps > cfg.max_latency_ps) begin
          stream.stats.late++;
-         report_problem(
-             "HEXK_SB_LATENCY", $sformatf(
-             "stream %0d: an item was matched after %0t, the limit is %0t", idx, latency_ps, cfg.max_latency_ps),
-             expected, null);
+         report_problem("HEXK_SB_LATENCY", $sformatf(
+                        "stream %0d: an item was matched after %s, the limit is %s",
+                        idx,
+                        hexk_wait_util::format_ps(
+                            latency_ps
+                        ),
+                        hexk_wait_util::format_ps(
+                            cfg.max_latency_ps
+                        )
+                        ), expected, null);
       end
    endfunction : finish_pair
 
    // Reports an error about one or two items, either may be null; diff may explain a difference.
    // The items are printed for the first cfg.max_errors errors only, and their text is built only then.
    local function void report_problem(string id, string headline, T expected, T actual, string diff = "");
-      string details[$];
       if (detailed_errors >= cfg.max_errors) begin
-         uvm_report_error(id, $sformatf("%s (items are not printed after %0d errors)", headline, cfg.max_errors),
-                          UVM_NONE, `uvm_file, `uvm_line);
+         `uvm_error(id, $sformatf("%s (items are not printed after %0d errors)", headline, cfg.max_errors))
          return;
       end
       detailed_errors++;
+      // The macro builds the text only when the error is reported.
+      `uvm_error(id, problem_text(headline, expected, actual, diff))
+   endfunction : report_problem
+
+   // The text of an error of report_problem(): the headline, then each item that is not null, then the difference.
+   local function string problem_text(string headline, T expected, T actual, string diff);
+      string details[$];
       details.push_back(headline);
       if (expected != null) begin
          details.push_back({"expected", uid_text(expected), ":\n", item_text(expected)});
@@ -491,8 +515,8 @@ class hexk_scoreboard #(
       if (diff.len() != 0) begin
          details.push_back({"difference: ", diff});
       end
-      uvm_report_error(id, hexk_str::join_str(details, "\n"), UVM_NONE, `uvm_file, `uvm_line);
-   endfunction : report_problem
+      return hexk_str::join_str(details, "\n");
+   endfunction : problem_text
 
    // Reports a stream that holds more waiting items than cfg.max_outstanding, once per excursion.
    // Called whenever the number of waiting items of the stream changed, so that an excursion is seen to end.
@@ -553,25 +577,33 @@ class hexk_scoreboard #(
          // reached, here as in the waits of run_phase: the item then never times out.
          due_ps = (max_wait_ps == ~64'd0 || hexk_wait_util::ends_after_last(max_wait_ps + 1, written_ps)) ? ~64'd0 :
              written_ps + max_wait_ps + 1;
-         if (due_ps > $time) begin
+         if (due_ps > hexk_wait_util::now_ps()) begin
             return 1;
          end
          stream.stats.timed_out++;
          if (is_actual) begin
-            item = stream.take_actual(key, position);
+            item = stream.take_actual(key, position, stamp_ps);
             report_problem("HEXK_SB_TIMEOUT", $sformatf(
-                           "stream %0d: an actual item got no expected item within %0t (waiting since %0t); dropped",
+                           "stream %0d: an actual item got no expected item within %s (waiting since %s); dropped",
                            idx,
-                           max_wait_ps,
-                           written_ps
+                           hexk_wait_util::format_ps(
+                               max_wait_ps
+                           ),
+                           hexk_wait_util::format_ps(
+                               written_ps
+                           )
                            ), null, item);
          end else begin
             item = stream.take_expected(key, position, stamp_ps);
             report_problem("HEXK_SB_TIMEOUT", $sformatf(
-                           "stream %0d: an expected item got no actual item within %0t (waiting since %0t); dropped",
+                           "stream %0d: an expected item got no actual item within %s (waiting since %s); dropped",
                            idx,
-                           max_wait_ps,
-                           written_ps
+                           hexk_wait_util::format_ps(
+                               max_wait_ps
+                           ),
+                           hexk_wait_util::format_ps(
+                               written_ps
+                           )
                            ), item, null);
          end
          check_outstanding(stream, idx);
@@ -590,8 +622,18 @@ class hexk_scoreboard #(
       if (stream.num_expected != 0) begin
          stream.list_expected(items, stamps_ps, cfg.leftover_print_limit);
          foreach (items[i]) begin
-            lines.push_back(
-                $sformatf("expected%s, waiting since %0t:\n%s", uid_text(items[i]), stamps_ps[i], item_text(items[i])));
+            lines.push_back($sformatf(
+                            "expected%s, waiting since %s:\n%s",
+                            uid_text(
+                                items[i]
+                            ),
+                            hexk_wait_util::format_ps(
+                                stamps_ps[i]
+                            ),
+                            item_text(
+                                items[i]
+                            )
+                            ));
          end
          `uvm_error("HEXK_SB_LEFTOVER",
                     $sformatf("stream %0d: %0d expected items never got an actual item; the first %0d:\n%s", idx,

@@ -267,9 +267,9 @@ End of the test:
 |---|---|---|
 | `hexk_report_cfg` | copied by `hexk_report_server::set_cfg()` (and `install()`) | needs another `set_cfg()` |
 | `hexk_delay_cfg` | at every draw | applies to the next delay |
-| `hexk_scoreboard_cfg` | `mode`, `num_streams` and `max_wait_ps` in the build phase; the rest when used | applies from then on, except `mode`, `num_streams` and `max_wait_ps` |
-| `hexk_clk_rst_agent_cfg` | in the build phase, at the start of the simulation and at the start of the run phase | has no effect; clock sequences change the clock |
-| `hexk_valid_ready_agent_cfg` | in the build phase and at the start of the simulation; its `delay_cfg` at every draw | has no effect, except in `delay_cfg` |
+| `hexk_scoreboard_cfg` | `mode`, `num_streams` and `max_wait_ps` in the build phase; `hold_objection` at the end of elaboration, which registers the scoreboard with its aggregator, and when it is busy; the rest when used | applies from then on, except `mode`, `num_streams` and `max_wait_ps`; setting `hold_objection` after elaboration does not register the scoreboard |
+| `hexk_clk_rst_agent_cfg` | in the build phase, at the start of the simulation and at the start of the run phase; `check_period` at every rising edge | has no effect, except clearing `check_period`, which ends the check for the rest of the run; clock sequences change the clock |
+| `hexk_valid_ready_agent_cfg` | in the build phase and at the start of the simulation; `idle_data_x` at every transfer of the driver, the members of its `delay_cfg` at every draw | has no effect, except in `idle_data_x` and in the members of the `delay_cfg` object the driver took in its connect phase |
 
 What changes during the run is not in a cfg: the reset and the clock of a clock and reset
 agent are in its `status`. A copy of an agent cfg shares the interface.

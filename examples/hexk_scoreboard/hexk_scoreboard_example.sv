@@ -43,11 +43,11 @@ module hexk_scoreboard_example;
          return tag;
       endfunction : get_tag
 
-      virtual function string convert2string();
+      function string convert2string();
          return $sformatf("tag=%0d data=0x%0h", tag, data);
       endfunction : convert2string
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_response other;
          bit                   same;
          if (!$cast(other, rhs)) begin
@@ -121,6 +121,7 @@ module hexk_scoreboard_example;
 
       task run_phase(uvm_phase phase);
          int unsigned answer_order[4] = '{2, 0, 3, 1};
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          for (int unsigned tag = 0; tag < 4; tag++) begin
             predictor_port.write(response(tag));

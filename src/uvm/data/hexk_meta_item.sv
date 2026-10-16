@@ -38,7 +38,7 @@ class hexk_meta_item #(
    `uvm_object_param_utils(hexk_meta_item#(T))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_meta_item";
    endfunction : get_type_name
 
@@ -49,9 +49,9 @@ class hexk_meta_item #(
 
    // Creates a meta item through the factory for the given item, stamped with the current simulation time.
    static function hexk_meta_item#(T) wrap(T wrapped_item, string item_source = "", hexk_uid item_uid = null);
-      hexk_meta_item #(T) meta = type_id::create("hexk_meta_item");
+      hexk_meta_item #(T) meta = type_id::create("meta");
       meta.item         = wrapped_item;
-      meta.timestamp_ps = $time;
+      meta.timestamp_ps = hexk_wait_util::now_ps();
       meta.uid          = item_uid;
       meta.source       = item_source;
       return meta;
@@ -60,7 +60,7 @@ class hexk_meta_item #(
    // ID, time, source and the text of the item, on one line.
    function string convert2string();
       string text = (uid == null) ? "" : {uid.convert2string(), " "};
-      text = {text, $sformatf("@%0t", timestamp_ps)};
+      text = {text, "@", hexk_wait_util::format_ps(timestamp_ps)};
       if (source.len() != 0) begin
          text = {text, " from ", source};
       end

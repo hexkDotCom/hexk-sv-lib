@@ -28,10 +28,11 @@ class hexk_clk_rst_item extends uvm_sequence_item;
    rand int unsigned      hold_cycles;
    rand longint unsigned  hold_ps;
 
-   // HEXK_CLK_RST_RESET: 1 asserts the reset at the next rising edge of the clock, 0 at once.
+   // HEXK_CLK_RST_RESET and HEXK_CLK_RST_ASSERT: 1 asserts the reset at the next rising edge of the clock, 0 at once.
    rand bit               sync_assert;
 
    // HEXK_CLK_RST_RESET: 1 releases the reset at a rising edge of the clock, 0 when the hold is over.
+   // HEXK_CLK_RST_RELEASE: 1 releases the reset at the next rising edge of the clock, 0 at once.
    rand bit               sync_release;
 
    // HEXK_CLK_RST_CLOCK: period, share of the high time and jitter of the clock; all three are applied.
@@ -45,13 +46,13 @@ class hexk_clk_rst_item extends uvm_sequence_item;
    // Set by the monitor: the clock count at the change of the reset.
    longint unsigned       clk_count;
 
+   `uvm_object_utils(hexk_clk_rst_item)
+
    // What a clock item must hold to be worth sending; the driver checks the rest.
    constraint clock_cstr {
       (op == HEXK_CLK_RST_CLOCK) ->
       (period_ps >= 2 && duty_percent inside {[1 : 99]});
    }
-
-   `uvm_object_utils(hexk_clk_rst_item)
 
    // Creates an item that asks for a reset without a hold.
    function new(string name = "hexk_clk_rst_item");
@@ -77,8 +78,10 @@ class hexk_clk_rst_item extends uvm_sequence_item;
             return $sformatf("%s period_ps=%0d duty_percent=%0d jitter_ps=%0d", op.name(), period_ps, duty_percent,
                              jitter_ps);
          end
-         HEXK_CLK_RST_STOP: return $sformatf("%s hold_ps=%0d", op.name(), hold_ps);
-         default:           return op.name();
+         HEXK_CLK_RST_STOP:    return $sformatf("%s hold_ps=%0d", op.name(), hold_ps);
+         HEXK_CLK_RST_ASSERT:  return $sformatf("%s sync_assert=%0b", op.name(), sync_assert);
+         HEXK_CLK_RST_RELEASE: return $sformatf("%s sync_release=%0b", op.name(), sync_release);
+         default:              return op.name();
       endcase
    endfunction : convert2string
 
@@ -129,7 +132,11 @@ class hexk_clk_rst_item extends uvm_sequence_item;
             same &= comparer.compare_field_int("jitter_ps", jitter_ps, other.jitter_ps, 64);
          end
          HEXK_CLK_RST_STOP: same &= comparer.compare_field_int("hold_ps", hold_ps, other.hold_ps, 64);
-         default:           ;
+         HEXK_CLK_RST_ASSERT:
+         same &= comparer.compare_field_int("sync_assert", 64'(sync_assert), 64'(other.sync_assert), 1);
+         HEXK_CLK_RST_RELEASE:
+         same &= comparer.compare_field_int("sync_release", 64'(sync_release), 64'(other.sync_release), 1);
+         default: ;
       endcase
       return same;
    endfunction : do_compare
@@ -152,8 +159,10 @@ class hexk_clk_rst_item extends uvm_sequence_item;
             printer.print_field_int("duty_percent", 64'(duty_percent), 32, UVM_DEC);
             printer.print_field_int("jitter_ps", jitter_ps, 64, UVM_DEC);
          end
-         HEXK_CLK_RST_STOP: printer.print_field_int("hold_ps", hold_ps, 64, UVM_DEC);
-         default:           ;
+         HEXK_CLK_RST_STOP:    printer.print_field_int("hold_ps", hold_ps, 64, UVM_DEC);
+         HEXK_CLK_RST_ASSERT:  printer.print_field_int("sync_assert", 64'(sync_assert), 1, UVM_BIN);
+         HEXK_CLK_RST_RELEASE: printer.print_field_int("sync_release", 64'(sync_release), 1, UVM_BIN);
+         default:              ;
       endcase
    endfunction : do_print
 

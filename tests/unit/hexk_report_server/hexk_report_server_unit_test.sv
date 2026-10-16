@@ -20,6 +20,7 @@ module hexk_report_server_unit_test;
    import hexk_uvm_pkg::hexk_report_server;
    import hexk_uvm_pkg::hexk_report_cfg;
    import hexk_uvm_pkg::hexk_msg_listener;
+   import hexk_uvm_pkg::hexk_warning_audit;
    import hexk_uvm_pkg::HEXK_FMT_UVM;
    import hexk_uvm_pkg::HEXK_FMT_CUSTOM;
    import hexk_uvm_pkg::HEXK_FLD_SEVERITY;
@@ -279,6 +280,26 @@ module hexk_report_server_unit_test;
    endfunction : summary_line
 
    // IDs a listener is told about when the fixed set of messages is fed, joined with ",".
+   // A warning audit that allows UT_OK, given that warning, an error and 22 other warnings, then cleared:
+   // "<unexpected> <lines of the text> <first line> / <last line> <unexpected after clear()>".
+   function automatic string audit_of_warnings();
+      hexk_warning_audit audit = new();
+      string             lines         [$];
+      int unsigned       count;
+      audit.allow("^UT_OK$");
+      audit.on_message(make_message(UVM_WARNING, "UT_OK", "allowed"));
+      audit.on_message(make_message(UVM_ERROR, "UT_ERR", "not a warning"));
+      for (int unsigned i = 0; i < 22; i++) begin
+         audit.on_message(make_message(UVM_WARNING, $sformatf("UT_W%0d", i), "unexpected"));
+      end
+      hexk_str::split(audit.unexpected_text(), lines, "\n");
+      count = audit.num_unexpected();
+      audit.clear();
+      return $sformatf(
+          "%0d %0d %s / %s %0d", count, lines.size(), lines[0], lines[lines.size()-1], audit.num_unexpected()
+      );
+   endfunction : audit_of_warnings
+
    function automatic string listener_ids();
       hexk_report_server server = make_server("");
       hexk_ut_listener   listener = new();
@@ -472,6 +493,60 @@ module hexk_report_server_unit_test;
           )
       );
    endfunction : installed_counts
+
+   // A plain UVM report server, made the server of the simulation without taking its counts, counts an error and
+   // a warning of UT_BEFORE; install() replaces it, and the installed server counts a warning of UT_AFTER. Gives
+   // "<UVM_ERROR> <UVM_WARNING> <id count of UT_BEFORE> <id count of UT_AFTER> / <get_count error UT_BEFORE>
+   // <get_count warning UT_BEFORE> <get_count warning UT_AFTER> <summary names UT_BEFORE> <first error is none>",
+   // the first four from the counts that UVM keeps. The previous server is put back without the counts of the test.
+   function automatic string counts_from_before_install();
+      uvm_coreservice_t         services = uvm_coreservice_t::get();
+      uvm_report_server         previous = services.get_report_server();
+      uvm_default_report_server plain = new("ut_plain_server");
+      hexk_report_server        server;
+      string                    text;
+      services.set_report_server(plain);
+      plain.execute_report_message(make_message(UVM_ERROR, "UT_BEFORE", "an error before install"), "");
+      plain.execute_report_message(make_message(UVM_WARNING, "UT_BEFORE", "a warning before install"), "");
+      server = hexk_report_server::install(make_cfg("narrow"));
+      server.execute_report_message(make_message(UVM_WARNING, "UT_AFTER", "a warning after install"), "");
+      // The UVM suites share one simulation: give the others their report server back, with its own counts.
+      services.set_report_server(previous);
+      text = $sformatf(
+          "%0d %0d %0d %0d",
+          server.get_severity_count(
+              UVM_ERROR
+          ),
+          server.get_severity_count(
+              UVM_WARNING
+          ),
+          server.get_id_count(
+              "UT_BEFORE"
+          ),
+          server.get_id_count(
+              "UT_AFTER"
+          )
+      );
+      return $sformatf(
+          "%s / %0d %0d %0d %0b %0b",
+          text,
+          server.get_count(
+              "UT_BEFORE", UVM_ERROR
+          ),
+          server.get_count(
+              "UT_BEFORE", UVM_WARNING
+          ),
+          server.get_count(
+              "UT_AFTER", UVM_WARNING
+          ),
+          hexk_str::find(
+              server.summary(), "UT_BEFORE"
+          ) >= 0,
+          hexk_str::find(
+              server.summary(), "First error: none"
+          ) >= 0
+      );
+   endfunction : counts_from_before_install
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -676,6 +751,16 @@ module hexk_report_server_unit_test;
 
    `SVTEST(install_makes_it_the_report_server_of_the_simulation)
       `FAIL_UNLESS_STR_EQUAL(installed_counts(), "1 1 1")
+   `SVTEST_END
+
+   // UVM carries the severity and ID counts of the previous server over to the installed one; the counts by
+   // severity and ID of this server, its summary table and its first error start with the install.
+   `SVTEST(install_carries_over_the_counts_that_uvm_keeps_and_the_server_counts_its_own_from_then_on)
+      `FAIL_UNLESS_STR_EQUAL(counts_from_before_install(), "1 2 2 1 / 0 0 1 0 1")
+   `SVTEST_END
+
+   `SVTEST(the_warning_audit_counts_the_warnings_that_are_not_allowed_and_keeps_the_first_twenty)
+      `FAIL_UNLESS_STR_EQUAL(audit_of_warnings(), "22 21 UT_W0: unexpected / and 2 more 0")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

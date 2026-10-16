@@ -8,6 +8,7 @@ a result to a bug report.
 |---|---|
 | `unit/` | SVUnit unit tests, one directory per module |
 | `smoke/` | one small UVM testbench that uses everything together |
+| `reference/` | a complete UVM testbench of a small DUT, checked against the library models and fixed vectors; see [reference/README.md](reference/README.md) |
 | `lint/` | tool configuration and waivers for Verible, slang, Verilator and the style check |
 
 The tests run at two levels:
@@ -18,8 +19,8 @@ The tests run at two levels:
   prefix. CI runs its static part on every push to `main` (`make ci`: everything except the
   Verilator lint, the unit tests and the rebranded copy, which need more memory than a
   small runner has); the whole of Gate 1 runs before every release.
-- **Gate 2** runs the unit tests, every example and the smoke testbench on a commercial
-  simulator.
+- **Gate 2** runs the unit tests, every example, the smoke testbench and the reference
+  testbench on a commercial simulator.
 
 The results for the current version are in "Where it has been tested" in the top-level
 `README.md`.
@@ -67,6 +68,7 @@ make test     SIM=questa UVM=1.2      # unit tests; SIM=questa|vcs, UVM=1.2|2020
 make test     SIM=vcs UVM=2020 TEST=hexk_scoreboard   # the unit tests of one module
 make examples SIM=questa UVM=1.2      # compiles and runs every example
 make smoke    SIM=questa UVM=1.2      # the smoke testbench, three tests
+make reference SIM=questa UVM=1.2     # the reference testbench, every run of its list
 ```
 
 VCS runs on Linux with its license set up. Questa has been run on Windows only, from Git Bash

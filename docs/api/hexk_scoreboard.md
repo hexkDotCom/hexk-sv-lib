@@ -64,12 +64,12 @@ function T peek_expected(KEY key, int unsigned position);
 function T peek_actual(KEY key, int unsigned position);
 // Adds an expected item as the newest one under its key, with its latency stamp in picoseconds.
 function void store_expected(KEY key, T item, longint unsigned stamp_ps);
-// Adds an actual item as the newest one under its key.
-function void store_actual(KEY key, T item);
+// Adds an actual item as the newest one under its key, with the time in picoseconds at which it arrived.
+function void store_actual(KEY key, T item, longint unsigned arrived_ps);
 // Removes and returns the expected item at a position under a key, with its latency stamp in picoseconds.
 function T take_expected(KEY key, int unsigned position, output longint unsigned stamp_ps);
-// Removes and returns the actual item at a position under a key.
-function T take_actual(KEY key, int unsigned position);
+// Removes and returns the actual item at a position under a key, with the time in picoseconds at which it arrived.
+function T take_actual(KEY key, int unsigned position, output longint unsigned arrived_ps);
 // Drops every waiting item and returns how many there were.
 function int unsigned clear();
 // Collects up to limit waiting expected items and their latency stamps, key by key. It reads only the items it collects.
@@ -88,7 +88,7 @@ From `src/uvm/check/hexk_scoreboard.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates the scoreboard; streams and exports are created in build_phase.
 function new(string name, uvm_component parent);
 // Hook: the key of an item for the modes that match by key; the default gives every item the same key.
@@ -117,7 +117,7 @@ function hexk_sb_stats get_stats(int stream = -1);
 virtual function bit is_busy();
 // hexk_objectable: per stream, how many items are waiting and since when.
 virtual function string busy_reason();
-// UVM callback: creates the cfg if none was assigned, the streams and their exports.
+// UVM callback: takes the cfg that was assigned, else the one in uvm_config_db under "cfg", else one with the defaults; then creates the streams and their exports.
 function void build_phase(uvm_phase phase);
 // UVM callback: registers with the aggregator when cfg.hold_objection is set.
 function void end_of_elaboration_phase(uvm_phase phase);
@@ -154,9 +154,12 @@ Setting up:
   the key, any type that can index an associative array. In the two keyed modes a key with
   an X or Z bit cannot be stored, which is a rule of the language for the index of an
   associative array: use a two-state type, a string or a class as `KEY`, or make sure that
-  `get_key()` returns no such bit. Mode `HEXK_SB_IN_ORDER` does not use `KEY` at all.
-- Assign `cfg` before the build phase of the scoreboard; without one, a cfg with the
-  defaults is created. `cfg.mode`, `cfg.num_streams` and `cfg.max_wait_ps` are read in the
+  `get_key()` returns no such bit. Mode `HEXK_SB_IN_ORDER` does not use `KEY` at all. The
+  defaults are `uvm_sequence_item` for `T` and `int` for `KEY`.
+- Assign `cfg` before the build phase of the scoreboard, or set it in `uvm_config_db` under
+  `"cfg"` for the scoreboard, as for the agents of the library:
+  `uvm_config_db#(hexk_scoreboard_cfg)::set(this, "<scoreboard path>", "cfg", cfg)`. An
+  assigned cfg comes first; without either, a cfg with the defaults is created. `cfg.mode`, `cfg.num_streams` and `cfg.max_wait_ps` are read in the
   build phase; a later change of them has no effect. The build phase creates `cfg.num_streams` streams and, per stream,
   the exports `expected_exports[i]` and `actual_exports[i]`. `expected_export` and
   `actual_export` are those of stream 0.
@@ -186,7 +189,9 @@ Three questions are answered apart, each by its own hooks:
   pair that the search found equal is not compared again. Override `is_partner()` to pair by
   a transaction ID, with a tolerance, or by any rule that is not equality; then
   `compare_items()` checks the pair it chose, and a wrong payload is a mismatch of the right
-  pair instead of a mismatch of the oldest item.
+  pair instead of a mismatch of the oldest item. Where items arrive in order per transaction
+  ID, mode `HEXK_SB_IN_ORDER_PER_KEY` with `get_key()` returning the ID does the same without
+  an override: the oldest item of the ID is its partner, compared once.
 - So `compare_items()` is called once for the pair that is finished, and with the default
   `is_partner()` also once per candidate that the search looks at. When no candidate is a
   partner, the oldest one is compared, for the mismatch report.
@@ -232,8 +237,11 @@ Hooks, all virtual:
 
 Limits and reports:
 
-- **Latency** of a matched pair is the time from the timestamp of the expected item to the
-  moment the pair is complete, in picoseconds; 0 when the actual item came first. With
+- **Latency** of a matched pair is the time from the timestamp of the expected item
+  (`get_timestamp_ps()`) to the arrival of the actual item, in picoseconds: the moment the pair
+  is complete, or, when the actual item came first, the moment it arrived. A timestamp after
+  that arrival, as the default timestamp of an expected item written after its actual item
+  is, gives 0. With
   `cfg.max_latency_ps` above 0, a larger latency is the error `HEXK_SB_LATENCY`; the pair still counts as
   matched. The limit is checked when the pair is complete, not while an item waits.
 - **Waiting time.** With `cfg.max_wait_ps` above 0, an item may wait that long for its
@@ -257,7 +265,8 @@ Limits and reports:
   `HEXK_SB_OUTSTANDING`, once each time the count goes above the limit.
 - The first `cfg.max_errors` errors with items are printed in full; later ones are one line
   without the items, and `item_text()` and `get_uid()` are not called for them. Every error
-  is reported and counted.
+  is reported and counted. The leftovers of `check_phase` have their own limit,
+  `cfg.leftover_print_limit`.
 - **`check_phase`** reports, per stream, the expected items that never got an actual item
   and the actual items that never got an expected one (CHK-5), as `HEXK_SB_LEFTOVER` with up
   to `cfg.leftover_print_limit` items each, and then the summary `HEXK_SB_SUMMARY`: the
@@ -270,7 +279,8 @@ End of test and reset:
 - The scoreboard implements `hexk_objectable`: with `cfg.hold_objection` it is busy while
   any item waits (OBJ-2). In `end_of_elaboration_phase` it registers with the aggregator in
   the member `aggregator`; without one it reports the warning `HEXK_SB_AGGREGATOR` and
-  holds nothing.
+  holds nothing. A `hold_objection` set only after the end of elaboration does not register
+  it, so it then holds nothing.
 - `on_reset()` drops all waiting items of all streams when `cfg.flush_on_reset` is set
   (CHK-6); they are counted as dropped. Call it from the reset handling of the env.
 
@@ -311,7 +321,9 @@ The members of `hexk_scoreboard_cfg`:
 it. The scoreboard then clones every expected item that has to wait, at the cost of one
 `clone()` per item; an item that is matched at once is not cloned. An actual item is never
 cloned. A class that `clone()` cannot create is the error `HEXK_SB_CLONE`, and the item
-itself is kept.
+itself is kept. The clone is as deep as the `do_copy()` of the class: a `hexk_meta_item`
+copies the handle of the item it wraps, so its clone still shares that item; a producer that
+changes the wrapped item must wrap a clone of it.
 
 `max_latency_ps` is no deadline; `max_wait_ps` is. Without `max_wait_ps`, an expected item
 whose actual item never comes is reported only in the check phase, as a leftover, and a
@@ -393,11 +405,11 @@ module hexk_scoreboard_example;
          return tag;
       endfunction : get_tag
 
-      virtual function string convert2string();
+      function string convert2string();
          return $sformatf("tag=%0d data=0x%0h", tag, data);
       endfunction : convert2string
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_example_response other;
          bit                   same;
          if (!$cast(other, rhs)) begin
@@ -471,6 +483,7 @@ module hexk_scoreboard_example;
 
       task run_phase(uvm_phase phase);
          int unsigned answer_order[4] = '{2, 0, 3, 1};
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          for (int unsigned tag = 0; tag < 4; tag++) begin
             predictor_port.write(response(tag));

@@ -9,8 +9,9 @@ addresses, with byte enables, and only the bytes that were written take space.
 
 Use it as the model of a RAM, a ROM, a flash or the memory behind a bus in a scoreboard or
 a predictor: what the DUT is expected to hold, to compare with what it returns. Use it where
-accesses of different widths, unaligned accesses or partial writes must all see the same
-content, and where a read of something that was never written should be noticed.
+unaligned accesses, partial writes and byte accesses must all see the same content, and where
+a read of something that was never written should be noticed. One model has one word width
+(`DATA_WIDTH`); an access of another width goes through the byte functions.
 
 Do not use it as the memory of the DUT; it is a class and has no ports. Do not use it for
 registers with fields and access policies; that is what `uvm_reg` is for. Do not use it where
@@ -29,7 +30,7 @@ From `src/uvm/mem/hexk_mem_model.sv`:
 // What a read of a byte that was never written does.
 typedef enum bit [2:0] { HEXK_MEM_UNINIT_ERROR, HEXK_MEM_UNINIT_RANDOM, HEXK_MEM_UNINIT_ZERO, HEXK_MEM_UNINIT_PATTERN, HEXK_MEM_UNINIT_X } hexk_mem_uninit_e;
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates an empty memory; the seed of the random policy is derived from the name.
 function new(string name = "hexk_mem_model");
 // UVM hook of copy() and clone(): a snapshot of the bytes, the settings, the range and the counter of reads of bytes that were never written; afterwards the two memories are independent.
@@ -63,8 +64,9 @@ virtual function void eot_check();
 ```
 <!-- HEXK_GEN:END api -->
 
-The types `addr_t`, `data_t` and `strobe_t` are `bit [ADDR_WIDTH-1:0]`,
-`logic [DATA_WIDTH-1:0]` and `bit [DATA_WIDTH/8-1:0]`.
+The types `addr_t`, `data_t` and `strobe_t` are `logic [ADDR_WIDTH-1:0]`,
+`logic [DATA_WIDTH-1:0]` and `logic [DATA_WIDTH/8-1:0]`: four-state, so that an address or a
+byte enable with an X or Z bit, as a monitor may see it, is noticed instead of becoming 0.
 
 ## 4. Behaviour and invariants
 
@@ -91,7 +93,11 @@ The types `addr_t`, `data_t` and `strobe_t` are `bit [ADDR_WIDTH-1:0]`,
   | `HEXK_MEM_UNINIT_X` | X | none |
 
   A read does not store anything: the byte stays unwritten.
-- `is_written(addr)` is 1 when every byte of the word at `addr` was written.
+- An address with an X or Z bit, given to any function, and a byte enable of `write` with one,
+  are the error `HEXK_MEM_UNKNOWN`: the access is not carried out, a read returns X, and
+  `is_written` returns 0. Verilator has no X or Z, so there an address is always known.
+- `is_written(addr)` is 1 when every byte of the word at `addr` was written. It is a query,
+  not an access: the range of `set_range()` does not apply to it.
   `num_written()` counts bytes, not words.
 - `set_range(lo, hi)` makes every access that is not completely within `lo..hi` the error
   `HEXK_MEM_RANGE`; such a write changes nothing and such a read returns X. Without a range
@@ -122,9 +128,10 @@ The types `addr_t`, `data_t` and `strobe_t` are `bit [ADDR_WIDTH-1:0]`,
   with words aligned to `DATA_WIDTH/8` from address 0, and an `@<word index>` line where the
   index jumps. A byte that was never written is `xx`, and so is a byte of the last word that
   would be beyond the top address; no byte wraps to a low address. `load_hex()` of such a file
-  with base 0 gives the same memory: the same bytes written, with the same values. The one
-  exception is a written byte that holds X: it is dumped as `xx` too and loads back as not
-  written.
+  with base 0 gives the same memory: the same bytes written, with the same values. The
+  exceptions are unknown bits: a written byte that is all X is dumped as `xx` too and loads
+  back as not written, and a hexadecimal digit with some but not all of its four bits X or Z
+  is dumped as `X` or `Z`, as `%h` writes it, and loads back with all four bits X or Z.
 - `clear()` forgets the content and the count of uninitialised reads; the range and the
   settings stay.
 - `copy()` and `clone()` take a snapshot: the bytes, `big_endian`, `uninit_policy`,
@@ -167,6 +174,7 @@ There are no plusargs.
 | `HEXK_MEM_RANGE` | error |  |
 | `HEXK_MEM_SUMMARY` | info |  |
 | `HEXK_MEM_UNINIT` | error |  |
+| `HEXK_MEM_UNKNOWN` | error |  |
 | `HEXK_MEM_WIDTH` | error |  |
 <!-- HEXK_GEN:END emits -->
 

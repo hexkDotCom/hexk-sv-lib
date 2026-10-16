@@ -45,7 +45,7 @@ class hexk_valid_ready_monitor #(
    `uvm_component_param_utils(hexk_valid_ready_monitor#(DATA_WIDTH))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_valid_ready_monitor";
    endfunction : get_type_name
 
@@ -73,6 +73,7 @@ class hexk_valid_ready_monitor #(
       bit                                     ready;
       logic                  [DATA_WIDTH-1:0] data;
       hexk_handshake_cycle_t                  cycle;
+      super.run_phase(phase);
       seen_resets = vif.get_reset_count();
       forever begin
          vif.sample(reset_active, valid, ready, data);
@@ -109,7 +110,8 @@ class hexk_valid_ready_monitor #(
 
    // Writes the item of a transfer to the port.
    local function void publish(logic [DATA_WIDTH-1:0] data);
-      hexk_valid_ready_item #(DATA_WIDTH) item = hexk_valid_ready_item#(DATA_WIDTH)::type_id::create("item");
+      // Under the name of the monitor, so that a factory override of one agent's items can name its path.
+      hexk_valid_ready_item #(DATA_WIDTH) item = hexk_valid_ready_item#(DATA_WIDTH)::type_id::create("item", this);
       item.data        = data;
       item.wait_cycles = waiting;
       ap.write(item);

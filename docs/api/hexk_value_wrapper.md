@@ -28,7 +28,7 @@ From `src/uvm/data/hexk_value_wrapper.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates a wrapper; the value is that of an uninitialised T.
 function new(string name = "hexk_value_wrapper");
 // Creates a wrapper through the factory that holds the given value and tolerance.

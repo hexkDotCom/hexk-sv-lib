@@ -62,6 +62,18 @@ module hexk_csr_util_unit_test;
    // Number of reads of the frontdoor.
    int unsigned        dut_reads;
 
+   // Names of the parent sequences of the accesses of the frontdoor, in order; "-" for none.
+   string              parents;
+
+   // A sequence that makes register accesses through the object of the test, as the parent of the accesses.
+   class hexk_ut_caller_seq extends uvm_sequence #(uvm_sequence_item);
+      `uvm_object_utils(hexk_ut_caller_seq)
+
+      function new(string seq_name = "hexk_ut_caller_seq");
+         super.new(seq_name);
+      endfunction : new
+   endclass : hexk_ut_caller_seq
+
    // Frontdoor of one register: reads and writes the register file of the DUT at its address.
    class hexk_ut_frontdoor extends uvm_reg_frontdoor;
       int unsigned address;
@@ -72,8 +84,9 @@ module hexk_csr_util_unit_test;
          super.new(fd_name);
       endfunction : new
 
-      virtual task body();
+      task body();
          bit [31:0] data = 32'(rw_info.value[0]);
+         parents = {parents, (rw_info.parent == null) ? "-" : rw_info.parent.get_name(), " "};
          // No zero delay: a thousand of them in one time step stop a simulation on Verilator.
          if (access_latency > 0ns) begin
             #(access_latency);
@@ -300,6 +313,7 @@ module hexk_csr_util_unit_test;
       fail_address      = -1;
       fail_status       = UVM_NOT_OK;
       dut_reads         = 0;
+      parents           = "";
       text_catcher.id   = "";
       text_catcher.text = "";
       text_catcher.texts.delete();
@@ -539,6 +553,22 @@ module hexk_csr_util_unit_test;
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
+   // A write, a read, a read check and a field check named with a sequence, then a write and a read without one
+   // while the member parent is another sequence, then a spin-wait named with the first: the parents seen.
+   task automatic access_parents();
+      hexk_ut_caller_seq caller = hexk_ut_caller_seq::type_id::create("caller");
+      hexk_ut_caller_seq member = hexk_ut_caller_seq::type_id::create("member");
+      csr.write(blk.ctrl, 'h3, caller);
+      csr.read(blk.ctrl, value, caller);
+      csr.read_check(blk.ctrl, 'h3, "UT_CSR_CTRL", '1, caller);
+      csr.read_field_check(blk.ctrl.first, 1, "UT_CSR_CTRL", caller);
+      csr.parent = member;
+      csr.write(blk.ctrl, 'h3);
+      csr.read(blk.ctrl, value);
+      csr.spinwait(blk.ctrl, 'h3, '1, "UT_CSR_CTRL", seen, caller);
+      csr.parent = null;
+   endtask : access_parents
+
    // verilog_format: off
    `SVUNIT_TESTS_BEGIN
 
@@ -549,6 +579,11 @@ module hexk_csr_util_unit_test;
       `FAIL_UNLESS_STR_EQUAL(value_text(), "b")
       `FAIL_UNLESS_STR_EQUAL(now_ns(), "20")
       `FAIL_UNLESS_STR_EQUAL(count_of("HEXK_CSR_STATUS"), "0")
+   `SVTEST_END
+
+   `SVTEST(an_access_belongs_to_the_sequence_it_names_and_else_to_the_member_parent)
+      access_parents();
+      `FAIL_UNLESS_STR_EQUAL(parents, "caller caller caller caller member member caller ")
    `SVTEST_END
 
    `SVTEST(read_check_passes_and_counts_the_check)
@@ -634,10 +669,11 @@ module hexk_csr_util_unit_test;
       `FAIL_UNLESS_STR_EQUAL(count_of("UT_CSR_DONE"), "0")
    `SVTEST_END
 
+   // With the default poll interval of 100 ns: reads at 0 and after 110 ns, each taking 10 ns.
    `SVTEST(a_spinwait_on_a_register_compares_the_bits_of_the_mask)
       set_later(25ns, 'h4, 'h3);
       csr.spinwait(blk.status, 'h2, 'h2, "UT_CSR_DONE", seen);
-      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %s", seen, now_ns()), "1 30")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %s", seen, now_ns()), "1 120")
    `SVTEST_END
 
    `SVTEST(a_spinwait_that_reaches_the_time_limit_is_an_error_with_the_id_of_the_caller)
@@ -653,6 +689,7 @@ module hexk_csr_util_unit_test;
 `ifndef VERILATOR
    `SVTEST(a_spinwait_where_time_cannot_pass_is_an_error)
       set_latency(0ns);
+      set_times(1ms, 0ns);
       spinwait_done();
       `FAIL_UNLESS_STR_EQUAL(result, "0 0")
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", dut_reads), $sformatf("%0d", hexk_csr_util::MAX_READS_PER_STEP))
@@ -739,6 +776,25 @@ module hexk_csr_util_unit_test;
       csr.check_reset_values(blk);
       check_busy(0);
       `FAIL_UNLESS_STR_EQUAL(count_of("HEXK_CSR_RESET"), "0")
+   `SVTEST_END
+
+   `SVTEST(with_include_volatile_a_volatile_field_is_checked_against_its_reset_value)
+      poke('h4, 'h1);
+      csr.check_reset_values(blk, 1);
+      `FAIL_UNLESS_STR_EQUAL(count_of("HEXK_CSR_RESET"), "1")
+      `FAIL_UNLESS_STR_EQUAL(checks("HEXK_CSR_RESET"), "3 1")
+      `FAIL_UNLESS_STR_EQUAL(text_of("HEXK_CSR_RESET"), "ut_csr_blk.status: read 'h1; busy is 'h1, reset 'h0")
+      `FAIL_UNLESS_STR_EQUAL(last_message(),
+         "HEXK_CSR_RESET_DONE: ut_csr_blk: 4 registers checked, 1 with a wrong reset value, 1 left out")
+   `SVTEST_END
+
+   `SVTEST(include_volatile_does_not_bring_in_a_field_that_is_not_volatile_and_has_no_check)
+      poke('h0, 'h6);
+      check_mode(0);
+      csr.check_reset_values(blk, 1);
+      check_mode(1);
+      `FAIL_UNLESS_STR_EQUAL(count_of("HEXK_CSR_RESET"), "0")
+      `FAIL_UNLESS_STR_EQUAL(checks("HEXK_CSR_RESET"), "4 0")
    `SVTEST_END
 
    `SVTEST(a_field_without_a_check_is_left_out_of_the_reset_check)

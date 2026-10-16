@@ -34,26 +34,26 @@ From `src/uvm/csr/hexk_csr_util.sv`:
 typedef enum bit [1:0] { HEXK_CSR_RESET_CHECK, HEXK_CSR_BIT_BASH, HEXK_CSR_ALL_CHECKS } hexk_csr_check_e;
 // Creates the object with the defaults: default map, no parent sequence, default path.
 function new(string name = "hexk_csr_util");
-// Writes a register; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS.
-task write(uvm_reg rg, uvm_reg_data_t value);
-// Reads a register; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS, and value is then what UVM gave.
-task read(uvm_reg rg, output uvm_reg_data_t value);
-// Writes a field the way UVM writes a field: alone where the map allows it, otherwise read, change, write.
-task write_field(uvm_reg_field field, uvm_reg_data_t value);
-// Reads the register of a field and gives the value of the field.
-task read_field(uvm_reg_field field, output uvm_reg_data_t value);
-// Reads a register and checks the bits of mask against exp; a difference is an error with the caller's ID. Counted in hexk_check_stats under that ID; a failed access counts as a failed check.
-task read_check(uvm_reg rg, uvm_reg_data_t exp, string id, uvm_reg_data_t mask = '1);
-// Reads the register of a field and checks the field against exp; a difference is an error with the caller's ID. Counted in hexk_check_stats under that ID.
-task read_field_check(uvm_reg_field field, uvm_reg_data_t exp, string id);
-// Reads a register until the bits of mask equal those of exp; seen is 1 when they did. After timeout_ps without that, or when time does not pass between the reads, it is an error with the caller's ID.
-task spinwait(uvm_reg rg, uvm_reg_data_t exp, uvm_reg_data_t mask, string id, output bit seen);
-// Reads the register of a field until the field equals exp; seen is 1 when it did. As spinwait(). A value that does not fit the field can never be read: an error with the caller's ID at once, without a read.
-task spinwait_field(uvm_reg_field field, uvm_reg_data_t exp, string id, output bit seen);
-// Reads every register of a block and of its sub-blocks once and compares each field whose reset value can be read back with that value: one error HEXK_CSR_RESET per register with the wrong fields, then the summary HEXK_CSR_RESET_DONE. Left out: excluded registers, fields and blocks, registers that are not in the map, and fields that have no reset value, are volatile, cannot be read or have no check.
-task check_reset_values(uvm_reg_block blk);
-// Runs the bit-bash sequence of UVM on a block, in the sequence parent; it honours the exclusions and reports under its own ID.
-task bit_bash(uvm_reg_block blk);
+// Writes a register, as part of seq; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS.
+task write(uvm_reg rg, uvm_reg_data_t value, uvm_sequence_base seq = null);
+// Reads a register, as part of seq; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS, and value is then what UVM gave.
+task read(uvm_reg rg, output uvm_reg_data_t value, input uvm_sequence_base seq = null);
+// Writes a field the way UVM writes a field, as part of seq: alone where the map allows it, otherwise read, change, write.
+task write_field(uvm_reg_field field, uvm_reg_data_t value, uvm_sequence_base seq = null);
+// Reads the register of a field, as part of seq, and gives the value of the field.
+task read_field(uvm_reg_field field, output uvm_reg_data_t value, input uvm_sequence_base seq = null);
+// Reads a register, as part of seq, and checks the bits of mask against exp; a difference is an error with the caller's ID. Counted in hexk_check_stats under that ID; a failed access counts as a failed check.
+task read_check(uvm_reg rg, uvm_reg_data_t exp, string id, uvm_reg_data_t mask = '1, uvm_sequence_base seq = null);
+// Reads the register of a field, as part of seq, and checks the field against exp; a difference is an error with the caller's ID. Counted in hexk_check_stats under that ID.
+task read_field_check(uvm_reg_field field, uvm_reg_data_t exp, string id, uvm_sequence_base seq = null);
+// Reads a register, as part of seq, until the bits of mask equal those of exp; seen is 1 when they did. After timeout_ps without that, or when time does not pass between the reads, it is an error with the caller's ID.
+task spinwait(uvm_reg rg, uvm_reg_data_t exp, uvm_reg_data_t mask, string id, output bit seen, input uvm_sequence_base seq = null);
+// Reads the register of a field, as part of seq, until the field equals exp; seen is 1 when it did. As spinwait(). A value that does not fit the field can never be read: an error with the caller's ID at once.
+task spinwait_field(uvm_reg_field field, uvm_reg_data_t exp, string id, output bit seen, input uvm_sequence_base seq = null);
+// Reads every register of a block and of its sub-blocks once and compares each field whose reset value can be read back with that value: one error HEXK_CSR_RESET per register with the wrong fields, then the summary HEXK_CSR_RESET_DONE. Left out: excluded registers, fields and blocks, registers that are not in the map, and fields that have no reset value, are volatile, cannot be read or have no check. With include_volatile a volatile field is checked too, although UVM gives every volatile field UVM_NO_CHECK: for a block that is quiet after a reset, whose counters and status bits must be at their reset values. The reads are part of seq.
+task check_reset_values(uvm_reg_block blk, bit include_volatile = 0, uvm_sequence_base seq = null);
+// Runs the bit-bash sequence of UVM on a block, below seq (or the member parent); it honours the exclusions and reports under its own ID.
+task bit_bash(uvm_reg_block blk, uvm_sequence_base seq = null);
 // Excludes the registers, fields and blocks whose full name matches the glob from a check; also from the register sequences of UVM, which look at the same resources.
 static function void exclude (string pattern, hexk_csr_check_e check = HEXK_CSR_ALL_CHECKS);
 // 1 when the register, field or block of this full name is excluded from the check, by exclude() or by a resource of UVM.
@@ -74,7 +74,7 @@ The settings are public members; assign them after `create()`:
 ```systemverilog
 hexk_csr_util csr = hexk_csr_util::type_id::create("csr");
 csr.map              = env.regmodel.bus_map;   // null: the default map of each register
-csr.parent           = this;                   // in a sequence: the accesses belong to it
+csr.parent           = null;                   // the sequence of an access that names none
 csr.poll_interval_ps = `hexk_ps(100ns);
 csr.timeout_ps       = `hexk_ps(50us);
 ```
@@ -83,8 +83,15 @@ csr.timeout_ps       = `hexk_ps(50us);
 
 Accesses:
 
+- Every access (`write()`, `read()`, `write_field()`, `read_field()`, the read checks, the
+  spin-waits, `check_reset_values()` and `bit_bash()`) takes as its last argument `seq`, the
+  sequence it belongs to, null by default. The access then has `seq` as its parent sequence,
+  for its priority on the sequencer and for its messages; with null it has `parent` of the
+  object. So one object, shared by an environment, serves every sequence: a sequence passes
+  itself (`csr.write(rg, value, this)`, `csr.read_check(rg, exp, id, '1, this)`), and a test,
+  which is no sequence, passes nothing.
 - `write()`, `read()`, `write_field()` and `read_field()` call `write()` and `read()` of UVM
-  with `path`, `map` and `parent` of the object. A status other than `UVM_IS_OK` is the error
+  with `path` and `map` of the object and that parent. A status other than `UVM_IS_OK` is the error
   `HEXK_CSR_STATUS`, with the register and the status; `read()` then gives what UVM gave.
 - `read_field()` reads the whole register and gives the bits of the field at bit 0.
   `write_field()` is `write()` of the UVM field: alone where the map allows that, otherwise
@@ -119,8 +126,8 @@ Spin-waits:
   same for a field. The first read comes at once. A value that does not fit the field can
   never be read: `spinwait_field()` reports it at once, as an error with the caller's `id`,
   without a read, and `seen` is 0.
-- Between two reads it waits `poll_interval_ps`; with 0 it reads again as soon as a read is
-  done. The time of each read is that of the access itself.
+- Between two reads it waits `poll_interval_ps` (default 100 ns); with 0 it reads again as
+  soon as a read is done. The time of each read is that of the access itself.
 - `timeout_ps` (default 1 ms, 0 for no limit) counts from the start of the spin-wait. A
   limit after `hexk_wait_util::LAST_PS` is never reached, as for every wait of the library. When a
   read ends at or after it without the value, the spin-wait gives up with a UVM error with
@@ -138,13 +145,18 @@ Spin-waits:
 
 Reset check:
 
-- `check_reset_values(blk)` reads every register of the block and of its sub-blocks once,
+- `check_reset_values(blk, include_volatile = 0)` reads every register of the block and of
+  its sub-blocks once,
   through `map` (registers that are not in `map`, or whose rights there are `WO`, are left
   out), and compares each field that
   takes part with its reset value of kind `reset_kind` (default `"HARD"`).
 - A field takes part when it has a reset value of that kind, is not volatile, has a check
   (`get_compare()` is not `UVM_NO_CHECK`), can be read (its access is not `WO`, `WOC`, `WOS`,
   `WO1` or `NOACCESS`), and is not excluded. A register without such a field is left out.
+- With `include_volatile` 1 a volatile field takes part as well, whatever its check: UVM gives
+  every volatile field `UVM_NO_CHECK`. Use it when the block is quiet after a reset and its
+  counters and status bits must be at their reset values; exclude a volatile field that may
+  change before it is read. A field that is not volatile is chosen as without it.
 - A register, a field or a block from the register up to `blk` that is excluded from
   `HEXK_CSR_RESET_CHECK` or from all checks is left out (see Exclusions).
 - Per register with a wrong field: one error `HEXK_CSR_RESET`, `<register>: read 'h<value>;
@@ -158,8 +170,8 @@ Reset check:
 
 Bit-bash:
 
-- `bit_bash(blk)` runs `uvm_reg_bit_bash_seq` of UVM on the block, started on no sequencer
-  with `parent` as parent sequence. It writes and reads every bit of every register through
+- `bit_bash(blk)` runs `uvm_reg_bit_bash_seq` of UVM on the block, created through the factory
+  and randomized, started on no sequencer below `seq`, or `parent` without one. It writes and reads every bit of every register through
   every map of the register, compares with what the access policy of each field predicts,
   and reports a difference as an error with the ID `uvm_reg_bit_bash_seq`. Those errors are
   not counted in `hexk_check_stats`.
@@ -213,10 +225,10 @@ Messages:
 | Member | Default | Meaning |
 |---|---|---|
 | `map` | null | Map of the accesses; null takes the default map of each register. |
-| `parent` | null | Sequence the accesses belong to. |
+| `parent` | null | Sequence of an access that names none with its argument `seq`. |
 | `path` | `UVM_DEFAULT_PATH` | Path of the accesses; the default is that of the block. |
 | `reporter` | null | Component whose name the messages carry. |
-| `poll_interval_ps` | 0 | Picoseconds between two reads of a spin-wait. |
+| `poll_interval_ps` | 100000 (100 ns) | Picoseconds between two reads of a spin-wait; 0 reads again at once. |
 | `timeout_ps` | 1_000_000_000 (1 ms) | Longest time of a spin-wait in picoseconds; 0 for no limit. |
 | `reset_kind` | `"HARD"` | Kind of reset whose values `check_reset_values()` expects. |
 
@@ -229,6 +241,7 @@ The times are whole numbers of picoseconds (`docs/integration.md`, "Times"): wri
 | ID | Severity | Meaning |
 |---|---|---|
 | `HEXK_CSR_NULL` | error |  |
+| `HEXK_CSR_RAND` | fatal |  |
 | `HEXK_CSR_RESET` | error |  |
 | `HEXK_CSR_RESET_DONE` | info |  |
 | `HEXK_CSR_STATUS` | error |  |
@@ -237,6 +250,8 @@ The times are whole numbers of picoseconds (`docs/integration.md`, "Times"): wri
 Besides these, `read_check()`, `read_field_check()` and the spin-waits report errors with the
 ID the caller gives, and `bit_bash()` lets UVM report under `uvm_reg_bit_bash_seq`.
 `HEXK_CSR_RESET_DONE` has verbosity `UVM_LOW`.
+`HEXK_CSR_RAND` is the fatal of `bit_bash()` when the randomization of the sequence fails,
+which happens only with a factory override that adds constraints that cannot be met.
 
 ## 7. Minimal example
 
@@ -285,7 +300,7 @@ module hexk_csr_util_example;
          address = value;
       endfunction : set_address
 
-      virtual task body();
+      task body();
          #10ns;
          if (rw_info.kind == UVM_WRITE) begin
             dut_regs[address] = 32'(rw_info.value[0]);
@@ -393,7 +408,7 @@ endmodule : hexk_csr_util_example
 
 - **`rg.read(status, value)` without a look at `status`.** A bus error then reads as a value.
   Use `read()` or `read_check()`, which report it.
-- **A spin-wait without a poll interval on a fast frontdoor or a backdoor.** It reads
+- **A spin-wait with a poll interval of 0 on a fast frontdoor or a backdoor.** It reads
   thousands of times per microsecond, or not at all while time does not pass. Give
   `poll_interval_ps` the time the DUT needs to change.
 - **A spin-wait with `timeout_ps` 0.** A DUT that never sets the bit then holds the test until

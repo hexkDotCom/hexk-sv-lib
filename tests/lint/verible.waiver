@@ -13,7 +13,11 @@ waive --rule=plusarg-assignment --location="src/core/hexk_plusarg.sv"
 # which is the case the check has to get right.
 waive --rule=unpacked-dimensions-range-ordering --location="tests/unit/hexk_check_macros/hexk_check_macros_unit_test.sv"
 
-# The test of the wait macros needs a package with a time unit of 1 ps and a class with a type
-# parameter in it (the case in which one simulator delays in the wrong unit); the build of the
-# unit tests takes one file per suite, so the package lives in the file of the test.
+# The tests of the wait macros, the scoreboard, the meta item and the delay FIFO need a package
+# in the file of the test: a class with a type parameter in a package with its own time unit,
+# or specialized in one (the cases in which one simulator delays, and another reads the time,
+# in the wrong unit); the build of the unit tests takes one file per suite.
 waive --rule=package-filename --location="tests/unit/hexk_wait_macros/hexk_wait_macros_unit_test.sv"
+waive --rule=package-filename --location="tests/unit/hexk_scoreboard/hexk_scoreboard_unit_test.sv"
+waive --rule=package-filename --location="tests/unit/hexk_meta_item/hexk_meta_item_unit_test.sv"
+waive --rule=package-filename --location="tests/unit/hexk_delay_analysis_fifo/hexk_delay_analysis_fifo_unit_test.sv"

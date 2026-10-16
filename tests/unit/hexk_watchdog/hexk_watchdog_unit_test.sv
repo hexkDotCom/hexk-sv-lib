@@ -104,6 +104,11 @@ module hexk_watchdog_unit_test;
       watchdog.set_inactivity_limit(`hexk_ps(limit));
    endfunction : set_limit
 
+   // Assigns the inactivity limit, given as a time of this module, to the member directly.
+   function automatic void assign_limit(realtime limit);
+      watchdog.inactivity_limit_ps = `hexk_ps(limit);
+   endfunction : assign_limit
+
    // Sets the largest inactivity limit there is.
    function automatic void set_largest_limit();
       watchdog.set_inactivity_limit('1);
@@ -133,6 +138,21 @@ module hexk_watchdog_unit_test;
    task automatic advance(realtime amount);
       #(amount);
    endtask : advance
+
+   // Expects count errors HEXK_WATCHDOG_LIMIT in this test.
+   function automatic void expect_limit_errors(int unsigned count);
+      catcher.expect_msg("^HEXK_WATCHDOG_LIMIT$", UVM_ERROR, "", count, count, UVM_INFO);
+   endfunction : expect_limit_errors
+
+   // Number of errors HEXK_WATCHDOG_LIMIT in this test.
+   function automatic string limit_errors();
+      return $sformatf("%0d", catcher.get_count("^HEXK_WATCHDOG_LIMIT$", UVM_ERROR));
+   endfunction : limit_errors
+
+   // Sets the largest global timeout there is.
+   function automatic void set_largest_global_timeout();
+      watchdog.global_timeout_ps = '1;
+   endfunction : set_largest_global_timeout
 
    // Number of watchdog fatals in this test.
    function automatic string fatals();
@@ -237,21 +257,44 @@ module hexk_watchdog_unit_test;
       `FAIL_UNLESS_STR_EQUAL(fatals(), "1")
    `SVTEST_END
 
-   `SVTEST(the_largest_inactivity_limit_does_not_wrap_around)
+   `SVTEST(an_inactivity_limit_assigned_during_the_run_counts_from_the_assignment)
+      configure(0, 0);
+      start_watchdog();
+      advance(40ns);
+      assign_limit(50ns);
+      advance(49ns);
+      `FAIL_UNLESS_STR_EQUAL(fatals(), "0")
+      advance(2ns);
+      `FAIL_UNLESS_STR_EQUAL(fatals(), "1")
+   `SVTEST_END
+
+   `SVTEST(an_inactivity_limit_after_last_ps_is_an_error_and_off_until_a_new_limit)
+      expect_limit_errors(1);
       configure(0, 50ns);
       start_watchdog();
       advance(40ns);
       set_largest_limit();
       advance(200ns);
       `FAIL_UNLESS_STR_EQUAL(fatals(), "0")
+      `FAIL_UNLESS_STR_EQUAL(limit_errors(), "1")
       set_limit(30ns);
       advance(31ns);
       `FAIL_UNLESS_STR_EQUAL(fatals(), "1")
    `SVTEST_END
 
+   `SVTEST(a_global_timeout_after_last_ps_is_an_error_and_off)
+      expect_limit_errors(1);
+      configure(0, 0);
+      set_largest_global_timeout();
+      start_watchdog();
+      advance(100ns);
+      `FAIL_UNLESS_STR_EQUAL(limit_errors(), "1")
+      `FAIL_UNLESS_STR_EQUAL(fatals(), "0")
+   `SVTEST_END
+
    `SVTEST(a_new_limit_set_while_the_watch_starts_is_not_lost)
       configure(0, 0);
-      set_largest_limit();
+      set_limit(1ms);
       start_watchdog();
       set_limit(30ns);
       advance(31ns);

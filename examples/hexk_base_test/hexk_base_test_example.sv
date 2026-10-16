@@ -18,6 +18,7 @@
 interface hexk_example_dut_if (
     input logic clk
 );
+   timeunit 1ns; timeprecision 1ps;
    logic [7:0] data_in;
    logic [7:0] data_out;
 endinterface : hexk_example_dut_if
@@ -59,6 +60,7 @@ module hexk_base_test_example;
 
       task run_phase(uvm_phase phase);
          int unsigned num_items = 32'(knobs.get_int("num_items"));
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          for (int unsigned i = 0; i < num_items; i++) begin
             vif.data_in = 8'(10 * i);

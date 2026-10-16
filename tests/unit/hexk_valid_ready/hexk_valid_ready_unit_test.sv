@@ -57,9 +57,9 @@ module hexk_valid_ready_unit_test;
    class hexk_ut_tagged_item extends hexk_valid_ready_item #(WIDTH);
       rand bit [7:0] tag;
 
-      constraint tag_cstr {tag == 8'hA5;}
-
       `uvm_object_utils(hexk_ut_tagged_item)
+
+      constraint tag_cstr {tag == 8'hA5;}
 
       function new(string item_name = "hexk_ut_tagged_item");
          super.new(item_name);
@@ -100,6 +100,8 @@ module hexk_valid_ready_unit_test;
    class hexk_ut_pair_seq extends uvm_sequence #(hexk_ut_item_t);
       hexk_ut_item_t first;
       hexk_ut_item_t second;
+      // The delay of both items in clock cycles.
+      int unsigned   delay_cycles;
 
       `uvm_object_utils(hexk_ut_pair_seq)
 
@@ -110,12 +112,12 @@ module hexk_valid_ready_unit_test;
       task body();
          first              = hexk_ut_item_t::type_id::create("first");
          first.data         = 8'hA1;
-         first.delay_cycles = 0;
+         first.delay_cycles = delay_cycles;
          start_item(first);
          finish_item(first);
          second              = hexk_ut_item_t::type_id::create("second");
          second.data         = 8'hA2;
-         second.delay_cycles = 0;
+         second.delay_cycles = delay_cycles;
          start_item(second);
          finish_item(second);
       endtask : body
@@ -300,8 +302,8 @@ module hexk_valid_ready_unit_test;
    endfunction : build_agent
 
    // Starts run_phase of the monitor and, if there is one, of the driver of an agent.
-   // The ports of the monitor are resolved here, after the test connected its own subscribers to the agent:
-   // the monitor writes through the ports of the agent, and resolving its ports resolves the whole chain.
+   // The ports of the monitor, which the agent hands on, are resolved here, after the test connected its own
+   // subscribers to them.
    task automatic run_agent(hexk_ut_agent_t agent);
       process monitor_thread;
       process driver_thread;
@@ -358,8 +360,8 @@ module hexk_valid_ready_unit_test;
       end
    endtask : step
 
-   // The test drives ready, between clock edges.
-   task automatic hand_ready(bit value);
+   // The test drives ready, between clock edges; X and Z as well.
+   task automatic hand_ready(logic value);
       hand_ready_value <= value;
    endtask : hand_ready
 
@@ -418,10 +420,15 @@ module hexk_valid_ready_unit_test;
       join_none
    endtask : send
 
-   // Starts the sequence that keeps its two items, in the background.
-   task automatic send_pair();
+   // Starts the sequence that keeps its two items, with a delay for both, in the background.
+   task automatic send_pair(int unsigned delay_cycles = 0);
       pair_seq = hexk_ut_pair_seq::type_id::create("pair_seq");
-      seq_done = 0;
+      if (pair_seq.randomize() != 1) begin
+         result = "randomization failed";
+         return;
+      end
+      pair_seq.delay_cycles = delay_cycles;
+      seq_done              = 0;
       fork
          begin
             pair_seq.start(initiator.sqr);
@@ -429,6 +436,13 @@ module hexk_valid_ready_unit_test;
          end
       join_none
    endtask : send_pair
+
+   // The members of the sequences as created, without randomize(): "<num_items> <delay_cycles>".
+   function automatic string created_sequence_members();
+      hexk_ut_random_seq_t random_seq = hexk_ut_random_seq_t::type_id::create("random_seq");
+      hexk_ut_data_seq_t   words_seq = hexk_ut_data_seq_t::type_id::create("words_seq");
+      return $sformatf("%0d %0d", random_seq.num_items, words_seq.delay_cycles);
+   endfunction : created_sequence_members
 
    // Sends RANDOM_ITEMS random words from the initiator to the responder and waits for the last transfer:
    // "<transfers> <the monitor saw the words of the channel> <clock cycles were enough>".
@@ -498,6 +512,12 @@ module hexk_valid_ready_unit_test;
          hexk_ut_item_t::type_id::set_type_override(hexk_ut_item_t::get_type());
       end
    endfunction : override_item
+
+   // Makes the factory give hexk_ut_tagged_item for the items of the sequences on the sequencer of this agent
+   // only; every test has agents of its own, so the override does not reach another test.
+   function automatic void override_item_of(hexk_ut_agent_t target);
+      hexk_ut_item_t::type_id::set_inst_override(hexk_ut_tagged_item::get_type(), {target.sqr.get_full_name(), ".req"});
+   endfunction : override_item_of
 
    // Makes the factory give hexk_ut_bare_item for the item of the agent; override_item(0) ends that.
    function automatic void override_with_bare_item();
@@ -570,19 +590,28 @@ module hexk_valid_ready_unit_test;
       return $sformatf("%0d %0d %0d %0d", counts[0], counts[1], counts[2], counts[3]);
    endfunction : cycle_records
 
-   // The ports of an agent that was only constructed: "<full name of ap> <full name of cycle_ap>", with the name of
-   // the agent written as "agent".
-   function automatic string ports_after_construction();
-      hexk_ut_agent_t agent;
+   // The ports of an agent, once only constructed and once built: "<ports after construction> | <full name of ap>
+   // <full name of cycle_ap> <both are the ports of the monitor>", with the name of the agent written as "agent".
+   function automatic string ports_of_an_agent();
+      hexk_ut_agent_t constructed;
+      hexk_ut_agent_t built;
       string          names;
       created++;
-      agent = hexk_ut_agent_t::type_id::create($sformatf("ut_valid_ready_agent_%0d", created), null);
-      if (agent.ap == null || agent.cycle_ap == null) begin
+      constructed = hexk_ut_agent_t::type_id::create($sformatf("ut_valid_ready_agent_%0d", created), null);
+      built       = build_agent(new_cfg("ports_cfg"));
+      if (built.ap == null || built.cycle_ap == null) begin
          return "no ports";
       end
-      names = {agent.ap.get_full_name(), " ", agent.cycle_ap.get_full_name()};
-      return hexk_str::replace(names, agent.get_name(), "agent");
-   endfunction : ports_after_construction
+      names = {built.ap.get_full_name(), " ", built.cycle_ap.get_full_name()};
+      return $sformatf(
+          "%s | %s %0b",
+          (constructed.ap == null && constructed.cycle_ap == null) ? "none" : "some",
+          hexk_str::replace(
+              names, built.get_name(), "agent"
+          ),
+          built.ap == built.mon.ap && built.cycle_ap == built.mon.cycle_ap
+      );
+   endfunction : ports_of_an_agent
 
    // What an agent has built: "<driver> <sequencer> <monitor> <coverage>".
    function automatic string parts_of(hexk_ut_agent_t agent);
@@ -727,6 +756,16 @@ module hexk_valid_ready_unit_test;
       step(3);
       `FAIL_UNLESS_STR_EQUAL(last_tag(), "-")
       `FAIL_UNLESS_STR_EQUAL(words, "e1 e2 e3 ")
+   `SVTEST_END
+
+   `SVTEST(an_instance_override_on_the_path_of_the_sequencer_reaches_the_items_of_the_sequences)
+      hand_ready(1);
+      start_initiator();
+      override_item_of(initiator);
+      send(initiator, "e1");
+      step(3);
+      `FAIL_UNLESS_STR_EQUAL(last_tag(), "e1 a5")
+      `FAIL_UNLESS_STR_EQUAL(words, "e1 ")
    `SVTEST_END
 
    `SVTEST(the_data_sequence_randomizes_a_derived_class_registered_without_macros)
@@ -878,6 +917,70 @@ module hexk_valid_ready_unit_test;
       `FAIL_UNLESS_STR_EQUAL(seen_words(), "a2(0) ")
    `SVTEST_END
 
+   `SVTEST(a_reset_during_the_delay_of_an_initiator_ends_its_item_and_the_next_one_follows_the_release)
+      start_initiator();
+      send_pair(3);
+      step(2);
+      hand_reset(0);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%b", vr_if.valid), "0")
+      step(2);
+      hand_ready(1);
+      hand_reset(1);
+      step(6);
+      `FAIL_UNLESS_STR_EQUAL(wave, "..__rrrrTr")
+      `FAIL_UNLESS_STR_EQUAL(words, "a2 ")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %0b", pair_seq.first.aborted, pair_seq.second.aborted), "1 0")
+      `FAIL_UNLESS_STR_EQUAL(seen_words(), "a2(0) ")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b", seq_done), "1")
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 0")
+   `SVTEST_END
+
+   `SVTEST(a_reset_during_the_delay_of_a_responder_item_ends_it_and_the_next_item_follows_the_release)
+      hand_valid(1, 8'hE5);
+      start_responder();
+      step(1);
+      send(responder, "00", 3);
+      step(2);
+      hand_reset(0);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%b", vr_if.ready), "0")
+      hand_valid(0);
+      step(2);
+      `FAIL_UNLESS_STR_EQUAL(last_item(), "00 0 1")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b", seq_done), "1")
+      hand_reset(1);
+      step(1);
+      hand_valid(1, 8'hE6);
+      send(responder, "00", 1);
+      step(3);
+      hand_valid(0);
+      step(1);
+      `FAIL_UNLESS_STR_EQUAL(wave, "vTv__.TvTr")
+      `FAIL_UNLESS_STR_EQUAL(words, "e5 e6 e6 ")
+      `FAIL_UNLESS_STR_EQUAL(last_item(), "e6 1 0")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b", seq_done), "1")
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 0")
+   `SVTEST_END
+
+   `SVTEST(a_reset_while_the_item_of_a_responder_waits_for_valid_ends_it)
+      hand_valid(1, 8'hE5);
+      start_responder();
+      step(1);
+      send(responder, "00", 0);
+      step(1);
+      hand_valid(0);
+      step(2);
+      hand_reset(0);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%b", vr_if.ready), "0")
+      step(1);
+      `FAIL_UNLESS_STR_EQUAL(last_item(), "00 0 1")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b", seq_done), "1")
+      hand_reset(1);
+      step(1);
+      `FAIL_UNLESS_STR_EQUAL(wave, "vTrr_.")
+      `FAIL_UNLESS_STR_EQUAL(words, "e5 ")
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 0")
+   `SVTEST_END
+
    `SVTEST(a_reset_takes_ready_back_and_the_responder_answers_again_after_it)
       start_responder();
       step(2);
@@ -953,8 +1056,8 @@ module hexk_valid_ready_unit_test;
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", initiator.cov.num_samples()), "5")
    `SVTEST_END
 
-   `SVTEST(the_ports_belong_to_the_agent_from_its_construction)
-      `FAIL_UNLESS_STR_EQUAL(ports_after_construction(), "agent.ap agent.cycle_ap")
+   `SVTEST(the_ports_of_the_agent_are_those_of_its_monitor_from_the_build_phase)
+      `FAIL_UNLESS_STR_EQUAL(ports_of_an_agent(), "none | agent.mon.ap agent.mon.cycle_ap 1")
    `SVTEST_END
 
    `SVTEST(without_has_coverage_the_agent_has_no_coverage_component)
@@ -996,6 +1099,38 @@ module hexk_valid_ready_unit_test;
       hand_valid(0);
       step(2);
       `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 2")
+   `SVTEST_END
+
+   `SVTEST(an_unknown_ready_is_an_error_also_while_valid_is_0)
+      start_observer();
+      hand_ready(1'bx);
+      step(2);
+      hand_ready(1'bz);
+      step(1);
+      hand_ready(0);
+      step(2);
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 3")
+   `SVTEST_END
+
+   `SVTEST(unknown_data_is_an_error_while_valid_is_1)
+      start_observer();
+      hand_ready(1);
+      hand_valid(1, 8'h1x);
+      step(2);
+      hand_valid(1, 8'hz5);
+      step(1);
+      hand_valid(0);
+      step(2);
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 3")
+   `SVTEST_END
+
+   `SVTEST(unknown_data_while_valid_is_0_is_no_error)
+      start_observer();
+      hand_valid(0, 8'hxx);
+      step(2);
+      hand_valid(0, 8'hzz);
+      step(2);
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 0")
    `SVTEST_END
 
    `SVTEST(without_has_checks_the_assertions_are_off)
@@ -1050,6 +1185,10 @@ module hexk_valid_ready_unit_test;
 
    `SVTEST(a_plain_randomize_keeps_the_default_delays_and_a_clone_has_its_own_delay_cfg)
       `FAIL_UNLESS_STR_EQUAL(randomized_cfg(), "mode=HEXK_DELAY_UNIFORM lo=0 hi=7 | 1 7")
+   `SVTEST_END
+
+   `SVTEST(the_members_of_a_created_sequence_have_their_defaults)
+      `FAIL_UNLESS_STR_EQUAL(created_sequence_members(), "1 -1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

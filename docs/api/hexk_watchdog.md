@@ -54,8 +54,10 @@ Limits:
   the fatal. The value is read once, at the start of the run phase; set it before. 0 switches
   the limit off.
 - **Inactivity.** When `inactivity_limit_ps` has passed since the latest of: the start of the
-  run phase, the latest `heartbeat()`, the latest `set_inactivity_limit()`, the watchdog
-  reports the fatal. 0, the default, switches the limit off.
+  run phase, the latest `heartbeat()`, the latest `set_inactivity_limit()`, or the latest
+  assignment of a different value to `inactivity_limit_ps` during the run, the watchdog reports
+  the fatal. An assignment of the value the member already has is not seen; to start the time
+  again with the same limit, call `set_inactivity_limit()`. 0, the default, switches the limit off.
 - `set_inactivity_limit(limit_ps)` may be called at any time, also during the run; the new limit
   counts from the call. Use it to switch the limit off around a phase without activity, such
   as a long reset, and on again after it.
@@ -85,9 +87,15 @@ The fatal:
   is unsigned and may have a decimal point; the unit is `fs`, `ps`, `ns`, `us`, `ms` or `s`
   in any case, as `hexk_report_cfg::time_unit_of()` reads it, and is required:
   `+hexk_timeout=500us`, `+hexk_timeout=1.5ms`. `0ps` switches the global timeout off.
-- A value in any other form is the error `HEXK_WATCHDOG_ARG`, and `global_timeout_ps` keeps its
-  value. So is a time of 2**63 ps (about 106 days) or more, which does not fit, and a time
-  above 0 that rounds to 0 ps, such as `0.4ps`, which would switch the timeout off.
+- A value in any other form, also `+hexk_timeout` without a value or with an empty one, is the
+  error `HEXK_WATCHDOG_ARG`, and `global_timeout_ps` keeps its value. So is a time of 2**63 ps
+  (about 106 days) or more, which does not fit, and a time above 0 that rounds to 0 ps, such
+  as `0.4ps`, which would switch the timeout off.
+- A limit that ends after `hexk_wait_util::LAST_PS`, about 2.56 hours of simulation, would
+  never be reached, like every wait of the library (`docs/integration.md`, "Times"). Such a
+  global timeout, counted from the start of the run phase, or inactivity limit, counted from
+  the latest activity, is the error `HEXK_WATCHDOG_LIMIT`, and that limit is off: the global
+  timeout for the rest of the run, the inactivity limit until a new one is set.
 - `parse_timeout(text, timeout_ps)` is the conversion behind the plusarg. It returns 1 and the
   time in whole picoseconds, rounded (so `1500fs` is 2 ps), or 0 and a time of 0.
 
@@ -96,7 +104,7 @@ The fatal:
 | Member | Default | Meaning |
 |---|---|---|
 | `global_timeout_ps` | `1_000_000_000` (1 ms) | Longest time in picoseconds the run phase may take; 0 = off. Read at the start of the run phase. |
-| `inactivity_limit_ps` | `0` (off) | Longest time in picoseconds without a heartbeat. Set it before the run phase, or with `set_inactivity_limit()` during it. |
+| `inactivity_limit_ps` | `0` (off) | Longest time in picoseconds without a heartbeat. Set before the run phase, or during it, by assignment or with `set_inactivity_limit()`: both count from that moment. |
 | `aggregator` | `null` | `hexk_objection_aggregator` whose `report_busy()` goes into the fatal. |
 
 | Plusarg | Meaning |
@@ -113,6 +121,7 @@ The two limits are whole picoseconds (`docs/integration.md`, "Times"): write
 |---|---|---|
 | `HEXK_WATCHDOG` | fatal |  |
 | `HEXK_WATCHDOG_ARG` | error |  |
+| `HEXK_WATCHDOG_LIMIT` | error |  |
 | `HEXK_WATCHDOG_START` | info |  |
 <!-- HEXK_GEN:END emits -->
 
@@ -189,6 +198,7 @@ module hexk_watchdog_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          repeat (5) begin
             #20ns;

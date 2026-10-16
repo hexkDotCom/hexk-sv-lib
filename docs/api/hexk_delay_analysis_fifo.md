@@ -27,7 +27,7 @@ From `src/uvm/tlm/hexk_delay_analysis_fifo.sv`:
 
 ```systemverilog
 // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-virtual function string get_type_name();
+function string get_type_name();
 // Creates the FIFO; without a latency it behaves like uvm_tlm_analysis_fifo.
 function new(string name, uvm_component parent = null);
 // Gives the event whose triggers count as cycles for latency_cycles.
@@ -35,11 +35,11 @@ function void set_clock(event clock_event);
 // Number of items that were written and are not visible yet.
 function int unsigned num_in_flight();
 // UVM FIFO method behind write() and put(): keeps the item aside until its delay is over.
-virtual function bit try_put(input T t);
+function bit try_put(input T t);
 // UVM FIFO method: as try_put(). UVM's own put() goes to the FIFO directly; the FIFO has no size limit, so this one never waits either.
-virtual task put(input T t);
+task put(input T t);
 // UVM FIFO method: empties the FIFO and drops the items that are not visible yet.
-virtual function void flush();
+function void flush();
 // hexk_objectable: 1 while items are waiting for the end of their delay or are visible and not yet read.
 virtual function bit is_busy();
 // hexk_objectable: how many items are waiting and how many are visible and not yet read.
@@ -56,6 +56,8 @@ the get/peek exports.
 
 ## 4. Behaviour and invariants
 
+- Type parameter: `T` is the type of the items, any type a `uvm_tlm_analysis_fifo` takes;
+  its default, `int`, is only there so that the class has one. Give it the item class.
 - `write()` through `analysis_export`, and `put()`/`try_put()`, never block and always
   accept the item. The item is kept aside and enters the FIFO when its delay is over. Until
   then `try_get()`, `used()` and `is_empty()` do not see it; `num_in_flight()` counts it.
@@ -79,9 +81,10 @@ the get/peek exports.
 - The FIFO has no size limit, like `uvm_tlm_analysis_fifo`.
 - The FIFO keeps the handle that is written and does not copy the item; see
   `docs/integration.md`, "Items after they are published".
-- Cost: a write appends to five queues; one thread per FIFO releases the items one after
-  the other, and with a clock the counting thread looks at the items of the current time
-  step only.
+- Cost: a write with a delay appends one entry to the queue of waiting items, and a write
+  without a delay while nothing waits goes to the FIFO at once. One thread per FIFO releases
+  the items one after the other, and with a clock the counting thread looks at the items of
+  the current time step only.
 - `flush()` empties the FIFO and drops the items that are still waiting. An item written
   after the flush has its own delay only: it does not wait for the delay of a dropped item,
   also when the clock has stopped.
@@ -166,7 +169,7 @@ module hexk_delay_analysis_fifo_example;
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
          objections    = hexk_objection_aggregator::type_id::create("objections", this);
-         pipeline_fifo = new("pipeline_fifo", this);
+         pipeline_fifo = hexk_delay_analysis_fifo#(int)::type_id::create("pipeline_fifo", this);
          monitor_port  = new("monitor_port", this);
          pipeline_fifo.latency_cycles = PIPELINE_DEPTH;
          pipeline_fifo.set_clock(clk_event);
@@ -180,6 +183,7 @@ module hexk_delay_analysis_fifo_example;
       endfunction : connect_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          // The predictor: takes every item when it leaves the pipeline.
          fork
             forever begin

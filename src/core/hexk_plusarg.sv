@@ -8,7 +8,9 @@
 // the name is given without the plus sign. No UVM, so it also works in modules and on Verilator.
 // A plusarg is matched exactly: +my_depth_max does not count as +my_depth. Integers accept
 // decimal, 0x and 0b prefixes, Verilog bases ('h, 'd, 'o, 'b, with an optional size) and "_".
-// A value that cannot be parsed is reported with $error and the default is returned.
+// A value that cannot be parsed is reported with $error by the get functions, which then return
+// the default; the try_get functions report nothing and say what they found, for callers that
+// report through UVM.
 // Limit of the language: the form without a value (+name) is not seen when a longer plusarg
 // that starts with the same text comes before it on the command line; +name=1 always is.
 //
@@ -30,6 +32,14 @@ virtual class hexk_plusarg;
       HEXK_PLUSARG_VALUE
    } form_e;
 
+   // What a try_get function found: no such plusarg, a value that it could read, or +name or a value that it
+   // could not read.
+   typedef enum bit [1:0] {
+      HEXK_PLUSARG_NOT_GIVEN,
+      HEXK_PLUSARG_VALID,
+      HEXK_PLUSARG_INVALID
+   } status_e;
+
    // Number bases that get_int accepts.
    localparam longint unsigned BASE_BINARY = 2;
    localparam longint unsigned BASE_OCTAL = 8;
@@ -45,19 +55,81 @@ virtual class hexk_plusarg;
       return lookup(name, value) != HEXK_PLUSARG_ABSENT;
    endfunction : has
 
-   // Value of +name=<integer>; default_value when the plusarg is absent or is not an integer.
-   static function longint get_int(string name, longint default_value);
-      string  value;
-      longint result;
-      form_e  form = lookup(name, value);
+   // Reads +name=<integer> and reports nothing: VALID with the value, NOT_GIVEN, or INVALID for +name or a value
+   // that is not an integer; value is 0 unless VALID.
+   static function status_e try_get_int(string name, output longint value);
+      string text;
+      form_e form = lookup(name, text);
+      value = 0;
       if (form == HEXK_PLUSARG_ABSENT) begin
-         return default_value;
+         return HEXK_PLUSARG_NOT_GIVEN;
       end
-      if (form == HEXK_PLUSARG_BARE || !parse_int(value, result)) begin
-         $error("hexk_plusarg::get_int: +%s needs an integer value, got '%s'; using %0d", name, value, default_value);
-         return default_value;
+      if (form == HEXK_PLUSARG_BARE || !parse_int(text, value)) begin
+         value = 0;
+         return HEXK_PLUSARG_INVALID;
       end
-      return result;
+      return HEXK_PLUSARG_VALID;
+   endfunction : try_get_int
+
+   // Reads +name (1) or +name=<0, 1, true, false, yes, no, on, off or integer> and reports nothing; value is 0
+   // unless VALID.
+   static function status_e try_get_bit(string name, output bit value);
+      string  text;
+      string  word;
+      longint number;
+      form_e  form = lookup(name, text);
+      value = 0;
+      if (form == HEXK_PLUSARG_ABSENT) begin
+         return HEXK_PLUSARG_NOT_GIVEN;
+      end
+      if (form == HEXK_PLUSARG_BARE) begin
+         value = 1;
+         return HEXK_PLUSARG_VALID;
+      end
+      if (parse_int(text, number)) begin
+         value = number != 0;
+         return HEXK_PLUSARG_VALID;
+      end
+      word = text.tolower();
+      if (word == "true" || word == "yes" || word == "on") begin
+         value = 1;
+         return HEXK_PLUSARG_VALID;
+      end
+      if (word == "false" || word == "no" || word == "off") begin
+         return HEXK_PLUSARG_VALID;
+      end
+      return HEXK_PLUSARG_INVALID;
+   endfunction : try_get_bit
+
+   // Reads +name=<real number> and reports nothing; value is 0.0 unless VALID.
+   static function status_e try_get_real(string name, output real value);
+      string text;
+      form_e form = lookup(name, text);
+      value = 0.0;
+      if (form == HEXK_PLUSARG_ABSENT) begin
+         return HEXK_PLUSARG_NOT_GIVEN;
+      end
+      if (form == HEXK_PLUSARG_BARE || !parse_real(text, value)) begin
+         value = 0.0;
+         return HEXK_PLUSARG_INVALID;
+      end
+      return HEXK_PLUSARG_VALID;
+   endfunction : try_get_real
+
+   // Value of +name=<integer>; default_value when the plusarg is absent, or, with $error, is not an integer.
+   static function longint get_int(string name, longint default_value);
+      longint result;
+      case (try_get_int(
+          name, result
+      ))
+         HEXK_PLUSARG_VALID: return result;
+         HEXK_PLUSARG_INVALID: begin
+            $error("hexk_plusarg::get_int: +%s needs an integer value, got '%s'; using %0d", name, get_str(name, ""),
+                   default_value);
+            return default_value;
+         end
+         default: return default_value;
+      endcase
    endfunction : get_int
 
    // Value of +name=<text>; default_value when the plusarg is absent or has no value.
@@ -66,45 +138,37 @@ virtual class hexk_plusarg;
       return (lookup(name, value) == HEXK_PLUSARG_VALUE) ? value : default_value;
    endfunction : get_str
 
-   // 1 for +name, the value for +name=<0, 1, true, false, yes, no, on, off or integer>; else default_value.
+   // 1 for +name, the value for +name=<0, 1, true, false, yes, no, on, off or integer>; else default_value, with
+   // $error for a value that is none of these.
    static function bit get_bit(string name, bit default_value);
-      string  value;
-      string  word;
-      longint number;
-      form_e  form = lookup(name, value);
-      if (form == HEXK_PLUSARG_ABSENT) begin
-         return default_value;
-      end
-      if (form == HEXK_PLUSARG_BARE) begin
-         return 1;
-      end
-      if (parse_int(value, number)) begin
-         return number != 0;
-      end
-      word = value.tolower();
-      if (word == "true" || word == "yes" || word == "on") begin
-         return 1;
-      end
-      if (word == "false" || word == "no" || word == "off") begin
-         return 0;
-      end
-      $error("hexk_plusarg::get_bit: +%s=%s is not a bit value; using %0b", name, value, default_value);
-      return default_value;
+      bit result;
+      case (try_get_bit(
+          name, result
+      ))
+         HEXK_PLUSARG_VALID: return result;
+         HEXK_PLUSARG_INVALID: begin
+            $error("hexk_plusarg::get_bit: +%s=%s is not a bit value; using %0b", name, get_str(name, ""),
+                   default_value);
+            return default_value;
+         end
+         default: return default_value;
+      endcase
    endfunction : get_bit
 
-   // Value of +name=<real number>; default_value when the plusarg is absent or is not a number.
+   // Value of +name=<real number>; default_value when the plusarg is absent, or, with $error, is not a number.
    static function real get_real(string name, real default_value);
-      string value;
-      real   result;
-      form_e form = lookup(name, value);
-      if (form == HEXK_PLUSARG_ABSENT) begin
-         return default_value;
-      end
-      if (form == HEXK_PLUSARG_BARE || !parse_real(value, result)) begin
-         $error("hexk_plusarg::get_real: +%s needs a real value, got '%s'; using %g", name, value, default_value);
-         return default_value;
-      end
-      return result;
+      real result;
+      case (try_get_real(
+          name, result
+      ))
+         HEXK_PLUSARG_VALID: return result;
+         HEXK_PLUSARG_INVALID: begin
+            $error("hexk_plusarg::get_real: +%s needs a real value, got '%s'; using %g", name, get_str(name, ""),
+                   default_value);
+            return default_value;
+         end
+         default: return default_value;
+      endcase
    endfunction : get_real
 
    // Fills values (cleared first) with the sep-separated fields of +name=<a,b,c>; empty when there is no value.

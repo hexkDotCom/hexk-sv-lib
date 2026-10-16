@@ -10,7 +10,8 @@
 // An initiator sends the items of the sequences that a test starts on sqr; a responder
 // answers by itself and takes items only to set the timing of single transfers.
 // Consumers connect to ap, which has one item per transfer, and to cycle_ap, which has one
-// hexk_handshake_cycle_t per rising edge of the clock. With cfg.has_coverage the agent
+// hexk_handshake_cycle_t per rising edge of the clock: the ports of the monitor, which the agent
+// hands on from its build phase (guide rule CMP-10). With cfg.has_coverage the agent
 // connects a hexk_handshake_coverage to cycle_ap; other coverage connects there too. The
 // agent is a hexk_objectable: registered with hexk_objection_aggregator, it keeps a phase
 // alive while a transfer waits.
@@ -42,22 +43,21 @@ class hexk_valid_ready_agent #(
    // The handshake coverage, a subscriber of cycle_ap; null when cfg.has_coverage is 0.
    hexk_handshake_coverage                                  cov;
 
-   // One item per transfer, and one record per rising edge of the clock; the monitor writes to them.
+   // One item per transfer, and one record per rising edge of the clock: the ports of the monitor, set in the build
+   // phase, so a consumer connects to them in its connect phase.
    uvm_analysis_port #(hexk_valid_ready_item #(DATA_WIDTH)) ap;
    uvm_analysis_port #(hexk_handshake_cycle_t)              cycle_ap;
 
    `uvm_component_param_utils(hexk_valid_ready_agent#(DATA_WIDTH))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_valid_ready_agent";
    endfunction : get_type_name
 
-   // Creates the agent and its ports; the children are created in build_phase.
+   // Creates the agent; the children, and with the monitor the ports, come in build_phase.
    function new(string name, uvm_component parent);
       super.new(name, parent);
-      ap       = new("ap", this);
-      cycle_ap = new("cycle_ap", this);
    endfunction : new
 
    // UVM callback: checks the cfg and its interface, creates the monitor, the coverage and, in active mode, the rest.
@@ -76,8 +76,10 @@ class hexk_valid_ready_agent #(
          `uvm_fatal("HEXK_VALID_READY_CFG", "cfg.vif is null; the parent assigns the interface before the build phase")
          return;
       end
-      mon     = hexk_valid_ready_monitor#(DATA_WIDTH)::type_id::create("mon", this);
+      mon = hexk_valid_ready_monitor#(DATA_WIDTH)::type_id::create("mon", this);
       mon.cfg = cfg;
+      ap = mon.ap;
+      cycle_ap = mon.cycle_ap;
       if (cfg.has_coverage) begin
          cov = hexk_handshake_coverage::type_id::create("cov", this);
       end
@@ -88,14 +90,11 @@ class hexk_valid_ready_agent #(
       end
    endfunction : build_phase
 
-   // UVM callback: connects the ports of the monitor to those of the agent and to the coverage, and the driver
-   // to the sequencer.
+   // UVM callback: connects the coverage to the records of the monitor, and the driver to the sequencer.
    function void connect_phase(uvm_phase phase);
       super.connect_phase(phase);
-      mon.ap.connect(ap);
-      mon.cycle_ap.connect(cycle_ap);
       if (cov != null) begin
-         mon.cycle_ap.connect(cov.analysis_export);
+         cycle_ap.connect(cov.analysis_export);
       end
       if (get_is_active() == UVM_ACTIVE) begin
          drv.seq_item_port.connect(sqr.seq_item_export);
@@ -112,7 +111,7 @@ class hexk_valid_ready_agent #(
    endfunction : start_of_simulation_phase
 
    // UVM hook: the mode of the cfg.
-   virtual function uvm_active_passive_enum get_is_active();
+   function uvm_active_passive_enum get_is_active();
       return cfg.is_active;
    endfunction : get_is_active
 

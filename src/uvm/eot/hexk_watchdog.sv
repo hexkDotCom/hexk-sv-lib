@@ -17,7 +17,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    OBJ-7
-//! @emits     HEXK_WATCHDOG:fatal HEXK_WATCHDOG_START:info HEXK_WATCHDOG_ARG:error
+//! @emits     HEXK_WATCHDOG:fatal HEXK_WATCHDOG_START:info HEXK_WATCHDOG_ARG:error HEXK_WATCHDOG_LIMIT:error
 //! @plusargs  +hexk_timeout
 
 `ifndef HEXK_WATCHDOG_SV
@@ -28,7 +28,8 @@ class hexk_watchdog extends uvm_component;
    // Longest time in picoseconds the run phase may take, counted from its start (1 ms); 0 switches it off.
    longint unsigned          global_timeout_ps          = 1_000_000_000;
 
-   // Longest time in picoseconds without a heartbeat; 0 switches this limit off.
+   // Longest time in picoseconds without a heartbeat; 0 switches this limit off. An assignment during the run
+   // counts from then, like set_inactivity_limit().
    longint unsigned          inactivity_limit_ps        = 0;
 
    // Aggregator whose report of busy objects goes into the fatal message; may be null.
@@ -108,6 +109,7 @@ class hexk_watchdog extends uvm_component;
 
    // UVM callback: reads +hexk_timeout and watches both limits until the run phase ends.
    task run_phase(uvm_phase phase);
+      super.run_phase(phase);
       apply_plusargs();
       last_activity_ps = $time;
       `uvm_info("HEXK_WATCHDOG_START", $sformatf("global timeout %s, inactivity limit %s", limit_text(global_timeout_ps
@@ -118,14 +120,15 @@ class hexk_watchdog extends uvm_component;
       join
    endtask : run_phase
 
-   // Takes global_timeout_ps from +hexk_timeout=<number><unit> when the plusarg is given.
+   // Takes global_timeout_ps from +hexk_timeout=<number><unit> when the plusarg is given; +hexk_timeout without a
+   // value, or with an empty one, is an error like any other value that is not a time.
    local function void apply_plusargs();
       string           text = hexk_plusarg::get_str("hexk_timeout", "");
       longint unsigned timeout_ps;
-      if (text.len() == 0) begin
+      if (!hexk_plusarg::has("hexk_timeout")) begin
          return;
       end
-      if (parse_timeout(text, timeout_ps)) begin
+      if (text.len() != 0 && parse_timeout(text, timeout_ps)) begin
          global_timeout_ps = timeout_ps;
       end else begin
          `uvm_error("HEXK_WATCHDOG_ARG", $sformatf(
@@ -144,22 +147,36 @@ class hexk_watchdog extends uvm_component;
       if (global_timeout_ps == 0) begin
          return;
       end
+      if (hexk_wait_util::ends_after_last(global_timeout_ps, $time)) begin
+         report_unreachable("global timeout", global_timeout_ps);
+         return;
+      end
       hexk_wait_util::wait_ps(global_timeout_ps);
       expire($sformatf("global timeout of %s reached", time_text(global_timeout_ps)));
    endtask : watch_global
 
-   // Ends the test when there was no heartbeat for inactivity_limit_ps.
+   // Ends the test when there was no heartbeat for inactivity_limit_ps. It wakes for a call of
+   // set_inactivity_limit() and for a direct assignment of inactivity_limit_ps alike.
    local task watch_inactivity();
       longint unsigned deadline_ps;
       int unsigned     changes;
+      longint unsigned limit_ps;
       forever begin
-         changes = limit_changes;
-         if (inactivity_limit_ps == 0) begin
-            wait (limit_changes != changes);
+         changes  = limit_changes;
+         limit_ps = inactivity_limit_ps;
+         if (limit_ps == 0) begin
+            wait (limit_changes != changes || inactivity_limit_ps != limit_ps);
+            note_assigned_limit(changes, limit_ps);
             continue;
          end
-         // A deadline past the largest number is the largest number, which hexk_wait_util never reaches.
-         deadline_ps = (last_activity_ps > ~inactivity_limit_ps) ? ~64'd0 : last_activity_ps + inactivity_limit_ps;
+         // A limit that hexk_wait_util would never reach is off, with an error, until a new limit is set.
+         if (hexk_wait_util::ends_after_last(inactivity_limit_ps, last_activity_ps)) begin
+            report_unreachable("inactivity limit", inactivity_limit_ps);
+            wait (limit_changes != changes || inactivity_limit_ps != limit_ps);
+            note_assigned_limit(changes, limit_ps);
+            continue;
+         end
+         deadline_ps = last_activity_ps + inactivity_limit_ps;
          if (deadline_ps > $time) begin
             // Until the deadline or a new limit, then the deadline is computed again: a heartbeat may have moved it.
             // The outer fork keeps "disable fork" to these two branches.
@@ -167,18 +184,39 @@ class hexk_watchdog extends uvm_component;
                begin
                   fork
                      hexk_wait_util::wait_ps(deadline_ps - $time);
-                     wait (limit_changes != changes);
+                     wait (limit_changes != changes || inactivity_limit_ps != limit_ps);
                   join_any
                   disable fork;
                end
             join
+            note_assigned_limit(changes, limit_ps);
             continue;
          end
          expire($sformatf("no heartbeat for %s", time_text(inactivity_limit_ps)));
          // Only reached when the fatal was demoted: watch again when a limit is set.
-         wait (limit_changes != changes);
+         wait (limit_changes != changes || inactivity_limit_ps != limit_ps);
+         note_assigned_limit(changes, limit_ps);
       end
    endtask : watch_inactivity
+
+   // A limit that was assigned directly, not through set_inactivity_limit(), counts from now, as the setter does.
+   local function void note_assigned_limit(int unsigned changes, longint unsigned limit_ps);
+      if (limit_changes == changes && inactivity_limit_ps != limit_ps) begin
+         last_activity_ps = $time;
+      end
+   endfunction : note_assigned_limit
+
+   // Reports a limit that ends after hexk_wait_util::LAST_PS, which no wait of the library reaches.
+   local function void report_unreachable(string what, longint unsigned limit_ps);
+      `uvm_error("HEXK_WATCHDOG_LIMIT", $sformatf(
+                 "the %s of %s ends after hexk_wait_util::LAST_PS (about 2.56 hours of simulation), %s",
+                 what,
+                 time_text(
+                     limit_ps
+                 ),
+                 "which no wait of the library reaches; this limit is off"
+                 ))
+   endfunction : report_unreachable
 
    // Reports the fatal with everything that helps to see why the test did not end.
    local function void expire(string reason);

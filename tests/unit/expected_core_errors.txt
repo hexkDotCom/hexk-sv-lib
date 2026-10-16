@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# expected_core_errors.txt - the $error messages of the core library that unit tests cause on
+# purpose.
+#
+# The core has no UVM, so it reports an illegal argument with $error and a message that starts
+# with "hexk_<class>::<function>:". 'make test' fails when these messages in a run differ from
+# this list, for the suites that ran, on the simulator that ran them: a negative test that gets
+# its fallback value without its message fails, and so does a legal call that reports one.
+#
+# Columns: suite, simulators (all, or a comma-separated list of verilator, questa, vcs), count,
+# message (the rest of the line, exactly as the library writes it).
+
+hexk_crc         all  1  hexk_crc::compute: model is null
+hexk_crc         all  1  hexk_crc::new: width 0 is not in 1..64
+hexk_crc         all  1  hexk_crc::new: width 65 is not in 1..64
+hexk_crc         all  1  hexk_crc::update_bits: 1025 bits do not fit HEXK_MAX_WIDTH (1024)
+
+hexk_ecc         all  1  hexk_ecc::flip: index 1000 is not in 0..12
+hexk_ecc         all  1  hexk_ecc::flip: index 13 is not in 0..12
+hexk_ecc         all  1  hexk_ecc::inject: 1000 errors do not fit a code word of 137 bits
+hexk_ecc         all  1  hexk_ecc::inject: 14 errors do not fit a code word of 13 bits
+hexk_ecc         all  1  hexk_ecc::new: data width 0 is not in 4..128
+hexk_ecc         all  1  hexk_ecc::new: data width 1000 is not in 4..128
+hexk_ecc         all  1  hexk_ecc::new: data width 129 is not in 4..128
+hexk_ecc         all  1  hexk_ecc::new: data width 3 is not in 4..128
+
+hexk_enum_util   all  1  hexk_enum_util::from_name: 'HEXK_UT_MODE_NONE' is not one of: HEXK_UT_MODE_IDLE, HEXK_UT_MODE_RUN, HEXK_UT_MODE_STOP, HEXK_UT_MODE_HOLD
+
+hexk_lfsr        all  1  hexk_lfsr::maximal: width 1 is not in 2..64
+hexk_lfsr        all  1  hexk_lfsr::maximal: width 65 is not in 2..64
+hexk_lfsr        all  2  hexk_lfsr::new: taps 'h0 do not have bit 3 set, the top term of the polynomial
+hexk_lfsr        all  1  hexk_lfsr::new: taps 'h2 do not have bit 15 set, the top term of the polynomial
+hexk_lfsr        all  2  hexk_lfsr::period: state 'h1 does not repeat with taps 'h0
+hexk_lfsr        all  1  hexk_lfsr::period: state 'h1 does not repeat with taps 'h2
+hexk_lfsr        all  1  hexk_lfsr::period: width 25 is above 24; not counted
+hexk_lfsr        all  2  hexk_lfsr::set_state: state 'h0 is 0 within 8 bits; the state is not changed
+hexk_lfsr        all  1  hexk_lfsr::set_state: state 'h100 is 0 within 8 bits; the state is not changed
+hexk_lfsr        all  1  hexk_lfsr::set_state: state 'hf00 is 0 within 8 bits; the state is not changed
+
+hexk_math        all  1  hexk_math::align_down: align is 0
+hexk_math        all  1  hexk_math::align_up: align is 0
+hexk_math        all  1  hexk_math::align_up: no multiple of 'h8 at or above 'hfffffffffffffff9 fits 64 bits
+hexk_math        all  1  hexk_math::align_up: no multiple of 'h8 at or above 'hffffffffffffffff fits 64 bits
+hexk_math        all  1  hexk_math::clamp: lo (10) is greater than hi (0)
+hexk_math        all  1  hexk_math::clamp_u: lo (10) is greater than hi (0)
+hexk_math        all  1  hexk_math::is_aligned: align is 0
+hexk_math        all  1  hexk_math::mask: 1025 bits do not fit HEXK_MAX_WIDTH (1024)
+hexk_math        all  1  hexk_math::reverse_bits: 1025 bits do not fit HEXK_MAX_WIDTH (1024)
+hexk_math        all  1  hexk_math::sign_extend: width 0 is not in 1..64
+hexk_math        all  1  hexk_math::sign_extend: width 65 is not in 1..64
+hexk_math        all  1  hexk_math::swap_bytes: 129 bytes do not fit HEXK_MAX_WIDTH (1024 bits)
+hexk_math        all  1  hexk_math::swap_bytes: 536870912 bytes do not fit HEXK_MAX_WIDTH (1024 bits)
+
+hexk_plusarg     all  1  hexk_plusarg::get_bit: +hexk_ut_str=hello_world is not a bit value; using 0
+hexk_plusarg     all  1  hexk_plusarg::get_bit: +hexk_ut_str=hello_world is not a bit value; using 1
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_bad_int needs an integer value, got '12abc'; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_empty needs an integer value, got ''; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_flag needs an integer value, got ''; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_over needs an integer value, got '9223372036854775808'; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_str needs an integer value, got 'hello_world'; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_too_big needs an integer value, got '0x1_0000_0000_0000_0000'; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_int: +hexk_ut_under needs an integer value, got '-9223372036854775809'; using -999
+hexk_plusarg     all  1  hexk_plusarg::get_real: +hexk_ut_bad_real needs a real value, got 'fast'; using -9.5
+hexk_plusarg     all  1  hexk_plusarg::get_real: +hexk_ut_flag needs a real value, got ''; using -9.5
+
+hexk_rand_stream all  1  hexk_rand_stream(illegal)::exponential: mean (0) is not positive
+hexk_rand_stream all  1  hexk_rand_stream(illegal)::normal: std_dev (-1) is negative
+hexk_rand_stream all  2  hexk_rand_stream(illegal)::pick_weighted: no weight is above 0
+hexk_rand_stream all  1  hexk_rand_stream(illegal)::poisson: mean (-3) is not positive
+hexk_rand_stream all  1  hexk_rand_stream(illegal)::uniform: lo (5) is greater than hi (1)

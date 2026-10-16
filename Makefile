@@ -112,11 +112,24 @@ VCS_ACCESS       = $(if $(filter %/hexk_hdl_macros_unit_test.sv,$(UVM_UNIT_TESTS
 # is stopped and fails. VCS has no option that ends a simulation at a time and tells whether
 # it would have gone on, which the Questa flow uses (EXAMPLES_RUN_TIME, SMOKE_RUN_TIME).
 VCS_RUN_TIMEOUT  ?= 300
+# A group of unit tests whose simulation (on Verilator, its build and simulation) still runs after this many
+# seconds of the wall clock is stopped and fails: a test that waits for ever must not hang the flow.
+UNIT_TIMEOUT     ?= 1800
 # Where 'make examples' builds, and how long an example may simulate before it is stopped.
 EXAMPLES_OUT      ?= $(abspath $(BUILD_DIR))/examples_$(SIM)
 EXAMPLES_RUN_TIME ?= 10 ms
 # The smoke testbench: its filelist, where 'make smoke' builds, and how long a test may simulate.
 SMOKE_FILELIST    := tests/smoke/hexk_smoke.f
+# The reference testbench: its filelist, its list of runs, where 'make reference' builds (one directory per
+# simulator and UVM version), whether it builds (REF_COMPILE=0 reuses the build there), how long a run may
+# simulate on Questa (simulated time; a test's own watchdog ends it earlier) and how long a run may take on
+# either simulator (seconds of wall clock).
+REF_FILELIST      := tests/reference/hexk_ref.f
+REF_REGRESSION    := tests/reference/hexk_ref_regression.txt
+REF_OUT           ?= $(abspath $(BUILD_DIR))/reference_$(SIM)_uvm$(UVM)
+REF_COMPILE       ?= 1
+REF_RUN_TIME      ?= 50 ms
+REF_TIMEOUT       ?= 600
 SMOKE_OUT         ?= $(abspath $(BUILD_DIR))/smoke_$(SIM)
 SMOKE_RUN_TIME    ?= 10 ms
 # Where 'make rebrand_check' writes the rebranded copy that it elaborates.
@@ -131,7 +144,7 @@ CORES         := hexkdotcom:hexk:core hexkdotcom:hexk:uvm hexkdotcom:hexk:clk_rs
                  hexkdotcom:hexk:sv_lib
 
 .PHONY: help tools pre_sim ci version version_check format format_check lint lint_verible lint_verilator \
-        style_check rebrand_rules rebrand_check docs docs_check elab elab_all cores_check test examples smoke bench uvm_fetch clean
+        style_check rebrand_rules rebrand_check docs docs_check elab elab_all cores_check test examples smoke reference reference_vectors bench uvm_fetch clean
 
 help:
 	@echo "hexk-sv-lib $$(cat VERSION) - Gate 1 targets"
@@ -150,6 +163,8 @@ help:
 	@echo "  make test SIM=questa|vcs UVM=1.2|2020 [TEST=<module>]   unit tests on Questa or VCS (Gate 2)"
 	@echo "  make examples SIM=questa|vcs UVM=1.2|2020   compile and run every example (Gate 2)"
 	@echo "  make smoke SIM=questa|vcs UVM=1.2|2020      the three tests of the smoke testbench (Gate 2)"
+	@echo "  make reference SIM=questa|vcs UVM=1.2|2020  the runs of the reference testbench (Gate 2)"
+	@echo "  make reference_vectors                    the fixed vectors of the reference testbench, written again"
 	@echo "  make bench SIM=questa|vcs UVM=1.2|2020      cost of one operation of the paths that run per transaction"
 	@echo "  make uvm_fetch               download UVM 1.2 and 2020 sources into $(BUILD_DIR)/uvm"
 
@@ -224,6 +239,14 @@ lint_verilator:
 	   +incdir+$(UVM_SIM_HOME)/src +define+UVM_HDL_NO_DPI +define+UVM_CMDLINE_NO_DPI $(UVM_SIM_HOME)/src/uvm_pkg.sv \
 	   -f src/hexk_all.f -f $(SMOKE_FILELIST) --top-module hexk_smoke_tb
 	@echo "lint: verilator: UVM layer + smoke testbench clean"
+	@# The reference testbench widens values implicitly where SystemVerilog does it anyway (a word number into an
+	@# int, data into uvm_reg_data_t), as testbench code usually does; Verilator also ignores its covergroups and
+	@# takes class members set by other classes for undriven. Those three warnings are off for it only.
+	@$(VERILATOR) --lint-only -Wall -Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-COVERIGN -Wno-UNDRIVEN --timing \
+	   --timescale 1ns/1ps tests/lint/verilator.vlt $(BUILD_DIR)/uvm_quiet.vlt \
+	   +incdir+$(UVM_SIM_HOME)/src +define+UVM_HDL_NO_DPI +define+UVM_CMDLINE_NO_DPI $(UVM_SIM_HOME)/src/uvm_pkg.sv \
+	   -f src/hexk_all.f -f $(REF_FILELIST) --top-module hexk_ref_tb
+	@echo "lint: verilator: UVM layer + reference testbench clean"
 	@$(VERILATOR) --lint-only -Wall -Wno-UNUSEDSIGNAL --timing --timescale 1ns/1ps \
 	   tests/lint/verilator.vlt $(BUILD_DIR)/uvm_quiet.vlt \
 	   +incdir+$(UVM_SIM_HOME)/src +define+UVM_HDL_NO_DPI +define+UVM_CMDLINE_NO_DPI $(UVM_SIM_HOME)/src/uvm_pkg.sv \
@@ -270,7 +293,7 @@ elab:
 	   --suppress-warnings '$(UVM_HOME)/src/...' --suppress-macro-warnings '$(UVM_HOME)/src/...' \
 	   $(if $(ALL_UNIT_TESTS),$(SVUNIT_QUIET)) \
 	   +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv -f src/hexk_all.f \
-	   $(if $(ALL_UNIT_TESTS),$(SVUNIT_SOURCES)) $(EXAMPLES) $(ALL_UNIT_TESTS) -f $(SMOKE_FILELIST) $(BENCH_FILE)
+	   $(if $(ALL_UNIT_TESTS),$(SVUNIT_SOURCES)) $(EXAMPLES) $(ALL_UNIT_TESTS) -f $(SMOKE_FILELIST) -f $(REF_FILELIST) $(BENCH_FILE)
 
 elab_all:
 	@$(MAKE) --no-print-directory elab UVM=1.2
@@ -292,11 +315,12 @@ cores_check:
 
 # Fails unless the UVM errors and fatals in a log of unit tests are exactly the ones that
 # tests/unit/expected_uvm_errors.txt lists for the suites that ran on this simulator. SVUnit
-# alone passes a test whose code reports an error it does not check.
+# alone passes a test whose code reports an error it does not check. A report counts with or
+# without a file and line, and whatever its ID holds (UVM's own IDs have a "/").
 # $(1) log, $(2) simulator, $(3) unit test files
 define check_uvm_errors
-	@{ grep -E '^(# )?UVM_(ERROR|FATAL) .* @ [0-9]+: [^ ]+ \[[A-Za-z_0-9]+\]' $(1) || true; } \
-	   | sed -E 's/^(# )?(UVM_[A-Z]+) .* @ [0-9]+: [^ ]+ \[([A-Za-z_0-9]+)\].*/\2 \3/' | LC_ALL=C sort | uniq -c \
+	@{ grep -E '^(# )?UVM_(ERROR|FATAL) (.* )?@ [0-9]+: [^ ]+ \[[^]]+\]' $(1) || true; } \
+	   | sed -E 's/^(# )?(UVM_[A-Z]+) (.* )?@ [0-9]+: [^ ]+ \[([^]]+)\].*/\2 \4/' | LC_ALL=C sort | uniq -c \
 	   | awk '{print $$2, $$3, $$1}' | LC_ALL=C sort > $(1).seen
 	@awk -v sim=$(2) -v suites=" $(foreach test,$(3),$(notdir $(patsubst %/,%,$(dir $(test))))) " \
 	   '!/^#/ && NF >= 5 && index(suites, " " $$1 " ") && ($$2 == "all" || index("," $$2 ",", "," sim ",")) \
@@ -306,19 +330,39 @@ define check_uvm_errors
 	     cat $(1).diff; echo "test: log: $(1)"; exit 1; }
 endef
 
+# Fails unless the $error messages of the core library in a log of unit tests are exactly the
+# ones that tests/unit/expected_core_errors.txt lists for the suites that ran on this simulator,
+# per suite, with their text and count: a test that passes on a fallback value also needs the
+# message that goes with it, and a legal call none.
+# $(1) log, $(2) simulator, $(3) unit test files
+define check_core_errors
+	@awk -f scripts/hexk_core_errors.awk $(1) | LC_ALL=C sort | uniq -c | sed -E 's/^ *([0-9]+) ([^ ]+) /\2 \1 /' \
+	   | LC_ALL=C sort > $(1).core_seen
+	@awk -v sim=$(2) -v suites=" $(foreach test,$(3),$(notdir $(patsubst %/,%,$(dir $(test))))) " \
+	   '!/^#/ && NF >= 4 && index(suites, " " $$1 " ") && ($$2 == "all" || index("," $$2 ",", "," sim ",")) \
+	   {suite = $$1; count = $$3; sub(/^[^ ]+ +[^ ]+ +[^ ]+ +/, ""); print suite, count, $$0}' \
+	   tests/unit/expected_core_errors.txt \
+	   | LC_ALL=C sort > $(1).core_expected
+	@diff $(1).core_expected $(1).core_seen > $(1).core_diff || \
+	   { echo "test: core errors differ from tests/unit/expected_core_errors.txt (< expected, > seen):"; \
+	     cat $(1).core_diff; echo "test: log: $(1)"; exit 1; }
+endef
+
 # Runs one group of unit tests in its own simulation and fails unless SVUnit reports PASSED
 # and the UVM errors are the expected ones.
 # $(1) group name, $(2) unit test files, $(3) options for runSVUnit
 define run_svunit
 	@command -v $(SVUNIT) > /dev/null || { echo "test: $(SVUNIT) (SVUnit) is not on PATH"; exit 1; }
 	@rm -f $(SVUNIT_OUT)/$(1)/test.log
-	@cd tests/unit && $(SVUNIT) -s verilator -o $(SVUNIT_OUT)/$(1) \
+	@cd tests/unit && timeout $(UNIT_TIMEOUT) $(SVUNIT) -s verilator -o $(SVUNIT_OUT)/$(1) \
 	   $(foreach test,$(2),--directory $(notdir $(patsubst %/,%,$(dir $(test))))) $(3) \
-	   $(SVUNIT_COMPILE_ARGS) $(SVUNIT_RUN_ARGS) $(SVUNIT_PLUSARGS) > $(SVUNIT_OUT)/$(1)/test.log 2>&1 || true
+	   $(SVUNIT_COMPILE_ARGS) $(SVUNIT_RUN_ARGS) $(SVUNIT_PLUSARGS) > $(SVUNIT_OUT)/$(1)/test.log 2>&1 || \
+	   { [ $$? -ne 124 ] || echo "test: $(1): still running after $(UNIT_TIMEOUT) s, stopped"; }
 	@grep -E '^%Error|^%Warning|^ERROR|FAILED|tests passing|suites passing' $(SVUNIT_OUT)/$(1)/test.log || true
 	@grep -q '\[testrunner\]: PASSED' $(SVUNIT_OUT)/$(1)/test.log || \
 	   { echo "test: $(1) tests FAILED (log: $(SVUNIT_OUT)/$(1)/test.log)"; exit 1; }
 	$(call check_uvm_errors,$(SVUNIT_OUT)/$(1)/test.log,verilator,$(2))
+	$(call check_core_errors,$(SVUNIT_OUT)/$(1)/test.log,verilator,$(2))
 endef
 
 # Runs one group of unit tests on Questa and fails unless SVUnit reports PASSED and the UVM
@@ -335,13 +379,15 @@ define run_questa
 	@cd $(SVUNIT_OUT)/$(1) && $(QUESTA_VLIB) work > /dev/null && \
 	   { $(QUESTA_VLOG) -sv -quiet -l compile.log -timescale 1ns/1ps $(3) -f .svunit.f > /dev/null 2>&1 || \
 	     { grep -E '^\*\* (Error|Fatal)' compile.log; echo "test: $(1): compilation failed (log: $(SVUNIT_OUT)/$(1)/compile.log)"; exit 1; }; }
-	@cd $(SVUNIT_OUT)/$(1) && { $(QUESTA_VSIM) -c -lib work -do "run -all; quit -f" -l test.log $(4) \
-	   $(SIM_PLUSARGS) testrunner > /dev/null 2>&1 || true; }
+	@cd $(SVUNIT_OUT)/$(1) && { timeout $(UNIT_TIMEOUT) $(QUESTA_VSIM) -c -lib work -do "run -all; quit -f" \
+	   -l test.log $(4) $(SIM_PLUSARGS) testrunner > /dev/null 2>&1 || \
+	   { [ $$? -ne 124 ] || echo "test: $(1): still running after $(UNIT_TIMEOUT) s, stopped"; }; }
 	@{ grep -E '^# \*\* (Fatal|Warning)' $(SVUNIT_OUT)/$(1)/test.log || true; } | sort | uniq -c
 	@grep -E 'FAILED|tests passing|suites passing' $(SVUNIT_OUT)/$(1)/test.log || true
 	@grep -q '\[testrunner\]: PASSED' $(SVUNIT_OUT)/$(1)/test.log || \
 	   { echo "test: $(1) tests FAILED (log: $(SVUNIT_OUT)/$(1)/test.log)"; exit 1; }
 	$(call check_uvm_errors,$(SVUNIT_OUT)/$(1)/test.log,questa,$(2))
+	$(call check_core_errors,$(SVUNIT_OUT)/$(1)/test.log,questa,$(2))
 endef
 
 test:
@@ -411,11 +457,13 @@ define run_vcs
 	     { grep -A4 -E '^Error-\[' compile.log || tail -n 5 compile.log; \
 	       echo "test: $(1): compilation failed (log: $(SVUNIT_OUT)/$(1)/compile.log)"; exit 1; }; }
 	@{ grep -o -E '^Warning-\[[A-Z_0-9]+\]' $(SVUNIT_OUT)/$(1)/compile.log || true; } | { grep -v LINX_KRNL || true; } | sort | uniq -c
-	@cd $(SVUNIT_OUT)/$(1) && { ./simv -l test.log $(SIM_PLUSARGS) > /dev/null 2>&1 || true; }
+	@cd $(SVUNIT_OUT)/$(1) && { timeout $(UNIT_TIMEOUT) ./simv -l test.log $(SIM_PLUSARGS) > /dev/null 2>&1 || \
+	   { [ $$? -ne 124 ] || echo "test: $(1): still running after $(UNIT_TIMEOUT) s, stopped"; }; }
 	@grep -E 'FAILED|tests passing|suites passing' $(SVUNIT_OUT)/$(1)/test.log || true
 	@grep -q '\[testrunner\]: PASSED' $(SVUNIT_OUT)/$(1)/test.log || \
 	   { echo "test: $(1) tests FAILED (log: $(SVUNIT_OUT)/$(1)/test.log)"; exit 1; }
 	$(call check_uvm_errors,$(SVUNIT_OUT)/$(1)/test.log,vcs,$(2))
+	$(call check_core_errors,$(SVUNIT_OUT)/$(1)/test.log,vcs,$(2))
 endef
 
 # Examples on a simulator ----------------------------------------------------------------
@@ -592,6 +640,80 @@ else
 	@echo "smoke: SIM=$(SIM) is not wired up; the smoke testbench is elaborated by 'make elab'"; exit 1
 endif
 
+# Reference testbench on a simulator -----------------------------------------------------
+# 'make reference SIM=questa|vcs' (Gate 2) compiles the reference testbench of tests/reference
+# once, with read and write access to signals by path, and runs every line of REF_REGRESSION:
+# a test, a seed and plusargs. scripts/hexk_check_run.py then checks the verdict and the exact
+# count of every warning, error and fatal of the run. Verilator does not simulate it (see its
+# README); Gate 1 elaborates and lints it.
+
+# Runs the list of runs; $(1) is the command of one run with $$test, $$seed, $$args and $$log. The list was checked
+# before anything else (hexk_check_run.py --check-list); awk drops comments, blank lines and the carriage returns of
+# a list written on Windows, and hands on a last line without a newline. A simulator reads its standard input, so a
+# run gets /dev/null instead of the rest of the list. Each run has its own log, named after its line, test and
+# seed; a log left from an earlier run is deleted first, so that a run that fails to start cannot be judged by an
+# old log, and the exit status of the simulator goes to the check (the shell runs with -e, so the status is caught
+# with ||): the simulators exit with 0 for every test that ran to its end, and timeout with 124.
+define run_reference_list
+	@awk '{ sub(/\r$$/, "") } !/^[[:space:]]*(#|$$)/' $(REF_REGRESSION) | { \
+	   runs=0; \
+	   while IFS='|' read -r test seed args verdict expect; do \
+	      test=$$(echo $$test); seed=$$(echo $$seed); verdict=$$(echo $$verdict); \
+	      runs=$$((runs + 1)); log=$(abspath $(REF_OUT))/$$(printf '%02d' $$runs)_$${test}_$${seed}.log; \
+	      rm -f $$log; \
+	      run_status=0; $(1) < /dev/null || run_status=$$?; \
+	      $(PYTHON) $(HEXK_SV_LIB_HOME)/scripts/hexk_check_run.py --exit-status $$run_status $$log $$verdict \
+	         $$expect || exit 1; \
+	   done; \
+	   [ $$runs -gt 0 ] || { echo "reference: no runs in the list $(REF_REGRESSION)"; exit 1; }; }
+endef
+
+# Checks the list, then builds the testbench in REF_OUT unless REF_COMPILE is 0, which reuses the build there.
+# $(1) is the check that a build is there, $(2) the command that builds.
+define build_reference
+	@$(PYTHON) $(HEXK_SV_LIB_HOME)/scripts/hexk_check_run.py --check-list $(REF_REGRESSION)
+	@test -f $(UVM_HOME)/src/uvm_pkg.sv || \
+	   { echo "reference: no UVM sources in $(UVM_HOME); run 'make uvm_fetch' or set UVM_HOME"; exit 1; }
+	@echo "-- reference testbench, UVM from $(UVM_HOME), in $(REF_OUT)"
+	@if [ "$(REF_COMPILE)" = 0 ]; then \
+	   $(1) || { echo "reference: no build in $(REF_OUT) to reuse; run without REF_COMPILE=0 first"; exit 1; }; \
+	else \
+	   rm -rf $(REF_OUT) && mkdir -p $(REF_OUT) && \
+	   { ( cd $(REF_OUT) && $(2) > /dev/null 2>&1 ) || \
+	     { grep -A4 -E '^(\*\* (Error|Fatal)|Error-\[)' $(REF_OUT)/compile.log || tail -n 5 $(REF_OUT)/compile.log; \
+	       echo "reference: compilation FAILED (log: $(REF_OUT)/compile.log)"; exit 1; }; }; \
+	fi
+endef
+
+reference:
+	@echo "== reference SIM=$(SIM)"
+ifeq ($(SIM),questa)
+	@command -v $(QUESTA_VSIM) > /dev/null || { echo "reference: $(QUESTA_VSIM) (Questa) is not on PATH"; exit 1; }
+	$(call build_reference,test -d $(REF_OUT)/work,$(QUESTA_VLIB) work > /dev/null && \
+	   $(QUESTA_VLOG) -sv -quiet -l compile.log -timescale 1ns/1ps +incdir+$(abspath $(UVM_HOME))/src \
+	      $(abspath $(UVM_HOME))/src/uvm_pkg.sv -f $(HEXK_SV_LIB_HOME)/src/hexk_all.f \
+	      -f $(HEXK_SV_LIB_HOME)/$(REF_FILELIST) $(abspath $(UVM_HOME))/src/dpi/uvm_dpi.cc \
+	      -ccflags "$(QUESTA_CCFLAGS)")
+	$(call run_reference_list,( cd $(REF_OUT) && timeout $(REF_TIMEOUT) $(QUESTA_VSIM) -c -lib work $(QUESTA_LDFLAGS) \
+	   -sv_seed $$seed -voptargs=+acc -do "do $(HEXK_SV_LIB_HOME)/scripts/hexk_example_run.do $(REF_RUN_TIME)" -l $$log \
+	   +UVM_TESTNAME=$$test +hexk_knobs_strict $$args hexk_ref_tb > /dev/null 2>&1 ))
+else ifeq ($(SIM),vcs)
+	@command -v $(VCS) > /dev/null || { echo "reference: $(VCS) (VCS) is not on PATH"; exit 1; }
+	$(call build_reference,test -x $(REF_OUT)/simv,$(VCS) $(VCS_FLAGS) $(VCS_ACCESS_FLAGS) -l compile.log \
+	   $(VCS_UVM_ARGS) -f $(HEXK_SV_LIB_HOME)/$(REF_FILELIST) -top hexk_ref_tb -o simv)
+	$(call run_reference_list,( cd $(REF_OUT) && timeout $(REF_TIMEOUT) ./simv -l $$log +ntb_random_seed=$$seed \
+	   +UVM_TESTNAME=$$test +hexk_knobs_strict $$args > /dev/null 2>&1 ))
+else
+	@echo "reference: SIM=$(SIM) is not wired up; the reference testbench is elaborated by 'make elab'"; exit 1
+endif
+
+# 'make reference_vectors' writes the fixed vectors of the reference testbench again, as the repository holds them:
+# the script prints them, Verible formats them.
+reference_vectors:
+	@$(PYTHON) tests/reference/vectors/hexk_ref_vectors.py > tests/reference/vectors/hexk_ref_vectors.svh
+	@$(VERIBLE_FORMAT) --flagfile=tests/lint/.verible-format --inplace tests/reference/vectors/hexk_ref_vectors.svh
+	@echo "reference_vectors: tests/reference/vectors/hexk_ref_vectors.svh written"
+
 # Benchmarks on a simulator --------------------------------------------------------------
 # 'make bench SIM=questa|vcs' compiles tests/bench/hexk_bench.sv once and runs each case of
 # BENCH_CASES three times: twice with a count of 0 and once with its count. The time of the
@@ -659,4 +781,4 @@ uvm_fetch:
 clean:
 	@rm -rf $(BUILD_DIR)/svunit $(BUILD_DIR)/examples_questa $(BUILD_DIR)/smoke_questa \
 	   $(BUILD_DIR)/examples_vcs $(BUILD_DIR)/smoke_vcs $(BUILD_DIR)/rebrand_check $(BUILD_DIR)/bench_questa \
-	   $(BUILD_DIR)/bench_vcs obj_dir
+	   $(BUILD_DIR)/bench_vcs $(BUILD_DIR)/reference_questa_uvm* $(BUILD_DIR)/reference_vcs_uvm* obj_dir

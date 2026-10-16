@@ -51,7 +51,7 @@
       function int get_index(); \
          return index; \
       endfunction : get_index \
-      virtual function string get_type_name(); \
+      function string get_type_name(); \
          return `"hexk_analysis_imp_indexed_``SUFFIX`"; \
       endfunction : get_type_name \
       function void write(input T t); \

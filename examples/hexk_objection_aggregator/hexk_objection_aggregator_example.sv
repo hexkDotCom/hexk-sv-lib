@@ -68,6 +68,7 @@ module hexk_objection_aggregator_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          scoreboard.expect_responses(2);
          fork

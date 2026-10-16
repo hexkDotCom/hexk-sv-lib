@@ -58,6 +58,8 @@ The macro:
   `hexk_rand_once_guard` that is created with the object, a `pre_randomize()` that calls
   `super.pre_randomize()` and then `rand_once.on_pre_randomize()`, and a `post_randomize()`
   that calls `super.post_randomize()` and then `rand_once.on_post_randomize()`.
+- Write it after the members of the class and before the registration macro: it declares a
+  member, and the class keeps its members first.
 - The macro names its types with the package, so the class needs no import for it.
 - A class that needs its own `pre_randomize()` or `post_randomize()` cannot use the macro,
   because the function would be defined twice. It declares a guard member, creates it with
@@ -143,9 +145,11 @@ module hexk_rand_once_example;
    class hexk_example_env_cfg extends uvm_object;
       rand int unsigned num_channels;
 
-      constraint num_channels_cstr {num_channels inside {[1 : 8]};}
-
       `hexk_rand_once_guard_decl
+
+      `uvm_object_utils(hexk_example_env_cfg)
+
+      constraint num_channels_cstr {num_channels inside {[1 : 8]};}
 
       function new(string name = "hexk_example_env_cfg");
          super.new(name);

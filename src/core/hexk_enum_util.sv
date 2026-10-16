@@ -38,7 +38,7 @@ virtual class hexk_enum_util #(
       E item;
       item = item.first();
       repeat (item.num()) begin
-         if (item == value) begin
+         if (item === value) begin
             return item.name();
          end
          item = item.next();

@@ -19,6 +19,26 @@
 `include "uvm_macros.svh"
 `include "hexk_macros.svh"
 
+// A scoreboard specialized in a package with the time unit of the command line, 1 ns in the tests, for an item class
+// of that package: Questa 2024.1 then takes $time and %t in the scoreboard in the time unit of the package.
+package hexk_scoreboard_ut_item_pkg;
+   import uvm_pkg::*;
+   import hexk_uvm_pkg::hexk_scoreboard;
+   `include "uvm_macros.svh"
+
+   // Item without fields: any two are equal.
+   class hexk_ut_pkg_item extends uvm_object;
+      `uvm_object_utils(hexk_ut_pkg_item)
+
+      function new(string object_name = "hexk_ut_pkg_item");
+         super.new(object_name);
+      endfunction : new
+   endclass : hexk_ut_pkg_item
+
+   // The scoreboard of these items.
+   typedef hexk_scoreboard#(hexk_ut_pkg_item) hexk_ut_pkg_scoreboard_t;
+endpackage : hexk_scoreboard_ut_item_pkg
+
 module hexk_scoreboard_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
@@ -58,11 +78,11 @@ module hexk_scoreboard_unit_test;
          super.new(object_name);
       endfunction : new
 
-      virtual function string convert2string();
+      function string convert2string();
          return $sformatf("id=%0d data=%0d", id, data);
       endfunction : convert2string
 
-      virtual function void do_copy(uvm_object rhs);
+      function void do_copy(uvm_object rhs);
          hexk_ut_packet other;
          super.do_copy(rhs);
          void'($cast(other, rhs));
@@ -73,7 +93,7 @@ module hexk_scoreboard_unit_test;
          tag        = other.tag;
       endfunction : do_copy
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_ut_packet other;
          if (!$cast(other, rhs)) begin
             return 0;
@@ -92,7 +112,7 @@ module hexk_scoreboard_unit_test;
          super.new(object_name);
       endfunction : new
 
-      virtual function uvm_object clone();
+      function uvm_object clone();
          return null;
       endfunction : clone
    endclass : hexk_ut_uncloneable_packet
@@ -232,6 +252,21 @@ module hexk_scoreboard_unit_test;
       scoreboard.build_phase(null);
    endfunction : build_scoreboard
 
+   // A scoreboard without an assigned cfg finds one with two streams in uvm_config_db: "<number of streams>".
+   function automatic string streams_with_a_cfg_from_the_config_db();
+      hexk_scoreboard_cfg db_cfg = hexk_scoreboard_cfg::type_id::create("db_cfg");
+      hexk_scoreboard #(
+          .T  (hexk_ut_packet),
+          .KEY(int)
+      ) unassigned = new(
+          $sformatf("ut_db_scoreboard_%0d", created), null
+      );
+      db_cfg.num_streams = 2;
+      uvm_config_db#(hexk_scoreboard_cfg)::set(null, unassigned.get_full_name(), "cfg", db_cfg);
+      unassigned.build_phase(null);
+      return $sformatf("%0d", unassigned.expected_exports.size());
+   endfunction : streams_with_a_cfg_from_the_config_db
+
    // Lets actual items wait for their expected items.
    function automatic void allow_unexpected();
       cfg.allow_unexpected = 1;
@@ -306,6 +341,43 @@ module hexk_scoreboard_unit_test;
       void'(stream.oldest_wait(key, is_actual, position, written_ps));
       return $sformatf("%s %0d", (entries <= 2 * waiters + 34) ? "few" : $sformatf("%0d", entries), key);
    endfunction : wait_entries_behind_waiters
+
+   // The scoreboard of hexk_scoreboard_ut_item_pkg with max_wait_ps of 30 ns: a pair 10 ns apart,
+   // then an expected item that waits. Gives "<latency max in ns> <timeouts after 30 ns> <timeouts after 31 ns>
+   // <whether the message names the limit as %t does here>".
+   task automatic times_with_an_item_of_a_package(output string text);
+      hexk_scoreboard_ut_item_pkg::hexk_ut_pkg_scoreboard_t pkg_scoreboard = new(
+          $sformatf("ut_pkg_scoreboard_%0d", created), null
+      );
+      hexk_scoreboard_ut_item_pkg::hexk_ut_pkg_item item = new();
+      int unsigned at_limit;
+      set_max_wait(30ns);
+      pkg_scoreboard.cfg = cfg;
+      pkg_scoreboard.build_phase(null);
+      fork
+         begin
+            run_process = process::self();
+            pkg_scoreboard.run_phase(null);
+         end
+      join_none
+      wait (run_process != null);
+      pkg_scoreboard.write_expected_idx(0, item);
+      advance(10ns);
+      pkg_scoreboard.write_actual_idx(0, item);
+      pkg_scoreboard.write_expected_idx(0, item);
+      advance(30ns);
+      at_limit = pkg_scoreboard.get_stats().timed_out;
+      advance(1ns);
+      text = $sformatf(
+          "%0d %0d %0d %0b",
+          pkg_scoreboard.get_stats().latency_max_ps / 1000,
+          at_limit,
+          pkg_scoreboard.get_stats().timed_out,
+          hexk_str::find(
+              text_catcher.text, $sformatf("within %0t (", 30ns)
+          ) >= 0
+      );
+   endtask : times_with_an_item_of_a_package
 
    // Number of HEXK_SB_TIMEOUT errors in this test.
    function automatic string timeouts();
@@ -594,6 +666,32 @@ module hexk_scoreboard_unit_test;
    function automatic string compare_calls();
       return $sformatf("%0d", scoreboard.compares);
    endfunction : compare_calls
+
+   // "<expected> <actual> <matched> <mismatched>" of a counters object.
+   function automatic string counts(hexk_sb_stats counters);
+      return $sformatf("%0d %0d %0d %0d", counters.expected_count, counters.actual_count, counters.matched,
+                       counters.mismatched);
+   endfunction : counts
+
+   // Keeps the counters of stream 0 and of all streams after one matching pair, then writes a matching and a
+   // mismatching pair and changes a copy it got: "<kept stream 0> | <kept all> | <stream 0 now>" (see counts()).
+   function automatic string stats_snapshots();
+      hexk_sb_stats kept_stream;
+      hexk_sb_stats kept_all;
+      hexk_sb_stats changed;
+      expect_packet(1, 10);
+      actual_packet(1, 10);
+      kept_stream = scoreboard.get_stats(0);
+      kept_all    = scoreboard.get_stats();
+      expect_packet(2, 20);
+      actual_packet(2, 20);
+      expect_packet(3, 30);
+      actual_packet(3, 31);
+      changed                = scoreboard.get_stats(0);
+      changed.expected_count = 100;
+      changed.matched        = 100;
+      return $sformatf("%s | %s | %s", counts(kept_stream), counts(kept_all), counts(scoreboard.get_stats(0)));
+   endfunction : stats_snapshots
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -895,12 +993,21 @@ module hexk_scoreboard_unit_test;
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
-   `SVTEST(the_latency_is_zero_when_the_actual_item_came_first_whatever_the_timestamp)
+   `SVTEST(the_latency_of_an_early_actual_item_runs_from_the_timestamp_to_its_arrival)
       allow_unexpected();
       build_scoreboard();
       actual_packet(1, 10);
       advance(100ns);
       expect_seen_earlier(200ns);
+      `FAIL_UNLESS_STR_EQUAL(latencies(), "100 100 100")
+   `SVTEST_END
+
+   `SVTEST(the_latency_is_zero_when_the_actual_item_came_before_the_default_timestamp)
+      allow_unexpected();
+      build_scoreboard();
+      actual_packet(1, 10);
+      advance(100ns);
+      expect_packet(1, 10);
       `FAIL_UNLESS_STR_EQUAL(latencies(), "0 0 0")
    `SVTEST_END
 
@@ -1108,6 +1215,10 @@ module hexk_scoreboard_unit_test;
           "0 expected and 0 actual left over"})
    `SVTEST_END
 
+   `SVTEST(a_scoreboard_without_a_cfg_takes_the_one_in_the_config_db)
+      `FAIL_UNLESS_STR_EQUAL(streams_with_a_cfg_from_the_config_db(), "2")
+   `SVTEST_END
+
    `SVTEST(a_new_cfg_has_the_defaults_and_a_clone_has_every_setting)
       `FAIL_UNLESS_STR_EQUAL(cfg_texts(),
          {"mode=HEXK_SB_IN_ORDER num_streams=1 max_errors=10 max_outstanding=0 max_latency_ps=0 max_wait_ps=0",
@@ -1221,6 +1332,12 @@ module hexk_scoreboard_unit_test;
       `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
    `SVTEST_END
 
+   `SVTEST(times_are_in_picoseconds_for_an_item_class_of_a_package)
+      string text;
+      times_with_an_item_of_a_package(text);
+      `FAIL_UNLESS_STR_EQUAL(text, "10 0 1 1")
+   `SVTEST_END
+
    `SVTEST(every_stream_has_its_items_timed_out)
       set_max_wait(30ns);
       build_scoreboard(HEXK_SB_IN_ORDER, 3);
@@ -1253,6 +1370,28 @@ module hexk_scoreboard_unit_test;
       `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(busy(), "1 stream 0: 2 expected and 2 actual items are waiting")
       `FAIL_UNLESS_STR_EQUAL(pairs(), "0 0")
+   `SVTEST_END
+
+   `SVTEST(out_of_order_expected_items_find_the_actual_items_that_came_first_in_any_order)
+      allow_unexpected();
+      build_scoreboard(HEXK_SB_OUT_OF_ORDER);
+      actual_packet(5, 50);
+      actual_packet(5, 51);
+      actual_packet(6, 60);
+      expect_packet(6, 60);
+      expect_packet(5, 51);
+      expect_packet(5, 50);
+      `FAIL_UNLESS_STR_EQUAL(stats(),
+         {"3 expected, 3 actual, 3 matched, 0 mismatched, 0 unexpected, 0 dropped, 0 late, 0 timed out, ",
+          "0 expected and 0 actual left over"})
+      `FAIL_UNLESS_STR_EQUAL(busy(), "0 ")
+      `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0 0 0 0")
+   `SVTEST_END
+
+   `SVTEST(get_stats_gives_a_snapshot_that_later_traffic_and_changes_to_a_copy_do_not_reach)
+      build_scoreboard();
+      `FAIL_UNLESS_STR_EQUAL(stats_snapshots(), "1 1 1 0 | 1 1 1 0 | 3 3 2 1")
+      `FAIL_UNLESS_STR_EQUAL(problems(), "1 0 0 0 0 0")
    `SVTEST_END
 
    `SVTEST(a_partner_at_the_limit_still_matches)

@@ -101,7 +101,7 @@ Per function, where the one-line description leaves a choice open:
 | `pad` | Right-aligns by default (fill on the left). A string longer than `width` is returned unchanged. Up to 64 blanks are one slice of a stored run of blanks (about 0.07 us on VCS X-2025.06, where one concatenation per blank took 1.2 us for 40); other fill characters and longer runs come from `repeat_str`. |
 | `repeat_str` | Doubles its piece at every step: about log2(n) concatenations, not n. |
 | `truncate` | The result is never longer than `max_len`. When the ellipsis does not fit (`max_len` not larger than its length) the string is cut without one. |
-| `basename`, `dirname` | Follow POSIX: trailing slashes are ignored, `dirname("c.sv")` is `"."`, both return `"/"` for `"/"`. Only `/` is a separator. |
+| `basename`, `dirname` | Follow POSIX: trailing slashes are ignored, `dirname("c.sv")` is `"."`, both return `"/"` for `"/"`. Only `/` is a separator. One departure: `basename("")` is `""`, not `"."`; `dirname("")` is `"."`. |
 | `scope_slice` | `first` and `last` are inclusive; negative values count from the end (`-1` is the last element). Positions outside the scope are clamped; an empty range gives `""`. |
 | `get_numbers` | A run of more than 19 digits may not fit 64 bits; the value then wraps. |
 | `natural_cmp` | Digit runs are compared as numbers of any length, everything else by character code. It returns 0 only for identical strings: when two strings differ only in leading zeros, plain string order decides. |

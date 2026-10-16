@@ -48,7 +48,7 @@ class hexk_valid_ready_agent_cfg #(
    `uvm_object_param_utils(hexk_valid_ready_agent_cfg#(DATA_WIDTH))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_valid_ready_agent_cfg";
    endfunction : get_type_name
 

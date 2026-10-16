@@ -91,13 +91,36 @@
 // Internal: hexk_check_width2 for three operands.
 `define hexk_check_width3(FIRST, SECOND, THIRD) $bits((FIRST) + (SECOND) + (THIRD))
 
-// Internal: compares the bits of two values in copies of type TYPE; EXP is brought to the width of ACT.
-`define hexk_check_compare_as(TYPE, ACT, OP, EXP, ID, MSG, SEVERITY) \
+// Internal: compares the bits of two values in copies of type TYPE. EXP is first taken as a number of type NUM, by
+// its own signedness; one that fits the width of ACT, as an unsigned or a signed number, is brought to that width,
+// and one that does not fit fails the check. FITS is the function of hexk_check_stats that tells; an EXP no wider
+// than ACT fits without it, also when it is signed and its top bit is X or Z, and an EXP wider than a check
+// compares fails as too wide before NUM could cut it. The width is
+// cut by shifting the bits above it out and back as zeros, which keeps X and Z bits as they are, and not with a
+// size cast: Verilator 5.046 rejects $bits(ACT)'(...) when ACT calls a method of the calling class. The shift is
+// by a variable: both branches of hexk_check_compare are elaborated, and slang rejects a constant shift by the
+// width of the type or more in the branch that a wider ACT never takes.
+`define hexk_check_compare_as(TYPE, NUM, FITS, ACT, OP, EXP, ID, MSG, SEVERITY) \
    begin \
+      var automatic NUM  hexk_check_exp_num = NUM'(EXP); \
       var automatic TYPE hexk_check_act = TYPE'($unsigned(ACT)); \
-      var automatic TYPE hexk_check_exp = TYPE'($unsigned($bits(ACT)'(TYPE'(EXP)))); \
-      if (`hexk_check_fits(ACT) && (hexk_check_act OP hexk_check_exp)) begin \
+      var automatic int unsigned hexk_check_cut = ($bits(ACT) < $bits(TYPE)) ? $bits(TYPE) - $bits(ACT) : 0; \
+      var automatic TYPE hexk_check_exp = (TYPE'(hexk_check_exp_num) << hexk_check_cut) >> hexk_check_cut; \
+      var automatic bit  hexk_check_exp_narrow = \
+         `hexk_check_width2(ACT, EXP) <= hexk_uvm_pkg::HEXK_CHECK_MAX_WIDTH || !`hexk_check_fits(ACT); \
+      var automatic bit  hexk_check_exp_fits = `hexk_check_width2(ACT, EXP) <= $bits(ACT) || \
+         hexk_uvm_pkg::hexk_check_stats::FITS(hexk_check_exp_num, $bits(ACT)); \
+      if (`hexk_check_fits(ACT) && hexk_check_exp_narrow && hexk_check_exp_fits && \
+          (hexk_check_act OP hexk_check_exp)) begin \
          `hexk_check_passed(ID) \
+      end else if (!hexk_check_exp_narrow) begin \
+         `hexk_check_failed(ID) \
+         `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::too_wide_text( \
+            MSG, "exp", `hexk_check_width2(ACT, EXP))) \
+      end else if (!hexk_check_exp_fits) begin \
+         `hexk_check_failed(ID) \
+         `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::unfit_text( \
+            MSG, "exp", hexk_check_exp_num, "act", $bits(ACT))) \
       end else begin \
          `hexk_check_failed(ID) \
          `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::compare_text( \
@@ -105,14 +128,16 @@
       end \
    end
 
-// Internal: compares the bits of two values; EXP is brought to the width of ACT. Each value is evaluated once.
+// Internal: compares the bits of two values; EXP must fit the width of ACT. Each value is evaluated once.
 `define hexk_check_compare(ACT, OP, EXP, ID, MSG, SEVERITY) \
    begin \
       /* verilator lint_off WIDTHEXPAND */ \
-      if (`hexk_check_is_word(ACT)) \
-         `hexk_check_compare_as(hexk_uvm_pkg::hexk_check_word_t, ACT, OP, EXP, ID, MSG, SEVERITY) \
+      if (`hexk_check_width2(ACT, EXP) <= hexk_uvm_pkg::HEXK_CHECK_WORD_WIDTH) \
+         `hexk_check_compare_as(hexk_uvm_pkg::hexk_check_word_t, hexk_uvm_pkg::hexk_check_word_num_t, \
+                                value_fits_word, ACT, OP, EXP, ID, MSG, SEVERITY) \
       else \
-         `hexk_check_compare_as(hexk_uvm_pkg::hexk_check_wide_t, ACT, OP, EXP, ID, MSG, SEVERITY) \
+         `hexk_check_compare_as(hexk_uvm_pkg::hexk_check_wide_t, hexk_uvm_pkg::hexk_check_num_t, \
+                                value_fits, ACT, OP, EXP, ID, MSG, SEVERITY) \
       /* verilator lint_on WIDTHEXPAND */ \
    end
 
@@ -195,14 +220,15 @@
       end \
    end
 
-// Internal: compares two objects with compare(); two null handles are equal.
+// Internal: compares two objects with EXP.compare(ACT), so that the expected object decides, as in the
+// scoreboard; two null handles are equal.
 `define hexk_check_objects(ACT, EXP, ID, MSG, SEVERITY) \
    begin \
       automatic uvm_pkg::uvm_object hexk_check_act = ACT; \
       automatic uvm_pkg::uvm_object hexk_check_exp = EXP; \
       automatic bit hexk_check_equal = (hexk_check_act == hexk_check_exp); \
       if (hexk_check_act != null && hexk_check_exp != null) begin \
-         hexk_check_equal = hexk_check_act.compare(hexk_check_exp); \
+         hexk_check_equal = hexk_check_exp.compare(hexk_check_act); \
       end \
       if (hexk_check_equal) begin \
          `hexk_check_passed(ID) \
@@ -299,13 +325,29 @@
       /* verilator lint_on WIDTHEXPAND */ \
    end
 
-// Internal: checks in copies of type TYPE that a value has no bit set outside a mask.
-`define hexk_check_bits_as(TYPE, VAL, MASK, ID, MSG, SEVERITY) \
+// Internal: checks in copies of type TYPE that a value has no bit set outside a mask; MASK must fit the width of
+// VAL, as in hexk_check_compare_as.
+`define hexk_check_bits_as(TYPE, NUM, FITS, VAL, MASK, ID, MSG, SEVERITY) \
    begin \
+      var automatic NUM  hexk_check_mask_num = NUM'(MASK); \
       var automatic TYPE hexk_check_val = TYPE'($unsigned(VAL)); \
-      var automatic TYPE hexk_check_mask = TYPE'($unsigned($bits(VAL)'(TYPE'(MASK)))); \
-      if (`hexk_check_fits(VAL) && ((hexk_check_val & ~hexk_check_mask) == 0)) begin \
+      var automatic int unsigned hexk_check_cut = ($bits(VAL) < $bits(TYPE)) ? $bits(TYPE) - $bits(VAL) : 0; \
+      var automatic TYPE hexk_check_mask = (TYPE'(hexk_check_mask_num) << hexk_check_cut) >> hexk_check_cut; \
+      var automatic bit  hexk_check_mask_narrow = \
+         `hexk_check_width2(VAL, MASK) <= hexk_uvm_pkg::HEXK_CHECK_MAX_WIDTH || !`hexk_check_fits(VAL); \
+      var automatic bit  hexk_check_mask_fits = `hexk_check_width2(VAL, MASK) <= $bits(VAL) || \
+         hexk_uvm_pkg::hexk_check_stats::FITS(hexk_check_mask_num, $bits(VAL)); \
+      if (`hexk_check_fits(VAL) && hexk_check_mask_narrow && hexk_check_mask_fits && \
+          ((hexk_check_val & ~hexk_check_mask) == 0)) begin \
          `hexk_check_passed(ID) \
+      end else if (!hexk_check_mask_narrow) begin \
+         `hexk_check_failed(ID) \
+         `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::too_wide_text( \
+            MSG, "mask", `hexk_check_width2(VAL, MASK))) \
+      end else if (!hexk_check_mask_fits) begin \
+         `hexk_check_failed(ID) \
+         `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::unfit_text( \
+            MSG, "mask", hexk_check_mask_num, "val", $bits(VAL))) \
       end else begin \
          `hexk_check_failed(ID) \
          `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::mask_text( \
@@ -313,24 +355,42 @@
       end \
    end
 
-// Internal: checks that a value has no bit set outside a mask; MASK is brought to the width of VAL.
+// Internal: checks that a value has no bit set outside a mask; MASK must fit the width of VAL.
 `define hexk_check_bits(VAL, MASK, ID, MSG, SEVERITY) \
    begin \
       /* verilator lint_off WIDTHEXPAND */ \
-      if (`hexk_check_is_word(VAL)) \
-         `hexk_check_bits_as(hexk_uvm_pkg::hexk_check_word_t, VAL, MASK, ID, MSG, SEVERITY) \
+      if (`hexk_check_width2(VAL, MASK) <= hexk_uvm_pkg::HEXK_CHECK_WORD_WIDTH) \
+         `hexk_check_bits_as(hexk_uvm_pkg::hexk_check_word_t, hexk_uvm_pkg::hexk_check_word_num_t, \
+                             value_fits_word, VAL, MASK, ID, MSG, SEVERITY) \
       else \
-         `hexk_check_bits_as(hexk_uvm_pkg::hexk_check_wide_t, VAL, MASK, ID, MSG, SEVERITY) \
+         `hexk_check_bits_as(hexk_uvm_pkg::hexk_check_wide_t, hexk_uvm_pkg::hexk_check_num_t, \
+                             value_fits, VAL, MASK, ID, MSG, SEVERITY) \
       /* verilator lint_on WIDTHEXPAND */ \
    end
 
-// Internal: checks in copies of type TYPE that a value is a multiple of an alignment.
-`define hexk_check_multiple_as(TYPE, VAL, ALIGN, ID, MSG, SEVERITY) \
+// Internal: checks in copies of type TYPE that a value is a multiple of an alignment; ALIGN must fit the width of
+// VAL, as in hexk_check_compare_as.
+`define hexk_check_multiple_as(TYPE, NUM, FITS, VAL, ALIGN, ID, MSG, SEVERITY) \
    begin \
+      var automatic NUM  hexk_check_align_num = NUM'(ALIGN); \
       var automatic TYPE hexk_check_val = TYPE'($unsigned(VAL)); \
-      var automatic TYPE hexk_check_align = TYPE'($unsigned($bits(VAL)'(TYPE'(ALIGN)))); \
-      if (`hexk_check_fits(VAL) && hexk_check_align != 0 && (hexk_check_val % hexk_check_align) == 0) begin \
+      var automatic int unsigned hexk_check_cut = ($bits(VAL) < $bits(TYPE)) ? $bits(TYPE) - $bits(VAL) : 0; \
+      var automatic TYPE hexk_check_align = (TYPE'(hexk_check_align_num) << hexk_check_cut) >> hexk_check_cut; \
+      var automatic bit  hexk_check_align_narrow = \
+         `hexk_check_width2(VAL, ALIGN) <= hexk_uvm_pkg::HEXK_CHECK_MAX_WIDTH || !`hexk_check_fits(VAL); \
+      var automatic bit  hexk_check_align_fits = `hexk_check_width2(VAL, ALIGN) <= $bits(VAL) || \
+         hexk_uvm_pkg::hexk_check_stats::FITS(hexk_check_align_num, $bits(VAL)); \
+      if (`hexk_check_fits(VAL) && hexk_check_align_narrow && hexk_check_align_fits && hexk_check_align != 0 && \
+          (hexk_check_val % hexk_check_align) == 0) begin \
          `hexk_check_passed(ID) \
+      end else if (!hexk_check_align_narrow) begin \
+         `hexk_check_failed(ID) \
+         `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::too_wide_text( \
+            MSG, "align", `hexk_check_width2(VAL, ALIGN))) \
+      end else if (!hexk_check_align_fits) begin \
+         `hexk_check_failed(ID) \
+         `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::unfit_text( \
+            MSG, "align", hexk_check_align_num, "val", $bits(VAL))) \
       end else begin \
          `hexk_check_failed(ID) \
          `hexk_check_report(SEVERITY, ID, hexk_uvm_pkg::hexk_check_stats::aligned_text( \
@@ -338,14 +398,17 @@
       end \
    end
 
-// Internal: checks that a value is a multiple of an alignment; both count as unsigned numbers of the width of VAL.
+// Internal: checks that a value is a multiple of an alignment; both count as unsigned numbers of the width of VAL,
+// and ALIGN must fit that width.
 `define hexk_check_multiple(VAL, ALIGN, ID, MSG, SEVERITY) \
    begin \
       /* verilator lint_off WIDTHEXPAND */ \
-      if (`hexk_check_is_word(VAL)) \
-         `hexk_check_multiple_as(hexk_uvm_pkg::hexk_check_word_t, VAL, ALIGN, ID, MSG, SEVERITY) \
+      if (`hexk_check_width2(VAL, ALIGN) <= hexk_uvm_pkg::HEXK_CHECK_WORD_WIDTH) \
+         `hexk_check_multiple_as(hexk_uvm_pkg::hexk_check_word_t, hexk_uvm_pkg::hexk_check_word_num_t, \
+                                 value_fits_word, VAL, ALIGN, ID, MSG, SEVERITY) \
       else \
-         `hexk_check_multiple_as(hexk_uvm_pkg::hexk_check_wide_t, VAL, ALIGN, ID, MSG, SEVERITY) \
+         `hexk_check_multiple_as(hexk_uvm_pkg::hexk_check_wide_t, hexk_uvm_pkg::hexk_check_num_t, \
+                                 value_fits, VAL, ALIGN, ID, MSG, SEVERITY) \
       /* verilator lint_on WIDTHEXPAND */ \
    end
 
@@ -419,10 +482,10 @@
 `define hexk_check_q_eq_fatal(ACT_Q, EXP_Q, ID, MSG = "") \
    `hexk_check_queues(ACT_Q, EXP_Q, ID, MSG, uvm_pkg::UVM_FATAL)
 
-// Error unless ACT.compare(EXP) holds; prints both objects with sprint().
+// Error unless EXP.compare(ACT) holds (the expected object decides); prints both objects with sprint().
 `define hexk_check_obj_eq(ACT, EXP, ID, MSG = "") `hexk_check_objects(ACT, EXP, ID, MSG, uvm_pkg::UVM_ERROR)
 
-// Fatal unless ACT.compare(EXP) holds; prints both objects with sprint().
+// Fatal unless EXP.compare(ACT) holds (the expected object decides); prints both objects with sprint().
 `define hexk_check_obj_eq_fatal(ACT, EXP, ID, MSG = "") `hexk_check_objects(ACT, EXP, ID, MSG, uvm_pkg::UVM_FATAL)
 
 // Error unless LO <= VAL <= HI as numbers.

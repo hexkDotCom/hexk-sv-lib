@@ -5,10 +5,11 @@
 //
 // Minimal use of the coverage helpers: a monitor of a valid/ready stream writes one
 // hexk_handshake_cycle_t per clock cycle to its port cycle_ap, where the test connects a
-// hexk_handshake_coverage, and has a covergroup of its own for the transferred data, which it
-// creates with `hexk_cg_new. The test defines the knob coverage, drives the stream with random
-// gaps and backpressure for 300 cycles, and prints both coverage numbers at the end. With
-// +coverage=0 on the command line no covergroup is created and the test says so.
+// hexk_handshake_coverage, and every transferred byte to its port data_ap, where the test
+// connects a subscriber with a covergroup of its own, created with `hexk_cg_new. The test
+// defines the knob coverage, drives the stream with random gaps and backpressure for 300
+// cycles, and prints both coverage numbers at the end. With +coverage=0 on the command line no
+// covergroup is created and the test says so.
 // Needs UVM and src/uvm/hexk_uvm.f.
 
 module hexk_coverage_example;
@@ -29,32 +30,27 @@ module hexk_coverage_example;
 
    always #5ns clk = !clk;
 
-   class hexk_example_monitor extends uvm_component;
+   // The data of a transfer.
+   typedef bit [7:0] hexk_example_byte_t;
+
+   class hexk_example_monitor extends uvm_monitor;
       // One record per rising edge of the clock.
       uvm_analysis_port #(hexk_handshake_cycle_t) cycle_ap;
-
-      // verilator lint_off COVERIGN
-      // verilator lint_off UNDRIVEN
-      covergroup data_cg with function sample (bit [7:0] value);
-         option.per_instance = 1;
-         option.get_inst_coverage = 1;
-         value_cp: coverpoint value {bins zero = {0}; bins low = {[1 : 127]}; bins high = {[128 : 255]};}
-      endgroup : data_cg
-      // verilator lint_on UNDRIVEN
-      // verilator lint_on COVERIGN
+      // The byte of every transfer.
+      uvm_analysis_port #(hexk_example_byte_t)    data_ap;
 
       `uvm_component_utils(hexk_example_monitor)
 
       function new(string name, uvm_component parent);
          super.new(name, parent);
          cycle_ap = new("cycle_ap", this);
-         // Where "data_cg = new();" would stand: created unless the knob coverage is 0.
-         `hexk_cg_new(data_cg)
+         data_ap  = new("data_ap", this);
       endfunction : new
 
       task run_phase(uvm_phase phase);
          hexk_handshake_cycle_t cycle;
          bit                    was_in_reset;
+         super.run_phase(phase);
          forever begin
             @(posedge clk);
             cycle.reset_began = !rst_n && !was_in_reset;
@@ -63,24 +59,52 @@ module hexk_coverage_example;
             cycle.ready       = ready;
             cycle_ap.write(cycle);
             was_in_reset = !rst_n;
-            if (rst_n && valid && ready && data_cg != null) begin
-               data_cg.sample(data);
+            if (rst_n && valid && ready) begin
+               data_ap.write(data);
             end
          end
       endtask : run_phase
+   endclass : hexk_example_monitor
+
+   // Coverage of the transferred data.
+   class hexk_example_data_coverage extends uvm_subscriber #(hexk_example_byte_t);
+      // verilator lint_off COVERIGN
+      // verilator lint_off UNDRIVEN
+      covergroup data_cg with function sample (hexk_example_byte_t value);
+         option.per_instance = 1;
+         option.get_inst_coverage = 1;
+         value_cp: coverpoint value {bins zero = {0}; bins low = {[1 : 127]}; bins high = {[128 : 255]};}
+      endgroup : data_cg
+      // verilator lint_on UNDRIVEN
+      // verilator lint_on COVERIGN
+
+      `uvm_component_utils(hexk_example_data_coverage)
+
+      function new(string name, uvm_component parent);
+         super.new(name, parent);
+         // Where "data_cg = new();" would stand: created unless the knob coverage is 0.
+         `hexk_cg_new(data_cg)
+      endfunction : new
+
+      function void write(hexk_example_byte_t t);
+         if (data_cg != null) begin
+            data_cg.sample(t);
+         end
+      endfunction : write
 
       // Coverage of the data with one decimal, or "off".
-      function string data_coverage();
+      function string coverage_text();
          if (data_cg == null) begin
             return "off";
          end
          return $sformatf("%0.1f%%", data_cg.get_inst_coverage());
-      endfunction : data_coverage
-   endclass : hexk_example_monitor
+      endfunction : coverage_text
+   endclass : hexk_example_data_coverage
 
    class hexk_example_test extends uvm_test;
-      hexk_example_monitor    monitor;
-      hexk_handshake_coverage handshake;
+      hexk_example_monitor       monitor;
+      hexk_handshake_coverage    handshake;
+      hexk_example_data_coverage data_coverage;
 
       `uvm_component_utils(hexk_example_test)
 
@@ -94,16 +118,19 @@ module hexk_coverage_example;
          // The knob must be final before the first covergroup is created.
          knobs.add_bit("coverage", 1, "functional coverage: covergroups are created");
          knobs.lock();
-         monitor   = hexk_example_monitor::type_id::create("monitor", this);
-         handshake = hexk_handshake_coverage::type_id::create("handshake", this);
+         monitor       = hexk_example_monitor::type_id::create("monitor", this);
+         handshake     = hexk_handshake_coverage::type_id::create("handshake", this);
+         data_coverage = hexk_example_data_coverage::type_id::create("data_coverage", this);
       endfunction : build_phase
 
       function void connect_phase(uvm_phase phase);
          super.connect_phase(phase);
          monitor.cycle_ap.connect(handshake.analysis_export);
+         monitor.data_ap.connect(data_coverage.analysis_export);
       endfunction : connect_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          repeat (2) @(negedge clk);
          rst_n = 1;
@@ -120,6 +147,7 @@ module hexk_coverage_example;
       endtask : run_phase
 
       function void report_phase(uvm_phase phase);
+         super.report_phase(phase);
          if (!handshake.is_enabled()) begin
             `uvm_info("EXAMPLE", $sformatf("coverage is off; %0d cycles seen", handshake.num_samples()), UVM_NONE)
          end else begin
@@ -127,7 +155,7 @@ module hexk_coverage_example;
                       "%0d cycles: handshake coverage %0.1f%%, data coverage %s",
                       handshake.num_samples(),
                       handshake.get_coverage(),
-                      monitor.data_coverage()
+                      data_coverage.coverage_text()
                       ), UVM_NONE)
          end
       endfunction : report_phase

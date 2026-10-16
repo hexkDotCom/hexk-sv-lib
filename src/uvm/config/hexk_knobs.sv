@@ -56,6 +56,7 @@ class hexk_knobs extends uvm_object;
    // Defines an integer knob; values outside lo..hi are rejected when hi is not below lo.
    function void add_int(string name, longint default_value, string help_text, longint lo = 0, longint hi = -1);
       hexk_knob knob = add_knob(name, hexk_knob::HEXK_KNOB_INT, help_text);
+      longint   value;
       if (knob == null) begin
          return;
       end
@@ -66,22 +67,30 @@ class hexk_knobs extends uvm_object;
          `uvm_error("HEXK_KNOBS_DEFINE", $sformatf("knob '%s': the default %0d is not in %0d..%0d", name,
                                                    default_value, lo, hi))
       end
-      if (hexk_plusarg::has(name)) begin
-         void'(assign_int(knob, hexk_plusarg::get_int(name, default_value), hexk_knob::HEXK_KNOB_FROM_PLUSARG));
-      end
+      case (hexk_plusarg::try_get_int(
+          name, value
+      ))
+         hexk_plusarg::HEXK_PLUSARG_VALID: void'(assign_int(knob, value, hexk_knob::HEXK_KNOB_FROM_PLUSARG));
+         hexk_plusarg::HEXK_PLUSARG_INVALID: report_unreadable(knob, "an integer");
+         default: ;
+      endcase
    endfunction : add_int
 
    // Defines a knob that is 0 or 1; +<name> without a value sets it to 1.
    function void add_bit(string name, bit default_value, string help_text);
       hexk_knob knob = add_knob(name, hexk_knob::HEXK_KNOB_BIT, help_text);
+      bit       value;
       if (knob == null) begin
          return;
       end
       knob.int_value = longint'(default_value);
-      if (hexk_plusarg::has(name)) begin
-         void'(
-             assign_int(knob, longint'(hexk_plusarg::get_bit(name, default_value)), hexk_knob::HEXK_KNOB_FROM_PLUSARG));
-      end
+      case (hexk_plusarg::try_get_bit(
+          name, value
+      ))
+         hexk_plusarg::HEXK_PLUSARG_VALID: void'(assign_int(knob, longint'(value), hexk_knob::HEXK_KNOB_FROM_PLUSARG));
+         hexk_plusarg::HEXK_PLUSARG_INVALID: report_unreadable(knob, "0, 1, true, false, yes, no, on or off");
+         default: ;
+      endcase
    endfunction : add_bit
 
    // Defines a knob that holds any string.
@@ -326,6 +335,21 @@ class hexk_knobs extends uvm_object;
       end
       return knob;
    endfunction : find_for_read
+
+   // Reports the plusarg of an integer or bit knob whose value cannot be read; the knob keeps its default, which
+   // stays the value of its source "default", so that a set function can still change it.
+   local function void report_unreadable(hexk_knob knob, string expected);
+      `uvm_error("HEXK_KNOBS_VALUE", $sformatf(
+                 "knob '%s': +%s needs %s, got '%s'; keeping %0d",
+                 knob.label,
+                 knob.label,
+                 expected,
+                 hexk_plusarg::get_str(
+                     knob.label, ""
+                 ),
+                 knob.int_value
+                 ))
+   endfunction : report_unreadable
 
    // Gives an integer or bit knob a value from the given source; 0 and an error when the value is not legal.
    local function bit assign_int(hexk_knob knob, longint value, hexk_knob::source_e source);

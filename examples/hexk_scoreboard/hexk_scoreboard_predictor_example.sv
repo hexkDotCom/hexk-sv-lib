@@ -186,14 +186,15 @@ module hexk_scoreboard_predictor_example;
             index    = $urandom_range(0, in_flight.size() - 1);
             response = hexk_example_response::type_id::create("response");
             response.set(in_flight[index].tag, in_flight[index].operand + 1);
-            in_flight.delete(index);
             response_ap.write(hexk_example_meta_response_t::wrap(response, "dut"));
+            in_flight.delete(index);
          end
       endtask : run_dut
 
       task run_phase(uvm_phase phase);
          hexk_uid_pool        uids = hexk_uid_pool::get();
          hexk_example_request request;
+         super.run_phase(phase);
          phase.raise_objection(this, "traffic");
          fork
             run_dut();
@@ -210,13 +211,14 @@ module hexk_scoreboard_predictor_example;
             request_ap.write(hexk_example_meta_request_t::wrap(request, "requests", uids.new_uid("req")));
             #10ns;
          end
+         // The DUT model takes a request away after it has written the response.
          wait (in_flight.size() == 0);
-         #1ns;
          phase.drop_objection(this, "all responses are in");
       endtask : run_phase
 
       function void report_phase(uvm_phase phase);
          hexk_sb_stats stats = scoreboard.get_stats();
+         super.report_phase(phase);
          `uvm_info("EXAMPLE", $sformatf(
                    "%0d responses matched, %0d expected ones dropped at the reset, %s %0d ps",
                    stats.matched,

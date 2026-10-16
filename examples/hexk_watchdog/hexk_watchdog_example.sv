@@ -63,6 +63,7 @@ module hexk_watchdog_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          repeat (5) begin
             #20ns;

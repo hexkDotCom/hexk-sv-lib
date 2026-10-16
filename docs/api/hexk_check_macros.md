@@ -70,9 +70,9 @@ From `src/uvm/hexk_check_macros.svh`:
 `define hexk_check_q_eq(ACT_Q, EXP_Q, ID, MSG = "")
 // Fatal unless the queues ACT_Q and EXP_Q have the same size and elements; reports the first difference.
 `define hexk_check_q_eq_fatal(ACT_Q, EXP_Q, ID, MSG = "")
-// Error unless ACT.compare(EXP) holds; prints both objects with sprint().
+// Error unless EXP.compare(ACT) holds (the expected object decides); prints both objects with sprint().
 `define hexk_check_obj_eq(ACT, EXP, ID, MSG = "")
-// Fatal unless ACT.compare(EXP) holds; prints both objects with sprint().
+// Fatal unless EXP.compare(ACT) holds (the expected object decides); prints both objects with sprint().
 `define hexk_check_obj_eq_fatal(ACT, EXP, ID, MSG = "")
 // Error unless LO <= VAL <= HI as numbers.
 `define hexk_check_in_range(VAL, LO, HI, ID, MSG = "")
@@ -145,6 +145,12 @@ static function string bits_text(hexk_check_bits_t value, int unsigned width);
 static function string num_text(hexk_check_num_t value, int unsigned width);
 // 1 when an operand of width bits fits the vectors of the checks, so that a check compares all of it.
 static function bit fits(int unsigned width);
+// 1 when value, a number by its own signedness, fits width bits as an unsigned or as a signed number: every bit from width up is 0, or every bit from width - 1 up is 1. A bit that is X or Z there does not fit.
+static function bit value_fits(hexk_check_num_t value, int unsigned width);
+// value_fits for the numbers of the checks whose operands have at most HEXK_CHECK_WORD_WIDTH bits.
+static function bit value_fits_word(hexk_check_word_num_t value, int unsigned width);
+// Message of a check whose second operand, what, does not fit the width bits of its first operand, first.
+static function string unfit_text(string msg, string what, hexk_check_num_t value, string first, int unsigned width);
 // Message of a check on an operand that is too wide to be compared; what names the operand.
 static function string too_wide_text(string msg, string what, int unsigned width);
 // is_ordered for operands of at most HEXK_CHECK_WORD_WIDTH bits.
@@ -193,14 +199,18 @@ static function void reset_for_test();
   compare a part of the value. In an order check and in `hexk_check_in_range` the same holds
   for the other operands, which are numbers of their own: a wider `EXP`, `LO` or `HI` fails
   the check with a message that names it (`exp has 1101 bits and a check compares at most
-  1024: not compared`). In the checks of bits the other operands are brought to the width of
-  the first, and a wider one is cut. `hexk_check_q_eq` has no such limit, because it reads
-  its operands in place.
+  1024: not compared`). In the checks of bits the second operand must fit the width of the
+  first (see below), and one wider than a check compares fails in the same way (`exp has 1101
+  bits ...`, `mask has ...`, `align has ...`), whatever its value. `hexk_check_q_eq` has no such limit, because it reads its operands in
+  place.
 - An operand can be a variable, a member of an object (`item.data`), a signal of a virtual
   interface (`vif.ready`), a call of a method or of a function of a module or a package,
   with or without side effects, or an expression of these. A name with a hierarchical path
   through module instances (`top.dut.sig`) is not portable as the first operand; copy it
-  into a variable.
+  into a variable. On Verilator 5.046, the `VAL` of `hexk_check_inside` cannot be a call of a
+  method of the calling class (the macro needs a size cast of its width, which Verilator
+  evaluates without the object); copy the value into a variable there. The other checks take
+  such a call on every simulator.
 - The macros copy their operands into variables of a fixed type and use the widths of the
   operands in expressions only. No declaration depends on an operand, which is what lets
   every kind of operand compile on VCS, Questa and Verilator. The copies are small in the
@@ -212,9 +222,16 @@ static function void reset_for_test();
 - The macros declare variables whose names start with `hexk_check_` in a block of their
   own. A variable of the caller with such a name cannot be an operand: the macro would read
   its own variable. Names with the prefix of the library belong to the library.
-- **Equality checks** (`_eq`, `_ne`, `_case_eq`) compare bits. `EXP` is brought to the width
-  of `ACT` as in an assignment: extended if it is narrower, by its own signedness, and cut
-  if it is wider. A signed and an unsigned operand with the same bits are equal.
+- **Equality checks** (`_eq`, `_ne`, `_case_eq`) compare bits. `EXP` is first the number it
+  stands for in its own type, and it must fit the width of `ACT` as an unsigned or as a signed
+  number: against an 8-bit `ACT`, 255, `8'hFF`, -1, -128 and `'1` fit, 256 and -129 do not.
+  An `EXP` that does not fit fails the check, whatever the operator, with
+  `exp=0x100 does not fit the 8 bits of act, as an unsigned or a signed number: not compared`:
+  the check cannot compare what was meant, and a cut value would compare something else. An
+  `EXP` that fits is brought to the width of `ACT`, extended by its own signedness if it is
+  narrower. A signed and an unsigned operand with the same bits are equal. An `EXP` that is no
+  wider than `ACT` always fits, also a signed one whose top bit is X or Z. An X or Z bit of a
+  wider `EXP` above the width of `ACT` does not fit.
 - **Order checks** (`_lt`, `_le`, `_gt`, `_ge`, `_in_range`) compare numbers. Each operand
   counts as the number it stands for in its own type: a signed operand can be negative, an
   unsigned one cannot, and the widths do not matter. So an unsigned 200 is greater than -1,
@@ -229,7 +246,8 @@ static function void reset_for_test();
   Whether `VAL` is signed is found at compile time; the macro picks one of four copies (signed
   or not, up to 64 bits or wider), and only that one runs.
 - `hexk_check_mask` and `hexk_check_aligned` take `VAL` as an unsigned vector of its own
-  width; `MASK` and `ALIGN` are brought to that width.
+  width; `MASK` and `ALIGN` must fit that width as `EXP` must in an equality check, and fail
+  the check otherwise (`align=0x104 does not fit the 8 bits of val, ...`).
 - `MSG` and the rest of the message are built only when the check fails.
 - Messages:
 
@@ -237,6 +255,7 @@ static function void reset_for_test();
   |---|---|
   | `hexk_check` | `MSG` alone |
   | `hexk_check_eq`, `_ne`, `_lt`, `_le`, `_gt`, `_ge`, `_case_eq` | `act=0x4 exp=0x5 (expected act == exp)`, with the operator of the macro |
+  | `hexk_check_eq`, `_ne`, `_case_eq`, `_mask`, `_aligned` with a second operand that does not fit | `exp=0x100 does not fit the 8 bits of act, as an unsigned or a signed number: not compared` (`mask=` or `align=` and `val` for the last two) |
 
   The equality checks print both values in the width of `ACT`. The order checks print a
   number that is not negative without leading zeros, and a negative number in two's
@@ -264,18 +283,21 @@ static function void reset_for_test();
   array may start below 0. Its operands are names of arrays, also members of an object, not
   function calls.
 - `hexk_check_obj_eq` treats two null handles as equal and a null and a non-null handle as
-  different; otherwise the result is `ACT.compare(EXP)`.
+  different; otherwise the result is `EXP.compare(ACT)`, as in `hexk_scoreboard`: the expected
+  object decides, for instance with the tolerance of a `hexk_value_wrapper`.
 - `hexk_check_aligned` fails for an alignment of 0.
 - Every check calls `hexk_check_stats::record_pass` or `record_fail` with its ID.
   `hexk_check_stats::num_checks()` is the number of checks executed so far and `summary()` a
   table per ID. The `or_fatal` macros are not counted.
-- A test that makes checks fail on purpose says so in code:
+- A test that makes checks fail on purpose says so in code, usually with `expect_check(id,
+  count)` of `hexk_report_catcher`, which also expects their messages:
   `hexk_check_stats::expect_failures(id, count)` allows `count` more failed checks of that ID
   (calls add up). `num_unexpected_failures()` is the number of failed checks beyond the
   allowance, over all IDs; fewer failures than allowed are not counted against the test.
   `hexk_base_test` fails a test with an unexpected failure even when the message of the
   check was demoted or switched off (see its contract). `reset_for_test()` also forgets the
-  allowances. With `HEXK_NO_CHECK_STATS` nothing is counted and nothing is unexpected.
+  allowances. `HEXK_NO_CHECK_STATS` removes the counting from the check macros only: the
+  scoreboard, `hexk_csr_util` and direct calls of `record_pass()` and `record_fail()` still count.
 - The `or_fatal` macros report a fatal with the text `randomization failed: <object>`,
   `randomization with constraints failed: <object>` or `cast failed: <source> to <target>`.
 
@@ -348,8 +370,9 @@ endmodule : hexk_check_macros_example
 - **A literal as first operand** (`` `hexk_check_eq(5, count, "ID") ``). An equality check
   then compares in the 32 bits of the literal, and strict lint complains about the width of
   a constant. Write the value under test first.
-- **A second operand wider than the first in an equality check.** It is cut to the width of
-  the first, like in an assignment, and high bits are lost. Put the wider value first.
+- **A second operand whose value does not fit the first in an equality check.** The check
+  fails and says so; an expected value that cannot be represented is a mistake of the test.
+  If a cut is meant, write it: `` `hexk_check_eq(byte_value, 8'(model_value), ...) ``.
 - **An order check to compare bit patterns.** `` `hexk_check_lt(int_value, 32'hFFFF_FFFF, ...) ``
   compares the number in the `int`, which may be negative, with 4294967295. Declare values
   that are bit patterns as unsigned.
@@ -378,7 +401,7 @@ endmodule : hexk_check_macros_example
   randomized (LNG-10). Use `` `hexk_randomize_or_fatal ``.
 - **`hexk_check_eq` on values that may hold X** when X must match. Use `hexk_check_case_eq`.
 - **A negative test that hides failing checks** by demoting their messages with a catcher
-  alone. The failed checks still count; declare them with `expect_failures()`.
+  alone. The failed checks still count; declare them with `expect_check()` of the catcher.
 
 ## 9. Status
 

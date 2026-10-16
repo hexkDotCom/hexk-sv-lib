@@ -32,6 +32,9 @@ module hexk_mem_model_unit_test;
    // File that the tests of load_hex() and dump_hex() write, in the directory of the simulation.
    localparam string HEX_FILE = "hexk_ut_mem_model.hex";
 
+   // The unwritten bytes next to the written ones of partly_written_round_trip().
+   localparam bit [15:0] HOLES[6] = '{16'h0044, 16'h0045, 16'h0047, 16'h0100, 16'h0102, 16'h0103};
+
    string              name = "hexk_mem_model_ut";
    svunit_testcase     svunit_ut;
 
@@ -50,6 +53,7 @@ module hexk_mem_model_unit_test;
       catcher.expect_msg("^HEXK_MEM_RANGE$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_MEM_FILE$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_MEM_WIDTH$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_MEM_UNKNOWN$", UVM_ERROR, "", 0, -1, UVM_INFO);
       mem = new("ut_mem");
    endtask : setup
 
@@ -78,10 +82,10 @@ module hexk_mem_model_unit_test;
       void'(mem.read_byte(addr));
    endfunction : touch_byte
 
-   // Errors of the memory in this test, as "<uninit> <range> <file> <width>".
+   // Errors of the memory in this test, as "<uninit> <range> <file> <width> <unknown>".
    function automatic string errors();
       return $sformatf(
-          "%0d %0d %0d %0d",
+          "%0d %0d %0d %0d %0d",
           catcher.get_count(
               "^HEXK_MEM_UNINIT$"
           ),
@@ -93,9 +97,22 @@ module hexk_mem_model_unit_test;
           ),
           catcher.get_count(
               "^HEXK_MEM_WIDTH$"
+          ),
+          catcher.get_count(
+              "^HEXK_MEM_UNKNOWN$"
           )
       );
    endfunction : errors
+
+   // The word at a four-state address in hexadecimal.
+   function automatic string word_at_logic(logic [15:0] addr);
+      return $sformatf("%h", mem.read(addr));
+   endfunction : word_at_logic
+
+   // Number of errors HEXK_MEM_UNKNOWN.
+   function automatic string unknown_errors();
+      return $sformatf("%0d", catcher.get_count("^HEXK_MEM_UNKNOWN$"));
+   endfunction : unknown_errors
 
    // "<bytes written> <reads of unwritten bytes>".
    function automatic string counts();
@@ -274,13 +291,30 @@ module hexk_mem_model_unit_test;
       return hexk_core_pkg::hexk_str::join_str(parts, " ");
    endfunction : load_past_the_top
 
-   // Writes a whole word and single bytes of two other words, dumps, clears and loads again: "<bytes written>".
+   // Writes a whole word and single bytes of two other words, dumps, clears and loads again, with policy zero for
+   // the unwritten bytes: "<bytes written> <the bytes at 0x40..0x43, 0x46 and 0x101> <reads of unwritten bytes>
+   // <the same after a read of each unwritten byte next to the written ones>".
    function automatic string partly_written_round_trip();
+      string parts[$];
       mem.write(16'h0040, 32'h1122_3344);
       mem.write_byte(16'h0046, 8'hC3);
       mem.write_byte(16'h0101, 8'h5A);
       dump_and_reload();
-      return $sformatf("%0d", mem.num_written());
+      mem.uninit_policy = HEXK_MEM_UNINIT_ZERO;
+      // One statement per part: the order in which the arguments of a call are evaluated is not defined.
+      parts.push_back($sformatf("%0d", mem.num_written()));
+      parts.push_back(byte_at(16'h0040));
+      parts.push_back(byte_at(16'h0041));
+      parts.push_back(byte_at(16'h0042));
+      parts.push_back(byte_at(16'h0043));
+      parts.push_back(byte_at(16'h0046));
+      parts.push_back(byte_at(16'h0101));
+      parts.push_back($sformatf("%0d", mem.num_uninit_reads()));
+      foreach (HOLES[i]) begin
+         touch_byte(HOLES[i]);
+      end
+      parts.push_back($sformatf("%0d", mem.num_uninit_reads()));
+      return hexk_core_pkg::hexk_str::join_str(parts, " ");
    endfunction : partly_written_round_trip
 
    // Dumps the memory to the test file, clears it and loads the file again.
@@ -302,15 +336,20 @@ module hexk_mem_model_unit_test;
       return $sformatf("%0d %0d %0d", catcher.get_count("^HEXK_MEM_WIDTH$"), tiny.is_written(1'b0), tiny.num_written());
    endfunction : tiny_memory
 
-   // A clone of a memory with a word, a range, the big-endian order and a policy, written to afterwards, and the
-   // original: "<clone> | <original>", each as "<word> <bytes written> <settings>".
+   // A clone of a memory with a word, a range, the big-endian order, a policy, a pattern, a seed and one read of
+   // an unwritten word, written to afterwards, and the original: "<clone> | <original>", the clone as "<word>
+   // <bytes written> <settings> <an unwritten word> <seed> <range errors after a read outside its range>", the
+   // original as "<word> <bytes written> <range errors after a read outside its range>".
    function automatic string cloned_memory();
       hexk_ut_mem_t copy;
       string        parts[$];
-      mem.uninit_policy = HEXK_MEM_UNINIT_PATTERN;
-      mem.big_endian    = 1;
+      mem.uninit_policy  = HEXK_MEM_UNINIT_PATTERN;
+      mem.uninit_pattern = 8'h3C;
+      mem.seed           = 32'h1234_5678;
+      mem.big_endian     = 1;
       mem.set_range(16'h0100, 16'h01FF);
       mem.write(16'h0100, 32'hCAFE_F00D);
+      touch_word(16'h0110);
       if (!$cast(copy, mem.clone())) begin
          return "clone failed";
       end
@@ -321,14 +360,32 @@ module hexk_mem_model_unit_test;
       parts.push_back($sformatf("%0d", copy.num_written()));
       parts.push_back(copy.convert2string());
       parts.push_back($sformatf("%h", copy.read(16'h0108)));
+      parts.push_back($sformatf("%h", copy.seed));
+      // The range holds in both: a read outside it is an error. Counted, not printed: on Verilator its X reads as 0.
+      void'(copy.read(16'h0200));
+      parts.push_back($sformatf("%0d", catcher.get_count("^HEXK_MEM_RANGE$")));
       parts.push_back($sformatf("| %h", mem.read(16'h0100)));
       parts.push_back($sformatf("%0d", mem.num_written()));
-      // The range of the original holds: a read outside it is an error. Counted, not printed: on Verilator its X
-      // reads as 0.
       void'(mem.read(16'h0200));
       parts.push_back($sformatf("%0d", catcher.get_count("^HEXK_MEM_RANGE$")));
       return hexk_core_pkg::hexk_str::join_str(parts, " ");
    endfunction : cloned_memory
+
+   // A memory with the default address width of 64 bits: a word that ends at the top address, then a write and a
+   // read of a word one byte higher, which would go on at address 0. "<word at the top> <bytes written>
+   // <is_written at address 0> <range errors>".
+   function automatic string top_of_64_bit_addresses();
+      hexk_mem_model #(.DATA_WIDTH(32)) wide = new("ut_wide_mem");
+      string parts[$];
+      wide.write(64'hFFFF_FFFF_FFFF_FFFC, 32'h1122_3344);
+      wide.write(64'hFFFF_FFFF_FFFF_FFFD, 32'h5566_7788);
+      void'(wide.read(64'hFFFF_FFFF_FFFF_FFFD));
+      parts.push_back($sformatf("%h", wide.read(64'hFFFF_FFFF_FFFF_FFFC)));
+      parts.push_back($sformatf("%0d", wide.num_written()));
+      parts.push_back($sformatf("%0d", wide.is_written(64'h0)));
+      parts.push_back($sformatf("%0d", catcher.get_count("^HEXK_MEM_RANGE$")));
+      return hexk_core_pkg::hexk_str::join_str(parts, " ");
+   endfunction : top_of_64_bit_addresses
 
    // Number of HEXK_MEM_WIDTH errors when a memory with words of 12 bits is created.
    function automatic string odd_width_errors();
@@ -351,7 +408,7 @@ module hexk_mem_model_unit_test;
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0100), "deadbeef")
       `FAIL_UNLESS_STR_EQUAL(counts(), "4 0")
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", mem.is_written(16'h0100)), "1")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
    `SVTEST_END
 
    `SVTEST(little_endian_has_the_low_byte_at_the_low_address)
@@ -376,6 +433,19 @@ module hexk_mem_model_unit_test;
       `FAIL_UNLESS_STR_EQUAL(counts(), "5 0")
    `SVTEST_END
 
+   `SVTEST(big_endian_byte_enables_select_bytes_by_their_place_in_the_data)
+      use_big_endian();
+      mem.write(16'h0100, 32'h11223344);
+      mem.write(16'h0100, 32'hAABBCCDD, 4'b0101);
+      `FAIL_UNLESS_STR_EQUAL(word_at(16'h0100), "11bb33dd")
+      `FAIL_UNLESS_STR_EQUAL({byte_at(16'h0100), byte_at(16'h0101), byte_at(16'h0102), byte_at(16'h0103)},
+         "11bb33dd")
+      mem.write(16'h0200, 32'hAABBCCDD, 4'b1000);
+      `FAIL_UNLESS_STR_EQUAL(byte_at(16'h0200), "aa")
+      `FAIL_UNLESS_STR_EQUAL(counts(), "5 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
+   `SVTEST_END
+
    `SVTEST(unaligned_words_and_bytes_see_the_same_memory)
       mem.write(16'h0100, 32'h44332211);
       mem.write(16'h0104, 32'h88776655);
@@ -389,7 +459,7 @@ module hexk_mem_model_unit_test;
       mem.write(16'h0100, 32'h11223344, 4'b0111);
       touch_word(16'h0100);
       touch_byte(16'h0400);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "2 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "2 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(counts(), "3 2")
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", mem.is_written(16'h0100)), "0")
    `SVTEST_END
@@ -398,7 +468,7 @@ module hexk_mem_model_unit_test;
       set_policy(HEXK_MEM_UNINIT_ZERO);
       mem.write(16'h0100, 32'h11223344, 4'b0110);
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0100), "00223300")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(counts(), "2 1")
    `SVTEST_END
 
@@ -408,13 +478,13 @@ module hexk_mem_model_unit_test;
       set_pattern(8'h3C);
       mem.write_byte(16'h0101, 8'h00);
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0100), "3c3c003c")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
    `SVTEST_END
 
    `SVTEST(policy_random_reads_the_same_value_at_every_read_of_an_address)
       set_policy(HEXK_MEM_UNINIT_RANDOM);
       `FAIL_UNLESS_STR_EQUAL(random_reads(), "1 0")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
    `SVTEST_END
 
    // Variables have two states on Verilator, so the test of the X that a read returns runs on
@@ -424,7 +494,7 @@ module hexk_mem_model_unit_test;
       set_policy(HEXK_MEM_UNINIT_X);
       mem.write_byte(16'h0100, 8'h77);
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0100), "xxxxxx77")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
    `SVTEST_END
 
    `SVTEST(a_byte_reads_x_where_a_word_reads_x)
@@ -434,7 +504,7 @@ module hexk_mem_model_unit_test;
       mem.write_byte(16'h0200, 8'b1010_zzxx);
       `FAIL_UNLESS_STR_EQUAL($sformatf("%b %b", mem.read_byte(16'h0200), mem.read(16'h0200)),
          "1010zzxx xxxxxxxxxxxxxxxxxxxxxxxx1010zzxx")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
    `SVTEST_END
 `endif
 
@@ -453,26 +523,38 @@ module hexk_mem_model_unit_test;
       mem.write(16'h00FF, 32'h55667788);
       mem.write_byte(16'h0200, 8'h99);
       touch_word(16'h0200);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 4 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 4 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(counts(), "4 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h01FC), "11223344")
    `SVTEST_END
 
+`ifndef VERILATOR
+   // Verilator has no X or Z.
+   `SVTEST(an_address_or_byte_enable_with_x_or_z_is_an_error_and_is_not_carried_out)
+      mem.write(16'h01x0, 32'h11223344);
+      mem.write(16'h0100, 32'h11223344, 4'b1z11);
+      mem.write_byte(16'hx000, 8'h99);
+      `FAIL_UNLESS_STR_EQUAL(word_at_logic(16'h0x00), "xxxxxxxx")
+      `FAIL_UNLESS_STR_EQUAL(unknown_errors(), "4")
+      `FAIL_UNLESS_STR_EQUAL(counts(), "0 0")
+   `SVTEST_END
+`endif
+
    `SVTEST(a_word_that_would_go_on_at_address_0_is_an_error_and_is_not_carried_out)
       mem.write(16'hFFFE, 32'h11223344);
       touch_word(16'hFFFD);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 2 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 2 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(counts(), "0 0")
       mem.write(16'hFFFC, 32'h55667788);
       mem.write_byte(16'hFFFF, 8'h99);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 2 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 2 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'hFFFC), "99667788")
       `FAIL_UNLESS_STR_EQUAL(written_at_the_top(), "1 0")
    `SVTEST_END
 
    `SVTEST(load_hex_takes_a_block_comment_as_the_end_of_a_word)
       load_comment_file();
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0000), "00000011")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0004), "00000022")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0008), "00000033")
@@ -484,7 +566,7 @@ module hexk_mem_model_unit_test;
 
    `SVTEST(load_hex_reads_words_addresses_comments_and_underscores)
       load_rich_file(16'h0000);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0000), "11223344")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0040), "0000beef")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0010), "000000a5")
@@ -507,7 +589,7 @@ module hexk_mem_model_unit_test;
 
    `SVTEST(load_hex_extends_a_short_word_with_its_first_digit_when_that_is_x_or_z)
       load_short_word_file();
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL(counts(), "17 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0000), "xxxxxxxx")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0004), "zzzzzzzz")
@@ -520,35 +602,35 @@ module hexk_mem_model_unit_test;
 
    `SVTEST(load_hex_reports_what_is_not_a_word_and_loads_the_rest)
       load_bad_file();
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 3 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 3 0 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h0000), "11223344")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'h000c), "55667788")
    `SVTEST_END
 
    `SVTEST(load_hex_reads_a_file_with_windows_line_ends)
       load_windows_file();
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
       `FAIL_UNLESS_STR_EQUAL({word_at(16'h0000), word_at(16'h0010)}, "1122334455667788")
       `FAIL_UNLESS_STR_EQUAL(counts(), "8 0")
    `SVTEST_END
 
    `SVTEST(load_hex_reports_a_word_beyond_the_address_space_and_does_not_wrap)
       load_long_file(16'h0000);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 1 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 1 0 0")
       `FAIL_UNLESS_STR_EQUAL({word_at(16'h0000), word_at(16'h0004), word_at(16'h0008)}, "11223344cafef00d99aabbcc")
       `FAIL_UNLESS_STR_EQUAL(counts(), "12 0")
    `SVTEST_END
 
    `SVTEST(load_hex_reports_a_base_that_puts_words_beyond_the_address_space)
       load_long_file(16'hFFFC);
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 3 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 3 0 0")
       `FAIL_UNLESS_STR_EQUAL(word_at(16'hFFFC), "11223344")
       `FAIL_UNLESS_STR_EQUAL(counts(), "4 0")
    `SVTEST_END
 
    `SVTEST(a_file_that_does_not_exist_is_an_error)
       mem.load_hex("hexk_ut_no_such_file.hex");
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 1 0")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 1 0 0")
    `SVTEST_END
 
    `SVTEST(dump_hex_writes_the_words_with_addresses_where_they_jump)
@@ -570,18 +652,30 @@ module hexk_mem_model_unit_test;
    `SVTEST_END
 
    `SVTEST(a_dump_of_partly_written_words_loads_back_to_the_same_bytes)
-      `FAIL_UNLESS_STR_EQUAL(partly_written_round_trip(), "6")
-      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(partly_written_round_trip(), "6 44 33 22 11 c3 5a 0 6")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
    `SVTEST_END
 
+`ifndef VERILATOR
+   `SVTEST(a_dump_keeps_a_digit_that_is_all_z_and_a_partly_z_digit_loads_back_all_z)
+      mem.write(16'h0000, {8'h12, 8'hz5, 8'bzz01_0101, 8'h34});
+      mem.dump_hex(HEX_FILE);
+      `FAIL_UNLESS_STR_EQUAL(file_text(), "@0 | 12z5Z534")
+      mem.clear();
+      mem.load_hex(HEX_FILE);
+      `FAIL_UNLESS_STR_EQUAL(word_at(16'h0000), "12z5z534")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 0 0 0 0")
+   `SVTEST_END
+`endif
+
    `SVTEST(the_last_word_below_the_top_address_dumps_and_loads_without_wrapping)
-      `FAIL_UNLESS_STR_EQUAL(top_word_round_trip(0), "@0 | xx2211 | @55 | xxxxaa / 3 11 22 aa 0 0 0 0")
-      `FAIL_UNLESS_STR_EQUAL(top_word_round_trip(1), "@0 | 1122xx | @55 | aaxxxx / 3 11 22 aa 0 0 0 0")
-      `FAIL_UNLESS_STR_EQUAL(top_word_round_trip_40(), "@0 | xxxxxxxx11 | @33 | xxxxxxxxaa / 2 11 aa 0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(top_word_round_trip(0), "@0 | xx2211 | @55 | xxxxaa / 3 11 22 aa 0 0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(top_word_round_trip(1), "@0 | 1122xx | @55 | aaxxxx / 3 11 22 aa 0 0 0 0 0")
+      `FAIL_UNLESS_STR_EQUAL(top_word_round_trip_40(), "@0 | xxxxxxxx11 | @33 | xxxxxxxxaa / 2 11 aa 0 0 0 0 0")
    `SVTEST_END
 
    `SVTEST(load_hex_reports_real_bytes_beyond_the_top_and_loads_those_below)
-      `FAIL_UNLESS_STR_EQUAL(load_past_the_top(), "1 33 0 0 1 0")
+      `FAIL_UNLESS_STR_EQUAL(load_past_the_top(), "1 33 0 0 1 0 0")
    `SVTEST_END
 
    `SVTEST(convert2string_says_what_the_memory_holds)
@@ -600,8 +694,14 @@ module hexk_mem_model_unit_test;
 
    `SVTEST(a_clone_holds_the_bytes_and_settings_and_is_independent)
       `FAIL_UNLESS_STR_EQUAL(cloned_memory(),
-         {"cafef00d 8 8 bytes written, 0 reads of bytes that were never written, policy HEXK_MEM_UNINIT_PATTERN, ",
-          "big endian a5a5a5a5 | 0bad0bad 4 1"})
+         {"cafef00d 8 8 bytes written, 1 reads of bytes that were never written, policy HEXK_MEM_UNINIT_PATTERN, ",
+          "big endian 3c3c3c3c 12345678 1 | 0bad0bad 4 2"})
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 2 0 0 0")
+   `SVTEST_END
+
+   `SVTEST(with_the_default_64_address_bits_a_word_may_end_at_the_top_and_never_goes_on_at_address_0)
+      `FAIL_UNLESS_STR_EQUAL(top_of_64_bit_addresses(), "11223344 4 0 2")
+      `FAIL_UNLESS_STR_EQUAL(errors(), "0 2 0 0 0")
    `SVTEST_END
 
    `SVTEST(a_word_width_that_is_not_a_multiple_of_8_is_an_error)

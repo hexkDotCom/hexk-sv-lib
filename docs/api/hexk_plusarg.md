@@ -29,13 +29,19 @@ From `src/core/hexk_plusarg.sv`:
 ```systemverilog
 // True when +name or +name=<value> is on the command line.
 static function bit has(string name);
-// Value of +name=<integer>; default_value when the plusarg is absent or is not an integer.
+// Reads +name=<integer> and reports nothing: VALID with the value, NOT_GIVEN, or INVALID for +name or a value that is not an integer; value is 0 unless VALID.
+static function status_e try_get_int(string name, output longint value);
+// Reads +name (1) or +name=<0, 1, true, false, yes, no, on, off or integer> and reports nothing; value is 0 unless VALID.
+static function status_e try_get_bit(string name, output bit value);
+// Reads +name=<real number> and reports nothing; value is 0.0 unless VALID.
+static function status_e try_get_real(string name, output real value);
+// Value of +name=<integer>; default_value when the plusarg is absent, or, with $error, is not an integer.
 static function longint get_int(string name, longint default_value);
 // Value of +name=<text>; default_value when the plusarg is absent or has no value.
 static function string get_str(string name, string default_value);
-// 1 for +name, the value for +name=<0, 1, true, false, yes, no, on, off or integer>; else default_value.
+// 1 for +name, the value for +name=<0, 1, true, false, yes, no, on, off or integer>; else default_value, with $error for a value that is none of these.
 static function bit get_bit(string name, bit default_value);
-// Value of +name=<real number>; default_value when the plusarg is absent or is not a number.
+// Value of +name=<real number>; default_value when the plusarg is absent, or, with $error, is not a number.
 static function real get_real(string name, real default_value);
 // Fills values (cleared first) with the sep-separated fields of +name=<a,b,c>; empty when there is no value.
 static function void get_list(string name, ref string values[$], input byte sep = ",");
@@ -62,6 +68,13 @@ What each function returns:
 | `get_bit` | default | 1 | see below; default with `$error` if not a bit value |
 | `get_real` | default | default, with `$error` | the number; default with `$error` if not a number |
 | `get_list` | empty | empty | the fields; empty for an empty value |
+
+`try_get_int`, `try_get_bit` and `try_get_real` read the same values as `get_int`, `get_bit`
+and `get_real` but report nothing. They return a `hexk_plusarg::status_e`:
+`HEXK_PLUSARG_NOT_GIVEN` for an absent plusarg, `HEXK_PLUSARG_VALID` with the value in their
+output argument, or `HEXK_PLUSARG_INVALID` where the `get` function would report a `$error`;
+the output is 0 unless the status is `HEXK_PLUSARG_VALID`. They are for callers that report
+through UVM, such as `hexk_knobs`, or that decide themselves what a wrong value means.
 
 Number and bit formats:
 

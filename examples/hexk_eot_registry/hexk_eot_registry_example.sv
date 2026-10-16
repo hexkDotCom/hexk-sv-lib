@@ -59,6 +59,7 @@ module hexk_eot_registry_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          model.predict();
          model.predict();

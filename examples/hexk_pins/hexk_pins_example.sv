@@ -71,6 +71,7 @@ module hexk_pins_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "pins");
          exercise_pins();
          phase.drop_objection(this, "pins done");

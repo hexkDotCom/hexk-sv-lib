@@ -20,6 +20,9 @@ class hexk_report_catcher_rule;
    // Regular expression on the message ID, as given by the user.
    string id_regex;
 
+   // The ID itself, when the rule compares it as text and not as an expression (expect_check()); else empty.
+   string id_literal;
+
    // Regular expression on the message text; empty means any text.
    string msg_regex;
 

@@ -84,7 +84,8 @@ static function void reset_for_test();
 <!-- HEXK_GEN:END api -->
 
 `hexk_knob` is internal. `new` exists for the UVM factory; user code calls `get()`.
-`hexk_enum_knob #(E)` has static functions only and is never created.
+`hexk_enum_knob #(E)` has static functions only and is never created. `E` is the enum type
+of the knob; its default, `hexk_core_pkg::hexk_enum_util_none_e`, only gives the class one.
 
 ## 4. Behaviour and invariants
 
@@ -124,6 +125,9 @@ Legal values:
   its list.
 - A value that is not legal is the error `HEXK_KNOBS_VALUE`, whether it comes from the
   command line or from a set function; the knob keeps the value it had.
+- So is a plusarg of an integer or bit knob that cannot be read as such, `+items=12abc` or
+  `+items` without a value: the knob keeps its default, its source stays `default`, and a
+  set function can still change it.
 - `set_int` on a string knob, `set_str` on an integer knob and a set of a knob that does not
   exist are `HEXK_KNOBS_VALUE` as well.
 
@@ -274,6 +278,7 @@ module hexk_knobs_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          `uvm_info("EXAMPLE", $sformatf("sending %0d items, gate_level=%0b", knobs.get_int("num_items"), knobs.get_bit(
                                         "gate_level")), UVM_NONE)

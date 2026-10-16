@@ -45,7 +45,7 @@ module hexk_delay_analysis_fifo_example;
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
          objections    = hexk_objection_aggregator::type_id::create("objections", this);
-         pipeline_fifo = new("pipeline_fifo", this);
+         pipeline_fifo = hexk_delay_analysis_fifo#(int)::type_id::create("pipeline_fifo", this);
          monitor_port  = new("monitor_port", this);
          pipeline_fifo.latency_cycles = PIPELINE_DEPTH;
          pipeline_fifo.set_clock(clk_event);
@@ -59,6 +59,7 @@ module hexk_delay_analysis_fifo_example;
       endfunction : connect_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          // The predictor: takes every item when it leaves the pipeline.
          fork
             forever begin

@@ -29,7 +29,8 @@ class hexk_clk_rst_start_seq extends uvm_sequence #(hexk_clk_rst_item);
 
    // Sends one start item; returns at the first rising edge of the clock.
    task body();
-      req = hexk_clk_rst_item::type_id::create("req");
+      // Under the name of the sequencer, so that a factory override of one agent's items can name its path.
+      req = hexk_clk_rst_item::type_id::create("req", null, get_sequencer().get_full_name());
       start_item(req);
       `hexk_randomize_with_or_fatal(req, "HEXK_CLK_RST_RAND", op == HEXK_CLK_RST_START;)
       finish_item(req);

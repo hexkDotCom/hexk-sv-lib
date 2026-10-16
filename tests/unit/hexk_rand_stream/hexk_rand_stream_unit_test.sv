@@ -6,9 +6,9 @@
 // SVUnit tests of hexk_rand_stream.
 // Reproducibility: the same seed gives the same draws, different seeds and unseeded streams
 // do not, and a seed gives the same values on every simulator (checksums of the values that
-// Questa 2024.1, VCS X-2025.06 and Verilator 5.046 gave, 2026-10-14). Distributions: 10000
-// draws each, with the observed mean or share inside a band that a correct generator misses
-// with negligible probability. Illegal arguments make the
+// Questa 2024.1, VCS X-2025.06 and Verilator 5.046 gave, 2026-10-14; for exponential and
+// poisson, 2026-10-16). Distributions: 10000 draws each, with the observed mean, share or
+// variance inside a band that a correct generator misses with negligible probability. Illegal arguments make the
 // library call $error on purpose; those tests check the returned value. Results are
 // compared as text (see tests/unit/README.md).
 // Runs on Verilator: make test SIM=verilator TEST=hexk_rand_stream.
@@ -219,6 +219,43 @@ module hexk_rand_stream_unit_test;
       return sum / DRAW_COUNT;
    endfunction : mean_of
 
+   // "<smallest> <variance>" of DRAWS draws of exponential(50) or poisson(8), selected by kind: "nonnegative" when
+   // no draw is below 0, and the whole variance through band(lo, hi).
+   function automatic string spread_of(string kind, longint lo, longint hi);
+      hexk_rand_stream stream = new(kind);
+      longint value;
+      longint sum;
+      longint squares;
+      longint smallest = DRAW_COUNT;
+      longint variance;
+      string low_end;
+      stream.seed(5);
+      repeat (DRAWS) begin
+         value = (kind == "exponential") ? longint'(stream.exponential(50)) : longint'(stream.poisson(8));
+         sum += value;
+         squares += value * value;
+         smallest = (value < smallest) ? value : smallest;
+      end
+      variance = (squares * DRAW_COUNT - sum * sum) / (DRAW_COUNT * DRAW_COUNT);
+      low_end  = (smallest >= 0) ? "nonnegative" : $sformatf("%0d", smallest);
+      return {low_end, " ", band(variance, lo, hi)};
+   endfunction : spread_of
+
+   // Checksums of 1000 draws of exponential(50) with seed 7 and of poisson(8) with seed 11, as in golden_draws().
+   function automatic string golden_exponential_poisson();
+      hexk_rand_stream stream = new("golden_dist");
+      longint unsigned sums[2];
+      stream.seed(7);
+      for (int i = 0; i < 1000; i++) begin
+         sums[0] = sums[0] * 64'd31 + $unsigned(64'(stream.exponential(50)));
+      end
+      stream.seed(11);
+      for (int i = 0; i < 1000; i++) begin
+         sums[1] = sums[1] * 64'd31 + $unsigned(64'(stream.poisson(8)));
+      end
+      return $sformatf("%0d %0d", sums[0], sums[1]);
+   endfunction : golden_exponential_poisson
+
    // Share of DRAWS draws of normal(100, 10) within one standard deviation, in percent.
    function automatic longint normal_within_one_sigma();
       hexk_rand_stream stream = new("sigma");
@@ -246,6 +283,44 @@ module hexk_rand_stream_unit_test;
       end
       return hits;
    endfunction : chance_count
+
+   // Two streams with one seed, one calls chance(percent_a) and the other chance(percent_b), then both draw
+   // next_u32() three times: "same" when they draw the same values.
+   function automatic string after_chance(int unsigned percent_a, int unsigned percent_b);
+      hexk_rand_stream first = new("first");
+      hexk_rand_stream second = new("second");
+      string           text_a;
+      string           text_b;
+      first.seed(31);
+      second.seed(31);
+      void'(first.chance(percent_a));
+      void'(second.chance(percent_b));
+      repeat (3) begin
+         text_a = {text_a, $sformatf("%0d ", first.next_u32())};
+         text_b = {text_b, $sformatf("%0d ", second.next_u32())};
+      end
+      return (text_a == text_b) ? "same" : "different";
+   endfunction : after_chance
+
+   // One stream calls chance(percent_a) and chance(percent_b), a second one with the same seed calls next_u32(),
+   // which takes two draws; then both draw next_u32() three times: "same" when they draw the same values, that is
+   // when each chance() took one draw.
+   function automatic string two_chances_take_two_draws(int unsigned percent_a, int unsigned percent_b);
+      hexk_rand_stream first = new("first");
+      hexk_rand_stream second = new("second");
+      string           text_a;
+      string           text_b;
+      first.seed(47);
+      second.seed(47);
+      void'(first.chance(percent_a));
+      void'(first.chance(percent_b));
+      void'(second.next_u32());
+      repeat (3) begin
+         text_a = {text_a, $sformatf("%0d ", first.next_u32())};
+         text_b = {text_b, $sformatf("%0d ", second.next_u32())};
+      end
+      return (text_a == text_b) ? "same" : "different";
+   endfunction : two_chances_take_two_draws
 
    // Fills the module-level weights queue.
    function automatic void set_weights(int unsigned w0, int unsigned w1, int unsigned w2, int unsigned w3);
@@ -349,12 +424,18 @@ module hexk_rand_stream_unit_test;
       `FAIL_UNLESS_STR_EQUAL(band(normal_within_one_sigma(), 64, 76), "inside")
    `SVTEST_END
 
-   `SVTEST(exponential_has_the_requested_mean)
+   `SVTEST(exponential_has_the_requested_mean_and_spread)
       `FAIL_UNLESS_STR_EQUAL(band(mean_of("exponential"), 46, 54), "inside")
+      `FAIL_UNLESS_STR_EQUAL(spread_of("exponential", 2200, 2800), "nonnegative inside")
    `SVTEST_END
 
-   `SVTEST(poisson_has_the_requested_mean)
+   `SVTEST(poisson_has_the_requested_mean_and_spread)
       `FAIL_UNLESS_STR_EQUAL(band(mean_of("poisson"), 7, 9), "inside")
+      `FAIL_UNLESS_STR_EQUAL(spread_of("poisson", 7, 9), "nonnegative inside")
+   `SVTEST_END
+
+   `SVTEST(exponential_and_poisson_give_the_same_values_on_every_simulator)
+      `FAIL_UNLESS_STR_EQUAL(golden_exponential_poisson(), "12896154645916476985 9004816936151030580")
    `SVTEST_END
 
    `SVTEST(chance_is_true_in_the_requested_share_of_calls)
@@ -366,6 +447,15 @@ module hexk_rand_stream_unit_test;
       `FAIL_UNLESS_STR_EQUAL(band(chance_count(0), 0, 0), "inside")
       `FAIL_UNLESS_STR_EQUAL(band(chance_count(100), DRAW_COUNT, DRAW_COUNT), "inside")
       `FAIL_UNLESS_STR_EQUAL(band(chance_count(250), DRAW_COUNT, DRAW_COUNT), "inside")
+   `SVTEST_END
+
+   `SVTEST(chance_takes_one_draw_whatever_the_percentage)
+      `FAIL_UNLESS_STR_EQUAL(after_chance(0, 100), "same")
+      `FAIL_UNLESS_STR_EQUAL(after_chance(0, 37), "same")
+      `FAIL_UNLESS_STR_EQUAL(after_chance(100, 250), "same")
+      `FAIL_UNLESS_STR_EQUAL(after_chance(1, 99), "same")
+      `FAIL_UNLESS_STR_EQUAL(two_chances_take_two_draws(0, 100), "same")
+      `FAIL_UNLESS_STR_EQUAL(two_chances_take_two_draws(50, 250), "same")
    `SVTEST_END
 
    `SVTEST(pick_weighted_follows_the_weights)

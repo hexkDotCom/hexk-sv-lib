@@ -6,12 +6,15 @@
 // Report catcher for negative tests: declare which errors, warnings or fatals a test expects,
 // have them demoted to info, and check at the end that they really occurred.
 // Create and register one with hexk_report_catcher::add_global(), then call expect_msg() for
-// every message the test provokes on purpose and check_expectations() in the test's
-// check_phase. A message matches a rule when it has the rule's severity, its ID matches the
-// rule's regular expression and, if one is given, its text matches the text expression. The
-// first rule that matches wins. demote() changes the severity of matching messages; its rule
-// counts them for get_count(), but check_expectations() does not check that count. Messages
-// that match no rule pass through unchanged.
+// every message the test provokes on purpose, or expect_check() for a check that fails on
+// purpose; without a maximum an expectation is exact. check_expectations() checks the counts;
+// hexk_base_test calls check_unchecked() in its report phase, which does that for every
+// global catcher that the test did not check itself. A message matches a rule when it has
+// the rule's severity, its ID matches the rule's regular expression and, if one is given, its
+// text matches the text expression. The first rule that matches wins. demote() changes the
+// severity of matching messages; its rule counts them for get_count(), but
+// check_expectations() does not check that count. Messages that match no rule pass through
+// unchanged.
 // Expressions are those of hexk_regex: a match anywhere counts, anchor with ^ and $.
 //
 //! @module    hexk_report_catcher
@@ -26,7 +29,18 @@
 
 class hexk_report_catcher extends uvm_report_catcher;
 
+   // max_count of expect_msg(): no upper limit.
+   localparam int NO_LIMIT = -1;
+   // max_count of expect_msg(), the default: the same as min_count, so that the shortest call expects an exact count.
+   localparam int SAME_AS_MIN = -2;
+
    local hexk_report_catcher_rule rules[$];
+
+   // Set by check_expectations() and cleared by clear(): check_unchecked() leaves this catcher alone.
+   local bit checked;
+
+   // The catchers created by add_global(), for check_unchecked().
+   local static hexk_report_catcher globals[$];
 
    `uvm_object_utils(hexk_report_catcher)
 
@@ -37,19 +51,31 @@ class hexk_report_catcher extends uvm_report_catcher;
 
    // Creates a catcher and registers it for the messages of every reporter.
    static function hexk_report_catcher add_global();
-      hexk_report_catcher catcher = hexk_report_catcher::type_id::create("hexk_report_catcher");
+      hexk_report_catcher catcher = hexk_report_catcher::type_id::create("catcher");
       uvm_report_cb::add(null, catcher);
+      globals.push_back(catcher);
       return catcher;
    endfunction : add_global
 
    // Expects min_count to max_count messages of severity sev, matching the expressions; they become demote_to.
+   // max_count is min_count unless given: the shortest call expects exactly one message. NO_LIMIT has no maximum.
    function void expect_msg(string id_regex, uvm_severity sev = UVM_ERROR, string msg_regex = "",
-                            int unsigned min_count = 1, int max_count = -1, uvm_severity demote_to = UVM_INFO);
+                            int unsigned min_count = 1, int max_count = SAME_AS_MIN, uvm_severity demote_to = UVM_INFO);
       hexk_report_catcher_rule rule = add_rule(id_regex, msg_regex, sev, demote_to);
       rule.is_expectation = 1;
       rule.min_count      = min_count;
-      rule.max_count      = max_count;
+      rule.max_count      = (max_count == SAME_AS_MIN) ? int'(min_count) : max_count;
    endfunction : expect_msg
+
+   // Expects a check with this ID to fail exactly count times, with messages of severity sev: they are demoted to
+   // info and counted as an expectation, and hexk_check_stats allows the failures. One call instead of
+   // expect_msg() and hexk_check_stats::expect_failures(). id is the ID itself, not an expression: the rule compares
+   // it as text, so an ID with characters such as "." or "[" matches only itself.
+   function void expect_check(string id, int unsigned count = 1, uvm_severity sev = UVM_ERROR);
+      expect_msg({"^", id, "$"}, sev, "", count, int'(count));
+      rules[rules.size()-1].id_literal = id;
+      hexk_check_stats::expect_failures(id, count);
+   endfunction : expect_check
 
    // Changes the severity of matching messages from one severity to another; they are not counted as expected.
    function void demote(string id_regex, uvm_severity from, uvm_severity to, string msg_regex = "");
@@ -60,6 +86,7 @@ class hexk_report_catcher extends uvm_report_catcher;
    // The verdicts go through the root reporter of UVM: the `uvm_error of a catcher would report through the
    // reporter of the last message that UVM gave to a catcher, with the actions of that reporter.
    function void check_expectations();
+      checked = 1;
       foreach (rules[i]) begin
          if (!rules[i].is_expectation) begin
             continue;
@@ -68,7 +95,7 @@ class hexk_report_catcher extends uvm_report_catcher;
             `hexk_static_error("HEXK_CATCHER_MISSING", $sformatf("expected at least %0d of %s, saw %0d",
                                                                  rules[i].min_count, describe(rules[i]), rules[i].hits))
          end
-         if (rules[i].max_count >= 0 && rules[i].hits > $unsigned(rules[i].max_count)) begin
+         if (rules[i].max_count != NO_LIMIT && rules[i].hits > $unsigned(rules[i].max_count)) begin
             `hexk_static_error("HEXK_CATCHER_EXCESS", $sformatf("expected at most %0d of %s, saw %0d",
                                                                 rules[i].max_count, describe(rules[i]), rules[i].hits))
          end
@@ -86,10 +113,21 @@ class hexk_report_catcher extends uvm_report_catcher;
       return total;
    endfunction : get_count
 
-   // Removes every rule and count; the catcher stays registered.
+   // Removes every rule and count; the catcher stays registered, and check_unchecked() checks it again.
    function void clear();
       rules.delete();
+      checked = 0;
    endfunction : clear
+
+   // Calls check_expectations() of every catcher created by add_global() whose expectations were not checked since
+   // its last clear(); hexk_base_test calls it in its report phase, so that a test cannot forget it.
+   static function void check_unchecked();
+      foreach (globals[i]) begin
+         if (!globals[i].checked) begin
+            globals[i].check_expectations();
+         end
+      end
+   endfunction : check_unchecked
 
    // Applies the first matching rule to the message being reported; the message is always passed on.
    function action_e catch();
@@ -103,7 +141,7 @@ class hexk_report_catcher extends uvm_report_catcher;
          if (get_severity() != rules[i].from_severity) begin
             continue;
          end
-         if (!rules[i].id_filter.is_match(get_id()) || !rules[i].msg_filter.is_match(get_message())) begin
+         if (!id_matches(rules[i], id) || !rules[i].msg_filter.is_match(get_message())) begin
             continue;
          end
          rules[i].hits++;
@@ -116,6 +154,14 @@ class hexk_report_catcher extends uvm_report_catcher;
       end
       return THROW;
    endfunction : catch
+
+   // 1 when the ID of a message matches a rule: as text for a rule of expect_check(), else as an expression.
+   local function bit id_matches(hexk_report_catcher_rule rule, string id);
+      if (rule.id_literal.len() != 0) begin
+         return id == rule.id_literal;
+      end
+      return rule.id_filter.is_match(id);
+   endfunction : id_matches
 
    // Appends a rule and returns it.
    local function hexk_report_catcher_rule add_rule(string id_regex, string msg_regex, uvm_severity from,

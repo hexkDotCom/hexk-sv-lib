@@ -9,7 +9,8 @@
 // Threads that the caller started before the call are never killed.
 // The timeout is a whole number of picoseconds, like every time that crosses the API of the
 // library, so it means the same whatever the time unit of the caller is; write it as
-// `hexk_ps(10us) or as 10_000_000. now_ps() gives the simulation time in picoseconds.
+// `hexk_ps(10us) or as 10_000_000. now_ps() gives the simulation time in picoseconds, and
+// format_ps() formats a time in picoseconds as %t does.
 // To report a UVM error on timeout, use the macros of hexk_wait_macros.svh instead.
 //
 //! @module    hexk_wait_macros
@@ -37,6 +38,13 @@ virtual class hexk_wait_util;
       // The time unit of the package is 1ps, so $time is a number of picoseconds here.
       return $time;
    endfunction : now_ps
+
+   // A time in picoseconds as %t formats it, in the unit and format that $timeformat set. Classes with a type
+   // parameter format a time through this function and read it through now_ps(): Questa 2024.1 takes $time and %t
+   // in such a class in the time unit of the scope that declares the type given as parameter.
+   static function string format_ps(longint unsigned value_ps);
+      return $sformatf("%0t", value_ps);
+   endfunction : format_ps
 
    // Waits duration_ps picoseconds; 0 returns at once. Classes with a type parameter delay through this task:
    // VCS X-2025.06 scales a delay written in such a class by the time unit of the scope that declares the type

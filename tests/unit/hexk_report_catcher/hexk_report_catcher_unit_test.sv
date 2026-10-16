@@ -18,6 +18,7 @@ module hexk_report_catcher_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
    import hexk_uvm_pkg::hexk_report_catcher;
+   import hexk_uvm_pkg::hexk_check_stats;
    `include "uvm_macros.svh"
 
    string              name = "hexk_report_catcher_ut";
@@ -97,8 +98,46 @@ module hexk_report_catcher_unit_test;
       uvm_report_object muted = new("ut_muted_reporter");
       muted.set_report_id_action("HEXK_CATCHER_MISSING", UVM_NO_ACTION);
       muted.set_report_id_action("HEXK_CATCHER_EXCESS", UVM_NO_ACTION);
+      // FAC-9 waived: `uvm_info_context of UVM 1.2 does not elaborate cleanly with slang (an int as a condition).
       muted.uvm_report_info("UT_LAST", "the last message before the check", UVM_NONE);
    endfunction : report_from_a_muted_reporter
+
+   // Expects two failures of the check UT_CHECK with expect_check(), then lets the check fail twice, with its
+   // error, as a check macro would: "<failures beyond the allowance> <checks failed>".
+   function automatic string expected_check_failures();
+      int unsigned unexpected_before = hexk_check_stats::num_unexpected_failures();
+      catcher.expect_check("UT_CHECK", 2);
+      repeat (2) begin
+         hexk_check_stats::record_fail("UT_CHECK");
+         emit(UVM_ERROR, "UT_CHECK");
+      end
+      return $sformatf(
+          "%0d %0d",
+          hexk_check_stats::num_unexpected_failures() - unexpected_before,
+          hexk_check_stats::num_failed(
+              "UT_CHECK"
+          )
+      );
+   endfunction : expected_check_failures
+
+   // expect_check() of an ID with characters that are operators of an expression, and a rule for an ID that the
+   // expression would match; one error of each.
+   function automatic void expected_check_with_operators();
+      catcher.expect_check("UT.ID[0]", 1);
+      catcher.expect_msg("^UTXID0$", UVM_ERROR, "", 1);
+      emit(UVM_ERROR, "UTXID0");
+      emit(UVM_ERROR, "UT.ID[0]");
+   endfunction : expected_check_with_operators
+
+   // A catcher of its own, created with add_global(), with an expectation that is never met; check_unchecked()
+   // checks it once, and a second call leaves it alone.
+   function automatic void unchecked_global_catcher();
+      hexk_report_catcher own = hexk_report_catcher::add_global();
+      own.expect_msg("^UT_NEVER_SEEN$");
+      hexk_report_catcher::check_unchecked();
+      hexk_report_catcher::check_unchecked();
+      own.clear();
+   endfunction : unchecked_global_catcher
 
    // Decimal text of a count kept by the catcher.
    function automatic string caught(string id_regex, uvm_severity severity = UVM_ERROR);
@@ -200,6 +239,43 @@ module hexk_report_catcher_unit_test;
       catcher.check_expectations();
       `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 1")
       `FAIL_UNLESS_STR_EQUAL(counted(), "2 0 1")
+   `SVTEST_END
+
+   `SVTEST(the_shortest_call_expects_exactly_one_message)
+      catcher.expect_msg("^UT_TWICE$");
+      emit(UVM_ERROR, "UT_TWICE");
+      emit(UVM_ERROR, "UT_TWICE");
+      catcher.check_expectations();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 1")
+   `SVTEST_END
+
+   `SVTEST(no_limit_allows_any_number_above_the_minimum)
+      catcher.expect_msg("^UT_MANY$", UVM_ERROR, "", 1, hexk_report_catcher::NO_LIMIT);
+      emit(UVM_ERROR, "UT_MANY");
+      emit(UVM_ERROR, "UT_MANY");
+      emit(UVM_ERROR, "UT_MANY");
+      catcher.check_expectations();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
+      `FAIL_UNLESS_STR_EQUAL(counted(), "3 0 0")
+   `SVTEST_END
+
+   `SVTEST(expect_check_expects_the_messages_and_allows_the_failures_of_a_check)
+      `FAIL_UNLESS_STR_EQUAL(expected_check_failures(), "0 2")
+      catcher.check_expectations();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
+      `FAIL_UNLESS_STR_EQUAL(counted(), "2 0 0")
+   `SVTEST_END
+
+   `SVTEST(expect_check_compares_the_id_as_text)
+      expected_check_with_operators();
+      catcher.check_expectations();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
+      `FAIL_UNLESS_STR_EQUAL(counted(), "2 0 0")
+   `SVTEST_END
+
+   `SVTEST(check_unchecked_checks_a_global_catcher_once)
+      unchecked_global_catcher();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "1 0")
    `SVTEST_END
 
    `SVTEST(a_maximum_of_zero_forbids_a_message)

@@ -17,8 +17,8 @@
 hexk_report_catcher  all  UVM_ERROR  UT_EXPECTED           3
 hexk_report_catcher  all  UVM_ERROR  UT_SOFT               1
 hexk_report_catcher  all  UVM_ERROR  UT_OTHER              1
-hexk_report_catcher  all  UVM_ERROR  HEXK_CATCHER_MISSING  3
-hexk_report_catcher  all  UVM_ERROR  HEXK_CATCHER_EXCESS   3
+hexk_report_catcher  all  UVM_ERROR  HEXK_CATCHER_MISSING  4
+hexk_report_catcher  all  UVM_ERROR  HEXK_CATCHER_EXCESS   4
 
 # The registry runs the end-of-test checks of its objects, which report their leftovers.
 hexk_eot_registry    all  UVM_ERROR  UT_EOT_LEFTOVER       2

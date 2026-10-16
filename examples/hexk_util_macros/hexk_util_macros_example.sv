@@ -15,6 +15,7 @@
 interface hexk_example_bus_if (
     input logic clk
 );
+   timeunit 1ns; timeprecision 1ps;
    logic [7:0] data;
 endinterface : hexk_example_bus_if
 
@@ -103,6 +104,7 @@ module hexk_util_macros_example;
 
       task run_phase(uvm_phase phase);
          hexk_example_stats stats = hexk_example_stats::get();
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          `hexk_randomize_or_fatal(map, "EXAMPLE")
          foreach (map.first_addr[i]) begin

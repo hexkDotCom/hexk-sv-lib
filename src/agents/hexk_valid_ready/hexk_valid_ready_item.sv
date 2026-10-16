@@ -35,13 +35,13 @@ class hexk_valid_ready_item #(
    // Set by a driver: 1 when a reset ended the item before its transfer.
    bit                           aborted;
 
+   `uvm_object_param_utils(hexk_valid_ready_item#(DATA_WIDTH))
+
    // A plain randomize() leaves the delay to the cfg of the agent.
    constraint default_values_cstr {soft delay_cycles == -1;}
 
-   `uvm_object_param_utils(hexk_valid_ready_item#(DATA_WIDTH))
-
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_valid_ready_item";
    endfunction : get_type_name
 

@@ -110,18 +110,17 @@ class hexk_objection_aggregator extends uvm_component;
 
    // Who is busy and why, one line per reason; "nothing is busy" when nobody is.
    function string report_busy();
-      string lines  [$];
-      string reason;
+      string lines[$];
+      string why;
       foreach (members[i]) begin
+         why = indented(members[i].why);
          if (members[i].raise_count == 1) begin
-            lines.push_back(describe({members[i].label, ": raised"}, members[i].why));
+            lines.push_back(describe({members[i].label, ": raised"}, why));
          end else if (members[i].raise_count > 1) begin
-            lines.push_back(
-                describe($sformatf("%s: raised %0d times", members[i].label, members[i].raise_count), members[i].why));
+            lines.push_back(describe($sformatf("%s: raised %0d times", members[i].label, members[i].raise_count), why));
          end
          if (members[i].obj.is_busy()) begin
-            reason = hexk_str::replace(members[i].obj.busy_reason(), "\n", "\n    ");
-            lines.push_back(describe({members[i].label, ": busy"}, reason));
+            lines.push_back(describe({members[i].label, ": busy"}, indented(members[i].obj.busy_reason())));
          end
       end
       if (lines.size() == 0) begin
@@ -262,6 +261,11 @@ class hexk_objection_aggregator extends uvm_component;
       uvm_task_phase task_imp;
       return $cast(task_imp, phase.get_imp()) != 0;
    endfunction : is_task_phase
+
+   // A reason with its further lines indented by four spaces.
+   local function string indented(string reason);
+      return hexk_str::replace(reason, "\n", "\n    ");
+   endfunction : indented
 
    // "<what>: <detail>", or only <what> when there is no detail.
    local function string describe(string what, string detail);

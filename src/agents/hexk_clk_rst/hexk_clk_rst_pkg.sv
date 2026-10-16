@@ -25,7 +25,7 @@ package hexk_clk_rst_pkg;
    import hexk_uvm_pkg::hexk_clk_countable;
 
    // What an item asks the driver to do; an item of the monitor is always HEXK_CLK_RST_RESET.
-   typedef enum bit [1:0] {
+   typedef enum bit [2:0] {
       // Assert the reset, hold it, release it.
       HEXK_CLK_RST_RESET,
       // A new period, duty cycle and jitter.
@@ -33,7 +33,11 @@ package hexk_clk_rst_pkg;
       // Stop the clock, and start it again after a time if one is given.
       HEXK_CLK_RST_STOP,
       // Start the clock.
-      HEXK_CLK_RST_START
+      HEXK_CLK_RST_START,
+      // Assert the reset and leave it asserted, so that the clock can be changed before the release.
+      HEXK_CLK_RST_ASSERT,
+      // Release the reset.
+      HEXK_CLK_RST_RELEASE
    } hexk_clk_rst_op_e;
 
    `include "hexk_clk_rst_item.sv"
@@ -46,6 +50,8 @@ package hexk_clk_rst_pkg;
    `include "sequences/hexk_clk_rst_clock_seq.sv"
    `include "sequences/hexk_clk_rst_stop_seq.sv"
    `include "sequences/hexk_clk_rst_start_seq.sv"
+   `include "sequences/hexk_clk_rst_assert_seq.sv"
+   `include "sequences/hexk_clk_rst_release_seq.sv"
 endpackage : hexk_clk_rst_pkg
 
 `endif  // HEXK_CLK_RST_PKG_SV

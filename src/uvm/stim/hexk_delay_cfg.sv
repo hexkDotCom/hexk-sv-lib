@@ -74,6 +74,8 @@ class hexk_delay_cfg extends uvm_object;
    // When set, the bit knob perf_mode of hexk_knobs makes every delay 0.
    bit                    honor_perf_knob        = 1;
 
+   `uvm_object_utils(hexk_delay_cfg)
+
    // What every legal cfg keeps.
    constraint legal_values_cstr {
       lo <= hi;
@@ -96,8 +98,6 @@ class hexk_delay_cfg extends uvm_object;
       soft burst_off_min == 1;
       soft burst_off_max == 8;
    }
-
-   `uvm_object_utils(hexk_delay_cfg)
 
    // Creates a cfg for uniform delays of 0 to 4.
    function new(string name = "hexk_delay_cfg");

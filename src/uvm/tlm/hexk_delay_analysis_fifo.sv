@@ -69,7 +69,7 @@ class hexk_delay_analysis_fifo #(
    `uvm_component_param_utils(hexk_delay_analysis_fifo#(T))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_delay_analysis_fifo";
    endfunction : get_type_name
 
@@ -90,7 +90,7 @@ class hexk_delay_analysis_fifo #(
    endfunction : num_in_flight
 
    // UVM FIFO method behind write() and put(): keeps the item aside until its delay is over.
-   virtual function bit try_put(input T t);
+   function bit try_put(input T t);
       bit              by_cycles = (latency_cycles != 0);
       longint unsigned delay_ps = by_cycles ? 0 : latency_ps;
       waiting_t        entry;
@@ -108,11 +108,12 @@ class hexk_delay_analysis_fifo #(
       if (!by_cycles && delay_ps == 0 && waiting.size() == 0) begin
          return super.try_put(t);
       end
-      entry.item       = t;
-      entry.written    = $realtime;
-      entry.by_cycles  = by_cycles;
+      entry.item = t;
+      entry.written = $realtime;
+      entry.by_cycles = by_cycles;
       // A due time after hexk_wait_util::LAST_PS never comes: it is the largest time, which is never reached.
-      entry.due_ps     = hexk_wait_util::ends_after_last(delay_ps, $time) ? ~64'd0 : $time + delay_ps;
+      entry.due_ps = hexk_wait_util::ends_after_last(delay_ps, hexk_wait_util::now_ps()) ? ~64'd0 :
+          hexk_wait_util::now_ps() + delay_ps;
       entry.due_cycles = cycle_count + 64'(latency_cycles);
       waiting.push_back(entry);
       ->item_written;
@@ -121,12 +122,12 @@ class hexk_delay_analysis_fifo #(
 
    // UVM FIFO method: as try_put(). UVM's own put() goes to the FIFO directly; the FIFO has no size limit, so
    // this one never waits either.
-   virtual task put(input T t);
+   task put(input T t);
       void'(try_put(t));
    endtask : put
 
    // UVM FIFO method: empties the FIFO and drops the items that are not visible yet.
-   virtual function void flush();
+   function void flush();
       waiting.delete();
       flush_count++;
       ->flushed;
@@ -146,6 +147,7 @@ class hexk_delay_analysis_fifo #(
 
    // UVM callback: counts the clock events and moves the items into the FIFO when their delay is over.
    task run_phase(uvm_phase phase);
+      super.run_phase(phase);
       fork
          count_cycles();
          release_items();
@@ -189,14 +191,14 @@ class hexk_delay_analysis_fifo #(
             while (flushes == flush_count && cycle_count < waiting[0].due_cycles) begin
                @(cycle_counted or flushed);
             end
-         end else if ($time < waiting[0].due_ps) begin
+         end else if (hexk_wait_util::now_ps() < waiting[0].due_ps) begin
             // The delay through hexk_wait_util, where it is in picoseconds whatever T is (hexk_wait_util::wait_ps). The
             // flush is waited for as a changed count, which a flush between the start of the two branches cannot
             // slip past as it could past an event. The outer fork keeps "disable fork" to these two branches.
             fork
                begin
                   fork
-                     hexk_wait_util::wait_ps(waiting[0].due_ps - $time);
+                     hexk_wait_util::wait_ps(waiting[0].due_ps - hexk_wait_util::now_ps());
                      wait (flush_count != flushes);
                   join_any
                   disable fork;

@@ -32,6 +32,8 @@ module hexk_clk_rst_unit_test;
    import hexk_clk_rst_pkg::hexk_clk_rst_reset_seq;
    import hexk_clk_rst_pkg::hexk_clk_rst_clock_seq;
    import hexk_clk_rst_pkg::hexk_clk_rst_stop_seq;
+   import hexk_clk_rst_pkg::hexk_clk_rst_assert_seq;
+   import hexk_clk_rst_pkg::hexk_clk_rst_release_seq;
    import hexk_clk_rst_pkg::hexk_clk_rst_start_seq;
    import hexk_clk_rst_pkg::HEXK_CLK_RST_RESET;
    import hexk_clk_rst_pkg::HEXK_CLK_RST_CLOCK;
@@ -101,6 +103,7 @@ module hexk_clk_rst_unit_test;
       catcher.expect_msg("^HEXK_CLK_RST_ILLEGAL$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_CLK_RST_STOPPED$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_CLK_RST_CFG$", UVM_FATAL, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_CLK_RST_PERIOD$", UVM_ERROR, "", 0, -1, UVM_INFO);
       cfg            = hexk_clk_rst_agent_cfg::type_id::create("cfg");
       cfg.vif        = clk_if;
       agent          = null;
@@ -119,6 +122,10 @@ module hexk_clk_rst_unit_test;
       if (monitor_process != null) begin
          monitor_process.kill();
          monitor_process = null;
+      end
+      // Killing the monitor does not end its thread that checks the clock on Verilator 5.046; this ends it.
+      if (agent != null && agent.cfg != null) begin
+         agent.cfg.check_period = 0;
       end
       clk_if.request_run(1'b0);
       clk_if.wait_stopped();
@@ -152,8 +159,9 @@ module hexk_clk_rst_unit_test;
             cfg.rst_active_low = value;
             pin_active_low     = value;
          end
-         "start_clock": cfg.start_clock = value;
-         default:       cfg.reset_at_start = value;
+         "start_clock":  cfg.start_clock = value;
+         "check_period": cfg.check_period = value;
+         default:        cfg.reset_at_start = value;
       endcase
    endfunction : set_flag
 
@@ -176,7 +184,7 @@ module hexk_clk_rst_unit_test;
       end
       seen = new($sformatf("ut_clk_rst_seen_%0d", created), null);
       agent.ap.connect(seen.analysis_export);
-      // The monitor writes through the port of the agent; resolving its port resolves the whole chain.
+      // The port of the agent is that of the monitor: resolved after the test connected to it.
       agent.mon.ap.resolve_bindings();
       agent.start_of_simulation_phase(null);
    endfunction : build_agent
@@ -297,10 +305,11 @@ module hexk_clk_rst_unit_test;
       result = $sformatf("%0d %0d %0d %0d", asserted_ps, released_ps, active_edges, since_start() - 1);
    endtask : run_reset
 
-   // Runs a reset sequence with what a plain randomize() gives.
-   task automatic run_default_reset();
+   // Runs a reset sequence with what a plain randomize() gives, or as created when randomize_first is 0.
+   // SEQ-3 waived: with randomize_first 0 the test checks the defaults of a sequence started without randomize().
+   task automatic run_default_reset(bit randomize_first = 1);
       hexk_clk_rst_reset_seq seq = hexk_clk_rst_reset_seq::type_id::create("seq");
-      if (seq.randomize() != 1) begin
+      if (randomize_first && seq.randomize() != 1) begin
          result = "randomization failed";
          return;
       end
@@ -308,6 +317,25 @@ module hexk_clk_rst_unit_test;
       clk_if.wait_ps(1);
       result = $sformatf("%0d %0d %0d %0d", asserted_ps, released_ps, active_edges, since_start() - 1);
    endtask : run_default_reset
+
+   // The members of the sequences as created, without randomize():
+   // "<reset: hold_cycles hold_ps sync_assert sync_release> | <clock: period duty jitter> | <stop: stop_ps>".
+   function automatic string created_sequence_members();
+      hexk_clk_rst_reset_seq reset_seq = hexk_clk_rst_reset_seq::type_id::create("reset_seq");
+      hexk_clk_rst_clock_seq clock_seq = hexk_clk_rst_clock_seq::type_id::create("clock_seq");
+      hexk_clk_rst_stop_seq  stop_seq = hexk_clk_rst_stop_seq::type_id::create("stop_seq");
+      return $sformatf(
+          "%0d %0d %0d %0d | %0d %0d %0d | %0d",
+          reset_seq.hold_cycles,
+          reset_seq.hold_ps,
+          reset_seq.sync_assert,
+          reset_seq.sync_release,
+          clock_seq.period_ps,
+          clock_seq.duty_percent,
+          clock_seq.jitter_ps,
+          stop_seq.stop_ps
+      );
+   endfunction : created_sequence_members
 
    // Runs a frequency sequence and returns when it is done: "<done at> <period of the status> <period of the cfg>".
    task automatic run_freq(longint unsigned period, int unsigned duty = 50, longint unsigned jitter = 0);
@@ -349,6 +377,48 @@ module hexk_clk_rst_unit_test;
       result = $sformatf("%0d %0b %s", since_start(), clk_if.clk, edges_since_start());
    endtask : run_stop
 
+   // Runs an assert sequence, the reset at the next rising edge or at once.
+   task automatic run_assert(bit at_edge);
+      hexk_clk_rst_assert_seq seq = hexk_clk_rst_assert_seq::type_id::create("seq");
+      if (seq.randomize() != 1) begin
+         result = "randomization failed";
+         return;
+      end
+      seq.sync_assert = at_edge;
+      seq.start(agent.sqr);
+   endtask : run_assert
+
+   // Runs an assert (1) or a release (0) sequence at the next rising edge: the pin as soon as start() returned.
+   task automatic pin_when_done(bit assert_it);
+      hexk_clk_rst_release_seq seq = hexk_clk_rst_release_seq::type_id::create("seq");
+      if (assert_it) begin
+         run_assert(1);
+      end else begin
+         if (seq.randomize() != 1) begin
+            result = "randomization failed";
+            return;
+         end
+         seq.sync_release = 1;
+         seq.start(agent.sqr);
+      end
+      result = $sformatf("%b", clk_if.rst);
+   endtask : pin_when_done
+
+   // Runs a release sequence, at the next rising edge or at once:
+   // "<asserted at> <released at> <rising edges with the reset asserted> <done at>".
+   task automatic run_release(bit at_edge);
+      hexk_clk_rst_release_seq seq = hexk_clk_rst_release_seq::type_id::create("seq");
+      if (seq.randomize() != 1) begin
+         result = "randomization failed";
+         return;
+      end
+      seq.sync_release = at_edge;
+      seq.start(agent.sqr);
+      // The always block that notes the release runs in the time step of the release.
+      clk_if.wait_ps(1);
+      result = $sformatf("%0d %0d %0d %0d", asserted_ps, released_ps, active_edges, since_start() - 1);
+   endtask : run_release
+
    // Runs a start sequence: "<done at> <rising edges since the start>".
    task automatic run_start();
       hexk_clk_rst_start_seq seq = hexk_clk_rst_start_seq::type_id::create("seq");
@@ -389,6 +459,11 @@ module hexk_clk_rst_unit_test;
       return (text.len() == 0) ? "-" : text;
    endfunction : seen_items
 
+   // The check of the clock by the monitor: "<intervals checked> <errors of the check>".
+   function automatic string period_checks();
+      return $sformatf("%0d %0d", agent.mon.num_checked(), catcher.get_count("^HEXK_CLK_RST_PERIOD$"));
+   endfunction : period_checks
+
    // Whether the two events of the status of the agent were triggered, what the item of the release says, and
    // whether the status says that the reset is asserted:
    // "<asserted> <released> <reset_active of the item of the release> <in_reset>".
@@ -404,21 +479,30 @@ module hexk_clk_rst_unit_test;
       );
    endfunction : events
 
-   // The port and the status of an agent that was only constructed: "<full name of ap> <status>", with the name of
+   // The status and the port of an agent that was only constructed, and the port once it is built:
+   // "<status> | <port after construction> | <full name of ap> <it is the port of the monitor>", with the name of
    // the agent written as "agent".
-   function automatic string parts_after_construction();
+   function automatic string parts_of_an_agent();
       hexk_clk_rst_agent constructed;
       created++;
       constructed = hexk_clk_rst_agent::type_id::create($sformatf("ut_clk_rst_agent_%0d", created), null);
-      if (constructed.ap == null || constructed.status == null) begin
-         return "missing";
+      if (constructed.status == null) begin
+         return "no status";
       end
-      return {
-         hexk_str::replace(constructed.ap.get_full_name(), constructed.get_name(), "agent"),
-         " ",
-         constructed.status.convert2string()
-      };
-   endfunction : parts_after_construction
+      build_agent(cfg);
+      if (agent.ap == null) begin
+         return "no port";
+      end
+      return $sformatf(
+          "%s | %s | %s %0b",
+          constructed.status.convert2string(),
+          (constructed.ap == null) ? "none" : "some",
+          hexk_str::replace(
+              agent.ap.get_full_name(), agent.get_name(), "agent"
+          ),
+          agent.ap == agent.mon.ap
+      );
+   endfunction : parts_of_an_agent
 
    // Builds an agent without a cfg, or with a cfg without an interface: "<fatals> <monitor created>".
    function automatic string build_without(string what);
@@ -605,7 +689,7 @@ module hexk_clk_rst_unit_test;
    // Runs a reset sequence whose default of 5 cycles a constraint of the call overrides, as a test does.
    task automatic run_constrained_reset(int unsigned cycles);
       hexk_clk_rst_reset_seq seq = hexk_clk_rst_reset_seq::type_id::create("seq");
-      if (seq.randomize() with {hold_cycles == cycles;} != 1) begin
+      if (seq.randomize() with {hold_cycles == local:: cycles;} != 1) begin
          result = "randomization failed";
          return;
       end
@@ -727,11 +811,57 @@ module hexk_clk_rst_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result, "45000 ")
    `SVTEST_END
 
+   `SVTEST(a_warm_reset_holds_the_reset_while_the_clock_is_stopped_and_started)
+      set_flag("reset_at_start", 0);
+      start_agent();
+      advance_to(17_000);
+      run_assert(0);
+      run_stop();
+      advance_to(30_000);
+      run_start();
+      run_release(1);
+      `FAIL_UNLESS_STR_EQUAL(result, "17000 45000 2 45000")
+      `FAIL_UNLESS_STR_EQUAL(problems(), "0 0 0")
+   `SVTEST_END
+
+   `SVTEST(an_assert_at_an_edge_of_a_stopped_clock_is_an_error_and_asserts_at_once)
+      set_flag("reset_at_start", 0);
+      set_flag("start_clock", 0);
+      start_agent();
+      advance_to(7_000);
+      run_assert(1);
+      advance_to(8_000);
+      run_release(0);
+      `FAIL_UNLESS_STR_EQUAL(result, "7000 8000 0 8000")
+      `FAIL_UNLESS_STR_EQUAL(problems(), "0 1 0")
+   `SVTEST_END
+
+   `SVTEST(a_reset_at_an_edge_has_changed_the_pin_when_its_sequence_returns)
+      set_flag("reset_at_start", 0);
+      start_agent();
+      advance_to(17_000);
+      pin_when_done(1);
+      `FAIL_UNLESS_STR_EQUAL(result, "0")
+      pin_when_done(0);
+      `FAIL_UNLESS_STR_EQUAL(result, "1")
+   `SVTEST_END
+
    `SVTEST(a_stop_with_a_time_starts_the_clock_again)
       start_agent();
       advance_to(17_000);
       run_stop(8000);
       `FAIL_UNLESS_STR_EQUAL(result, "33000 1 3")
+   `SVTEST_END
+
+   `SVTEST(a_stop_of_a_stopped_clock_does_nothing_and_with_a_time_starts_it_after_that_time)
+      start_agent();
+      advance_to(17_000);
+      run_stop();
+      advance_to(30_000);
+      run_stop();
+      `FAIL_UNLESS_STR_EQUAL(result, "30000 0 2")
+      run_stop(8000);
+      `FAIL_UNLESS_STR_EQUAL(result, "43000 1 3")
    `SVTEST_END
 
    `SVTEST(a_new_period_holds_from_the_next_rising_edge)
@@ -823,6 +953,18 @@ module hexk_clk_rst_unit_test;
       advance_to(17_000);
       run_default_reset();
       `FAIL_UNLESS_STR_EQUAL(result, "17000 65000 5 65000")
+   `SVTEST_END
+
+   `SVTEST(a_reset_sequence_started_without_randomize_uses_the_defaults)
+      set_flag("reset_at_start", 0);
+      start_agent();
+      advance_to(17_000);
+      run_default_reset(0);
+      `FAIL_UNLESS_STR_EQUAL(result, "17000 65000 5 65000")
+   `SVTEST_END
+
+   `SVTEST(the_members_of_a_created_sequence_have_their_defaults)
+      `FAIL_UNLESS_STR_EQUAL(created_sequence_members(), "5 0 0 1 | 10000 50 0 | 0")
    `SVTEST_END
 
    `SVTEST(a_reset_can_be_asserted_at_a_rising_edge)
@@ -920,6 +1062,65 @@ module hexk_clk_rst_unit_test;
       `FAIL_UNLESS_STR_EQUAL(seen_items(), "A2 R3 A3 R3 ")
    `SVTEST_END
 
+   `SVTEST(with_check_period_the_monitor_checks_every_interval_of_the_clock)
+      set_flag("reset_at_start", 0);
+      set_flag("check_period", 1);
+      start_agent();
+      // Rising edges at 5, 15, ..., 95 ns: nine intervals.
+      advance_to(100_000);
+      `FAIL_UNLESS_STR_EQUAL(period_checks(), "9 0")
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0d %0d", agent.mon.num_checked_at(10_000), agent.mon.num_checked_at(20_000)),
+                             "9 0")
+   `SVTEST_END
+
+   `SVTEST(the_check_of_the_period_allows_twice_the_jitter)
+      set_flag("reset_at_start", 0);
+      set_clock(10_000, 50, JITTER_PS);
+      set_flag("check_period", 1);
+      start_agent();
+      // Twenty rising edges, each within the jitter of 5, 15, ..., 195 ns.
+      advance_to(200_000);
+      `FAIL_UNLESS_STR_EQUAL(period_checks(), "19 0")
+   `SVTEST_END
+
+   `SVTEST(the_check_of_the_period_skips_a_reset_a_new_clock_and_a_stop)
+      set_flag("check_period", 1);
+      start_agent();
+      advance_to(17_000);
+      `FAIL_UNLESS_STR_EQUAL(period_checks(), "0 0")
+      run_reset(1);
+      advance_to(60_000);
+      run_freq(20_000);
+      advance_to(150_000);
+      run_stop();
+      advance_to(180_000);
+      run_start();
+      advance_to(300_000);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0d %0b %0b", catcher.get_count("^HEXK_CLK_RST_PERIOD$"),
+                                       agent.mon.num_checked_at(10_000) > 0, agent.mon.num_checked_at(20_000) > 2),
+                             "0 1 1")
+   `SVTEST_END
+
+   `SVTEST(a_clock_that_is_not_the_one_of_the_status_is_an_error)
+      set_flag("reset_at_start", 0);
+      set_flag("check_period", 1);
+      start_agent();
+      advance_to(50_000);
+      // A clock changed behind the back of the agent: rising edges at 55, 67 and 79 ns.
+      clk_if.set_clock(12_000, 6_000, 0);
+      advance_to(80_000);
+      `FAIL_UNLESS_STR_EQUAL(period_checks(), "7 2")
+   `SVTEST_END
+
+   `SVTEST(without_check_period_the_monitor_does_not_check_the_clock)
+      set_flag("reset_at_start", 0);
+      start_agent();
+      advance_to(50_000);
+      clk_if.set_clock(12_000, 6_000, 0);
+      advance_to(80_000);
+      `FAIL_UNLESS_STR_EQUAL(period_checks(), "0 0")
+   `SVTEST_END
+
    `SVTEST(the_agent_counts_and_waits_for_clock_cycles)
       start_agent();
       advance_to(17_000);
@@ -929,9 +1130,9 @@ module hexk_clk_rst_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result, "0 0")
    `SVTEST_END
 
-   `SVTEST(the_port_and_the_status_belong_to_the_agent_from_its_construction)
-      `FAIL_UNLESS_STR_EQUAL(parts_after_construction(),
-         "agent.ap in_reset=0 period_ps=10000 duty_percent=50 jitter_ps=0")
+   `SVTEST(the_status_belongs_to_the_agent_from_its_construction_and_the_port_is_that_of_the_monitor)
+      `FAIL_UNLESS_STR_EQUAL(parts_of_an_agent(),
+         "in_reset=0 period_ps=10000 duty_percent=50 jitter_ps=0 | none | agent.mon.ap 1")
    `SVTEST_END
 
    `SVTEST(an_agent_without_a_cfg_or_an_interface_is_a_fatal)
@@ -985,7 +1186,7 @@ module hexk_clk_rst_unit_test;
    `SVTEST(convert2string_of_the_cfg_lists_the_settings)
       `FAIL_UNLESS_STR_EQUAL(cfg.convert2string(),
          {"UVM_ACTIVE period_ps=10000 duty_percent=50 jitter_ps=0 phase_ps=0 active_low=1 start_clock=1 ",
-          "reset_at_start=1"})
+          "reset_at_start=1 check_period=0"})
    `SVTEST_END
 
    `SVTEST(an_item_prints_what_its_operation_uses_and_compares_it)

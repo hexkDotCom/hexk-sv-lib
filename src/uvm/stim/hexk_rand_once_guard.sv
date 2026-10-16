@@ -40,7 +40,12 @@ class hexk_rand_once_guard;
    // solver replaces any value.
    function void on_pre_randomize();
       if (!randomized) begin
-         if (owner_name() == hexk_plusarg::get_str("hexk_rand_once_trap", "")) begin
+         // The plusarg must be given: an owner without a name would otherwise match its absence.
+         if (hexk_plusarg::has(
+                 "hexk_rand_once_trap"
+             ) && owner_name() == hexk_plusarg::get_str(
+                 "hexk_rand_once_trap", ""
+             )) begin
             `uvm_info("HEXK_RAND_ONCE_TRAP",
                       $sformatf("%s is randomized for the first time; +hexk_rand_once_trap asks for the stack trace",
                                 owner_name()), UVM_NONE)

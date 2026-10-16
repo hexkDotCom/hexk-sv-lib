@@ -34,13 +34,13 @@ class hexk_valid_ready_data_seq #(
    // The delay of every item in clock cycles; below 0 the driver takes the delays of the cfg.
    rand int                  delay_cycles;
 
+   `uvm_object_param_utils(hexk_valid_ready_data_seq#(DATA_WIDTH))
+
    // What a plain randomize() gives; a test overrides it.
    constraint default_values_cstr {soft delay_cycles == -1;}
 
-   `uvm_object_param_utils(hexk_valid_ready_data_seq#(DATA_WIDTH))
-
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_valid_ready_data_seq";
    endfunction : get_type_name
 
@@ -52,12 +52,13 @@ class hexk_valid_ready_data_seq #(
 
    // Sends one item per word; returns at the transfer of the last one.
    task body();
-      // The class the factory gives for "req", asked once, the way create() asks it, and every item is made of that
-      // class: an override set while the sequence runs counts from its next start. get_object_type() would not
-      // do: a derived class without macros of its own gives the type of its base class there.
+      // The class the factory gives for "<sequencer path>.req", asked once, the way create() asks it, and every item
+      // is made of that class: an override set while the sequence runs counts from its next start.
+      // get_object_type() would not do: a derived class without macros of its own gives the type of its base class
+      // there.
       uvm_factory        factory = uvm_factory::get();
       uvm_object_wrapper plain = hexk_valid_ready_item#(DATA_WIDTH)::get_type();
-      uvm_object_wrapper item_type = factory.find_override_by_type(plain, "req");
+      uvm_object_wrapper item_type = factory.find_override_by_type(plain, {get_sequencer().get_full_name(), ".req"});
       bit                derived = item_type != plain;
       uvm_object         made;
       foreach (words[i]) begin

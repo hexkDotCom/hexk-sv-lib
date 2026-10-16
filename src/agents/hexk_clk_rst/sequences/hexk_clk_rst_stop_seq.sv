@@ -24,10 +24,10 @@ class hexk_clk_rst_stop_seq extends uvm_sequence #(hexk_clk_rst_item);
    // Time in picoseconds after which the clock starts again; 0 leaves it stopped.
    rand longint unsigned stop_ps;
 
+   `uvm_object_utils(hexk_clk_rst_stop_seq)
+
    // What a plain randomize() gives; a test overrides what it wants different.
    constraint default_values_cstr {soft stop_ps == 0;}
-
-   `uvm_object_utils(hexk_clk_rst_stop_seq)
 
    // Creates the sequence.
    function new(string name = "hexk_clk_rst_stop_seq");
@@ -36,7 +36,8 @@ class hexk_clk_rst_stop_seq extends uvm_sequence #(hexk_clk_rst_item);
 
    // Sends one stop item; returns when the clock is 0, or runs again after stop_ps.
    task body();
-      req = hexk_clk_rst_item::type_id::create("req");
+      // Under the name of the sequencer, so that a factory override of one agent's items can name its path.
+      req = hexk_clk_rst_item::type_id::create("req", null, get_sequencer().get_full_name());
       start_item(req);
       `hexk_randomize_with_or_fatal(req, "HEXK_CLK_RST_RAND", op == HEXK_CLK_RST_STOP;)
       req.hold_ps = stop_ps;

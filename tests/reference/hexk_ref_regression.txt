@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_ref_regression.txt - the runs of 'make reference' and how each must end.
+# Columns, separated by |: test, seed, plusargs, verdict (PASSED, FAILED or NONE after a fatal),
+# and what the run must report: ID:W|E|F:count for each warning, error and fatal, and
+# match=REGEX for a line the log must contain (a space written as \s). Any other warning, error or
+# fatal, and any error of the simulator outside UVM, fails the run (scripts/hexk_check_run.py).
+
+hexk_ref_pass_test         | 1  | +ref_mode=mixed                    | PASSED |
+hexk_ref_pass_test         | 2  | +ref_mode=plain +ref_irq=0         | PASSED |
+hexk_ref_pass_test         | 3  | +ref_mode=scramble +ref_packets=40 | PASSED |
+hexk_ref_pass_test         | 4  | +hexk_ref_ready_percent=40         | PASSED |
+hexk_ref_vectors_test      | 5  |                                    | PASSED |
+hexk_ref_regs_test         | 6  |                                    | PASSED |
+hexk_ref_multi_test        | 7  |                                    | PASSED |
+hexk_ref_warm_reset_test   | 8  |                                    | PASSED |
+hexk_ref_ecc_test          | 9  |                                    | PASSED |
+hexk_ref_corrupt_test      | 10 |                                    | PASSED |
+hexk_ref_back_to_back_test | 13 |                                    | PASSED |
+hexk_ref_control_test      | 14 |                                    | PASSED |
+hexk_ref_control_test      | 15 | +ref_irq=0                         | PASSED |
+hexk_ref_mem_test          | 16 |                                    | PASSED |
+# A DUT that never finishes a packet: the wait for DONE and the scoreboard's time limit report it.
+hexk_ref_hang_test         | 11 |                                    | FAILED | REF_DONE:E:1 HEXK_SB_TIMEOUT:E:1 REF_MATCHED:E:1
+# A DUT that never takes a packet: only the watchdog can end the test, for inactivity, naming the input agent.
+hexk_ref_stall_test        | 12 |                                    | NONE   | HEXK_WATCHDOG:F:1 match=no\sheartbeat\sfor match=env\.in_agent:\sbusy:

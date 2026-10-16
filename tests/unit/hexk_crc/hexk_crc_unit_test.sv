@@ -65,6 +65,13 @@ module hexk_crc_unit_test;
       return crc_of(model, CHECK_MESSAGE);
    endfunction : custom_check
 
+   // CRC of the empty message with a model built from the six parameters.
+   function automatic string custom_empty(int unsigned width, longint unsigned poly, longint unsigned init, bit refin,
+                                          bit refout, longint unsigned xorout);
+      hexk_crc model = new(width, poly, init, refin, refout, xorout);
+      return crc_of(model, "");
+   endfunction : custom_empty
+
    // CRC of text fed one byte at a time, reading get() after every byte.
    function automatic string bytewise(hexk_crc model, string text);
       longint unsigned running;
@@ -151,6 +158,20 @@ module hexk_crc_unit_test;
       `FAIL_UNLESS_STR_EQUAL(custom_check(16, 64'h1021, 64'h0000, 0, 0, 64'h0000), "31c3")
       `FAIL_UNLESS_STR_EQUAL(custom_check(64, 64'h42F0_E1EB_A9EA_3693, 64'hFFFF_FFFF_FFFF_FFFF, 1, 1,
                                           64'hFFFF_FFFF_FFFF_FFFF), "995dc9bbdf1939fa")
+   `SVTEST_END
+
+   `SVTEST(input_and_output_reflection_are_independent)
+      // CRC-12/UMTS reflects the output only.
+      `FAIL_UNLESS_STR_EQUAL(custom_check(12, 64'h80F, 64'h000, 0, 1, 64'h000), "daf")
+      `FAIL_UNLESS_STR_EQUAL(custom_check(12, 64'h80F, 64'h000, 0, 0, 64'h000), "f5b")
+      `FAIL_UNLESS_STR_EQUAL(custom_check(8, 64'h07, 64'h12, 0, 1, 64'h00), "c1")
+      `FAIL_UNLESS_STR_EQUAL(custom_check(8, 64'h07, 64'h12, 1, 0, 64'h00), "73")
+   `SVTEST_END
+
+   `SVTEST(crc_of_an_empty_message_is_init_reflected_by_refout_only)
+      `FAIL_UNLESS_STR_EQUAL(custom_empty(8, 64'h07, 64'h12, 0, 1, 64'h00), "48")
+      `FAIL_UNLESS_STR_EQUAL(custom_empty(8, 64'h07, 64'h12, 1, 0, 64'h00), "12")
+      `FAIL_UNLESS_STR_EQUAL(custom_empty(8, 64'h07, 64'h12, 1, 1, 64'h0F), "47")
    `SVTEST_END
 
    `SVTEST(crc_of_an_empty_message_is_init_xor_xorout)

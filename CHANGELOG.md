@@ -8,6 +8,154 @@ minor version may change an API; such changes are listed under "Changed".
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-16
+
+Safer defaults on the way to 1.0.0, a reference testbench that checks the library from the
+outside, and fixes. The API is being settled for 1.0.0: the changes below make the safe use
+the default. Several of them change the behaviour of code written for 0.8.0; they are listed
+under "Changed". All modules are still `experimental`.
+
+### Added
+
+- `hexk_clk_rst`: `HEXK_CLK_RST_ASSERT` and `HEXK_CLK_RST_RELEASE` items, with the sequences
+  `hexk_clk_rst_assert_seq` and `hexk_clk_rst_release_seq`, so that the clock can be stopped,
+  started or changed while the reset is held (a warm reset).
+- `hexk_clk_rst`: `check_period` in the cfg (off by default) makes the monitor check every
+  interval of the clock against the period and jitter of the status, the error
+  `HEXK_CLK_RST_PERIOD`; `num_checked()` and `num_checked_at()` of the monitor count the
+  checked intervals.
+- `hexk_report_catcher::expect_check(id, count)`: one call for a check that fails on purpose;
+  it expects the messages and allows the failures in `hexk_check_stats`.
+  `hexk_report_catcher::check_unchecked()` checks every global catcher that the test did not
+  check, and `hexk_report_catcher::NO_LIMIT` names the maximum without a limit.
+- `hexk_base_test::create_cfg()`: the hook in which a block base test creates its cfg, after
+  the factory overrides of a derived test.
+- `hexk_plusarg::try_get_int()`, `try_get_bit()` and `try_get_real()`: read a plusarg without
+  reporting and say whether it was absent, valid or invalid (`hexk_plusarg::status_e`).
+- `hexk_mem_model`: the error `HEXK_MEM_UNKNOWN`. `hexk_watchdog`: the error
+  `HEXK_WATCHDOG_LIMIT`.
+- `hexk_wait_util::format_ps()`: formats a time in picoseconds as `%t` does.
+- `hexk_base_test`: `fail_on_warnings` (knob `+hexk_fail_on_warnings`, off by default) makes a
+  warning that the test did not allow with `allow_warning()` the error `HEXK_TEST_WARNING`;
+  every test has a global report catcher, `catcher`, for the messages of a negative test.
+  `hexk_warning_audit`, a listener of `hexk_report_server`, collects the warnings that were not
+  allowed.
+- `hexk_csr_util::check_reset_values(blk, include_volatile)`: with `include_volatile` 1 the
+  volatile fields are checked against their reset values too, as after a reset of a quiet block.
+- `hexk_busy_group`: a chosen group of `hexk_objectable` objects with `wait_idle()`, a wait
+  with a time limit until none of them is busy in the middle of a test; after the limit it is
+  an error with the caller's ID that names the busy members.
+- `hexk_tb_top_inc.svh` ends every simulation with a banner of the verdict of the
+  `hexk_base_test`: PASSED, FAILED or ABORTED (the simulation ended before the final phase, as
+  after a fatal) in block letters, with the counts of the last line; in colour and with a face
+  when `+hexk_report_color=1`. `hexk_base_test::get_verdict()`, `report_banner()` and
+  `banner_text()` give the verdict and the banner to a testbench top of its own.
+- A reference testbench in `tests/reference`: a complete UVM testbench of a small DUT that uses
+  most modules together, with tests that pass and tests that must fail in a given way, run by
+  `make reference SIM=questa|vcs`. `scripts/hexk_check_run.py` checks how a simulation of a
+  testbench on `hexk_base_test` ended: the verdict, the exact count of every warning, error and
+  fatal, lines that the log must contain, and no error of the simulator outside UVM; its
+  contract is `docs/regression.md`, and `--check-list` checks a list of runs before a regression.
+
+### Changed
+
+- The equality checks, `hexk_check_mask` and `hexk_check_aligned` fail when the second operand
+  has more bits than a check compares (`exp has 1101 bits ...`), as the first operand does;
+  before, its upper bits were cut and the check could pass. A second operand no wider than the
+  first always fits, also a signed one whose top bit is X or Z.
+- `hexk_clk_rst`: an assert, release or reset item at a rising edge is done when the pin has
+  changed, in the same time step; before, the sequence could return just before.
+- `hexk_report_catcher::expect_check()` compares the ID as text, so an ID with characters such
+  as `.` or `[` matches only itself.
+- `hexk_enum_util::name()` finds a member whose value has X or Z bits.
+- `scripts/hexk_check_run.py` also rejects a coloured report, and a report of UVM without a file
+  and line, after the summary table.
+- `hexk_clk_rst` and `hexk_valid_ready`: `ap` (and `cycle_ap`) of the agent are the ports of
+  its monitor, set in the build phase, no longer ports of their own created with the agent:
+  connect to them in the connect phase, as before; they are null before the build phase.
+- `hexk_csr_util`: every access takes the sequence it belongs to as an optional last argument
+  (`seq`), which becomes its parent sequence; without it the member `parent` is used, as
+  before. One object can so serve every sequence of an environment.
+- `hexk_csr_util::bit_bash()` randomizes the bit-bash sequence before it starts it, so that a
+  factory override with random members gets random values; a failed randomization is the fatal
+  `HEXK_CSR_RAND`.
+- `hexk_scoreboard` builds the text of a mismatch with its item dumps only when the error is
+  printed.
+- The drivers and monitors of the agents, `hexk_watchdog` and `hexk_delay_analysis_fifo` call
+  `super.run_phase()` first, as the examples now do in every phase method they override.
+- Examples: the coverage example samples its data coverage in a `uvm_subscriber` fed by a
+  `uvm_monitor`; the delayed-FIFO example creates the FIFO through the factory; the scoreboard
+  predictor example no longer waits a fixed 1 ns at the end of the test.
+- `hexk_report_server`: the contract states that the counts of `get_count()`, the summary table
+  and the first error start with `install()`, while the counts of UVM are carried over.
+- The equality checks (`hexk_check_eq`, `_ne`, `_case_eq`), `hexk_check_mask` and
+  `hexk_check_aligned` fail when the second operand does not fit the width of the first as an
+  unsigned or a signed number, with a message that says so, instead of cutting it:
+  `` `hexk_check_eq(byte_value, 256, ...) `` no longer passes for 0. -1, `'1` and `8'hFF`
+  against a byte still fit.
+- `hexk_check_obj_eq(act, exp)` calls `exp.compare(act)`, as the scoreboard does, so that the
+  expected object decides, for instance with the tolerance of a `hexk_value_wrapper`.
+- `hexk_report_catcher::expect_msg()` without a maximum expects exactly the minimum, one by
+  default: an error storm no longer passes. Give `NO_LIMIT` for no maximum. `hexk_base_test`
+  checks the expectations of the global catchers in its report phase.
+- `hexk_scoreboard`: the latency of a pair whose actual item came first runs from the timestamp
+  of the expected item to the arrival of the actual item, instead of being 0.
+- `hexk_scoreboard` takes its cfg from `uvm_config_db` (`"cfg"`) when none is assigned, as the
+  agents do.
+- `hexk_mem_model`: `addr_t` and `strobe_t` are four-state; an address or byte enable with an
+  X or Z bit is the error `HEXK_MEM_UNKNOWN` and the access is not carried out, instead of an
+  access at address 0.
+- `hexk_clk_rst_op_e` has three bits.
+- The agents create their items under the hierarchical name of the sequencer
+  (`<sequencer path>.req`) or monitor (`<monitor path>.item`), so that a factory instance
+  override can change the items of one agent.
+- `hexk_csr_util::poll_interval_ps` is 100 ns by default instead of 0.
+- The protocol errors of `hexk_valid_ready_if` start with the name of the assertion in its
+  interface instance.
+- `hexk_watchdog`: a limit that ends after `hexk_wait_util::LAST_PS` is the error
+  `HEXK_WATCHDOG_LIMIT`, and is off, instead of never firing without a word. An assignment of
+  `inactivity_limit_ps` during the run counts from then, like `set_inactivity_limit()`.
+- `hexk_knobs`: a plusarg of an integer or bit knob that cannot be read is the error
+  `HEXK_KNOBS_VALUE`, and a set function can still change the knob; it was a `$error` outside
+  UVM reporting, and the knob kept the default as its command-line value.
+- `hexk_regex` without the regex DPI code of UVM: an expression without an operator means
+  what it means with it (`"^ID$"` is "equals", `"ID"` is "contains").
+- The members of the sequences start at their defaults, so a sequence started without
+  `randomize()` sends one item, holds the reset for 5 edges, and so on.
+- `+hexk_timeout`, `+hexk_report_time_unit` and `+hexk_report_style` given without a value or
+  with an empty one are an error or a warning like any other wrong value.
+
+### Fixed
+
+- `+hexk_report_color` with a value that is not a bit value is the warning `HEXK_REPORT_CFG`
+  and keeps the colour setting, as for the other report plusargs; it was an error without an ID.
+- `hexk_objection_aggregator::report_busy()` indents the further lines of a reason given to
+  `raise()` by four spaces, as it did already for the reason of a busy object.
+- On Questa, a `hexk_scoreboard` specialized in a package for an item class of that package read
+  the time in the time unit of that package instead of picoseconds: with a unit of 1 ns its time
+  limit `max_wait_ps` lasted 1000 times longer and its latencies were 1000 times shorter.
+  `hexk_scoreboard`, `hexk_meta_item` and `hexk_delay_analysis_fifo` read and format the time
+  through `hexk_wait_util` now.
+- On Verilator, a bit check (`hexk_check_eq` and the others that compare bits) whose first
+  operand calls a method of the class did not compile.
+- `hexk_tb_top_inc.svh` passes `+UVM_TESTNAME` to `run_test()`, so that the test is found where
+  UVM does not read the command line itself, as on Verilator.
+- The `TEST FAILED` line of `hexk_base_test` said that checks "failed without an error" also when
+  they had reported their errors; it says so only when there is no error and no fatal.
+- `+hexk_rand_once_trap` was taken as given, and matched an object without a name, when the
+  plusarg was absent.
+- The contracts match the code: the weighted mode of `hexk_delay_cfg` needs its weights given
+  after a randomization; `HEXK_NO_CHECK_STATS` removes the counting of the macros only;
+  `idle_data_x` of a valid/ready cfg is read at every transfer; the texts of `hexk_uid` can
+  repeat after `HEXK_UID_LENGTH`; the `@emits` of `hexk_report_server` lists
+  `HEXK_REPORT_CFG`; the indexed analysis imp has parameter defaults and `get_type_name()`;
+  the delayed FIFO keeps one queue; a typedef of a struct was cut short in the generated API
+  section; a type declared inside a class is internal unless its contract names it.
+
+Tested as 0.8.0 was, and with the reference testbench on Questa 2024.1 and VCS X-2025.06,
+each with UVM 1.2 and UVM 2020.3.1. See "Where it has been tested" in the README for the
+numbers. Nothing has been run on Xcelium.
+
 ## [0.8.0] - 2026-10-15
 
 Register accesses for any register model (`hexk_csr_util`), a time limit for items that wait
@@ -154,6 +302,7 @@ Verilator 5.046) and on Questa 2024.1 and VCS X-2025.06, each with UVM 1.2 and U
 (unit tests, every example, the smoke testbench). See "Where it has been tested" in the
 README for the numbers and the limits on Verilator. Nothing has been run on Xcelium.
 
-[Unreleased]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hexkDotCom/hexk-sv-lib/releases/tag/v0.7.0

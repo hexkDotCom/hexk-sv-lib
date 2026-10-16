@@ -67,6 +67,14 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
    // Seed of the jitter; 0 derives one from the name of the agent and the seed of the simulation.
    int unsigned            jitter_seed    = 0;
 
+   // 1: the monitor checks the time between every two rising edges of the clock against the clock of the status,
+   // within twice its jitter (HEXK_CLK_RST_PERIOD); an interval that starts or ends in reset, in which the status
+   // changed, or across a stop of the clock is not checked. Set it before the run phase; clearing it during the run
+   // ends the check for the rest of the run.
+   bit                     check_period   = 0;
+
+   `uvm_object_utils(hexk_clk_rst_agent_cfg)
+
    // What every legal cfg keeps: exactly the clocks for which illegal_reason() is empty. The high time is
    // period_ps * duty_percent / 100 rounded down, as high_time_ps() gives it, and the low time is the rest of
    // the period. The lines below say "high time >= 1", "jitter <= high time / JITTER_DIVISOR" and
@@ -87,8 +95,6 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
       soft jitter_ps == 0;
       soft phase_ps == 0;
    }
-
-   `uvm_object_utils(hexk_clk_rst_agent_cfg)
 
    // Creates a cfg for an active agent with a clock of 100 MHz and a reset that is active low.
    function new(string name = "hexk_clk_rst_agent_cfg");
@@ -152,12 +158,13 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
           "period_ps=%0d duty_percent=%0d jitter_ps=%0d phase_ps=%0d", period_ps, duty_percent, jitter_ps, phase_ps
       );
       return $sformatf(
-          "%s %s active_low=%0b start_clock=%0b reset_at_start=%0b",
+          "%s %s active_low=%0b start_clock=%0b reset_at_start=%0b check_period=%0b",
           is_active.name(),
           clock,
           rst_active_low,
           start_clock,
-          reset_at_start
+          reset_at_start,
+          check_period
       );
    endfunction : convert2string
 
@@ -180,6 +187,7 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
       start_clock    = other.start_clock;
       reset_at_start = other.reset_at_start;
       jitter_seed    = other.jitter_seed;
+      check_period   = other.check_period;
    endfunction : do_copy
 
 endclass : hexk_clk_rst_agent_cfg

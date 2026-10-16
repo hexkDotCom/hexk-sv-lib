@@ -10,13 +10,16 @@
 // their full name, through the resources of UVM (REG::<name> with NO_REG_TESTS,
 // NO_REG_HW_RESET_TEST or NO_REG_BIT_BASH_TEST), which the register sequences of UVM honour
 // as well. One object holds what every access needs: map, parent sequence, path, poll
-// interval and time limit. It knows the accesses that are in flight and is a
-// hexk_objectable, so an objection aggregator keeps a phase alive while one is.
+// interval and time limit. Every access takes the sequence it belongs to as its last argument,
+// seq, so that one object serves all sequences: the access then has that sequence as its
+// parent, and without one the member parent. It knows the accesses that are in flight and is
+// a hexk_objectable, so an objection aggregator keeps a phase alive while one is.
 //
 //! @module    hexk_csr_util
 //! @since     0.8.0
 //! @stability experimental
 //! @emits     HEXK_CSR_STATUS:error HEXK_CSR_NULL:error HEXK_CSR_RESET:error HEXK_CSR_RESET_DONE:info
+//! @emits     HEXK_CSR_RAND:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_CSR_UTIL_SV
@@ -41,7 +44,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
    // The map of the accesses; null takes the default map of each register.
    uvm_reg_map            map;
 
-   // The sequence the accesses belong to, for their priority and their messages; null for none.
+   // The sequence of an access that names none (seq), for its priority and its messages; null for none.
    uvm_sequence_base      parent;
 
    // The path of the accesses; UVM_DEFAULT_PATH takes that of the register block.
@@ -50,8 +53,8 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
    // The component whose name the messages carry; null reports through the top of UVM.
    uvm_component          reporter;
 
-   // Picoseconds between two reads of a spin-wait; 0 reads again as soon as a read is done.
-   longint unsigned       poll_interval_ps             = 0;
+   // Picoseconds between two reads of a spin-wait (100 ns); 0 reads again as soon as a read is done.
+   longint unsigned       poll_interval_ps             = 100_000;
 
    // Longest time in picoseconds that a spin-wait polls; 0 means no limit.
    longint unsigned       timeout_ps                   = 1_000_000_000;
@@ -72,8 +75,8 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       super.new(name);
    endfunction : new
 
-   // Writes a register; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS.
-   task write(uvm_reg rg, uvm_reg_data_t value);
+   // Writes a register, as part of seq; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS.
+   task write(uvm_reg rg, uvm_reg_data_t value, uvm_sequence_base seq = null);
       uvm_status_e     status;
       longint unsigned serial;
       if (rg == null) begin
@@ -81,24 +84,26 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
          return;
       end
       serial = start_access("write of", rg.get_full_name());
-      rg.write(status, value, path, map, parent);
+      rg.write(status, value, path, map, parent_of(seq));
       finish_access(serial);
       void'(status_ok(status, "write", rg.get_full_name()));
    endtask : write
 
-   // Reads a register; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS, and value is then what UVM gave.
-   task read(uvm_reg rg, output uvm_reg_data_t value);
+   // Reads a register, as part of seq; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS, and value is then
+   // what UVM gave.
+   task read(uvm_reg rg, output uvm_reg_data_t value, input uvm_sequence_base seq = null);
       bit ok;
       value = 0;
       if (rg == null) begin
          report_null("read", "register");
          return;
       end
-      read_reg(rg, value, ok);
+      read_reg(rg, value, ok, seq);
    endtask : read
 
-   // Writes a field the way UVM writes a field: alone where the map allows it, otherwise read, change, write.
-   task write_field(uvm_reg_field field, uvm_reg_data_t value);
+   // Writes a field the way UVM writes a field, as part of seq: alone where the map allows it, otherwise read,
+   // change, write.
+   task write_field(uvm_reg_field field, uvm_reg_data_t value, uvm_sequence_base seq = null);
       uvm_status_e     status;
       longint unsigned serial;
       if (field == null) begin
@@ -106,26 +111,26 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
          return;
       end
       serial = start_access("write of", field.get_full_name());
-      field.write(status, value, path, map, parent);
+      field.write(status, value, path, map, parent_of(seq));
       finish_access(serial);
       void'(status_ok(status, "write", field.get_full_name()));
    endtask : write_field
 
-   // Reads the register of a field and gives the value of the field.
-   task read_field(uvm_reg_field field, output uvm_reg_data_t value);
+   // Reads the register of a field, as part of seq, and gives the value of the field.
+   task read_field(uvm_reg_field field, output uvm_reg_data_t value, input uvm_sequence_base seq = null);
       bit ok;
       value = 0;
       if (field == null) begin
          report_null("read_field", "field");
          return;
       end
-      read_reg(field.get_parent(), value, ok);
+      read_reg(field.get_parent(), value, ok, seq);
       value = field_value(field, value);
    endtask : read_field
 
-   // Reads a register and checks the bits of mask against exp; a difference is an error with the caller's ID.
-   // Counted in hexk_check_stats under that ID; a failed access counts as a failed check.
-   task read_check(uvm_reg rg, uvm_reg_data_t exp, string id, uvm_reg_data_t mask = '1);
+   // Reads a register, as part of seq, and checks the bits of mask against exp; a difference is an error with the
+   // caller's ID. Counted in hexk_check_stats under that ID; a failed access counts as a failed check.
+   task read_check(uvm_reg rg, uvm_reg_data_t exp, string id, uvm_reg_data_t mask = '1, uvm_sequence_base seq = null);
       uvm_reg_data_t value;
       bit            ok;
       if (rg == null) begin
@@ -133,7 +138,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
          hexk_check_stats::record_fail(id);
          return;
       end
-      read_reg(rg, value, ok);
+      read_reg(rg, value, ok, seq);
       if (ok && (value & mask) == (exp & mask)) begin
          hexk_check_stats::record_pass(id);
          return;
@@ -145,9 +150,9 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       end
    endtask : read_check
 
-   // Reads the register of a field and checks the field against exp; a difference is an error with the caller's
-   // ID. Counted in hexk_check_stats under that ID.
-   task read_field_check(uvm_reg_field field, uvm_reg_data_t exp, string id);
+   // Reads the register of a field, as part of seq, and checks the field against exp; a difference is an error with
+   // the caller's ID. Counted in hexk_check_stats under that ID.
+   task read_field_check(uvm_reg_field field, uvm_reg_data_t exp, string id, uvm_sequence_base seq = null);
       uvm_reg_data_t value;
       bit            ok;
       if (field == null) begin
@@ -155,7 +160,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
          hexk_check_stats::record_fail(id);
          return;
       end
-      read_reg(field.get_parent(), value, ok);
+      read_reg(field.get_parent(), value, ok, seq);
       value = field_value(field, value);
       if (ok && value == exp) begin
          hexk_check_stats::record_pass(id);
@@ -167,20 +172,22 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       end
    endtask : read_field_check
 
-   // Reads a register until the bits of mask equal those of exp; seen is 1 when they did. After timeout_ps
-   // without that, or when time does not pass between the reads, it is an error with the caller's ID.
-   task spinwait(uvm_reg rg, uvm_reg_data_t exp, uvm_reg_data_t mask, string id, output bit seen);
+   // Reads a register, as part of seq, until the bits of mask equal those of exp; seen is 1 when they did. After
+   // timeout_ps without that, or when time does not pass between the reads, it is an error with the caller's ID.
+   task spinwait(uvm_reg rg, uvm_reg_data_t exp, uvm_reg_data_t mask, string id, output bit seen,
+                 input uvm_sequence_base seq = null);
       seen = 0;
       if (rg == null) begin
          report_null("spinwait", "register");
          return;
       end
-      poll(rg, exp & mask, mask, 0, rg.get_full_name(), id, seen);
+      poll(rg, exp & mask, mask, 0, rg.get_full_name(), id, seen, seq);
    endtask : spinwait
 
-   // Reads the register of a field until the field equals exp; seen is 1 when it did. As spinwait(). A value that
-   // does not fit the field can never be read: an error with the caller's ID at once, without a read.
-   task spinwait_field(uvm_reg_field field, uvm_reg_data_t exp, string id, output bit seen);
+   // Reads the register of a field, as part of seq, until the field equals exp; seen is 1 when it did. As
+   // spinwait(). A value that does not fit the field can never be read: an error with the caller's ID at once.
+   task spinwait_field(uvm_reg_field field, uvm_reg_data_t exp, string id, output bit seen,
+                       input uvm_sequence_base seq = null);
       uvm_reg_data_t mask;
       seen = 0;
       if (field == null) begin
@@ -194,14 +201,16 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       end
       mask = field_value(field, '1) << field.get_lsb_pos();
       poll(field.get_parent(), (exp << field.get_lsb_pos()) & mask, mask, field.get_lsb_pos(), field.get_full_name(),
-           id, seen);
+           id, seen, seq);
    endtask : spinwait_field
 
    // Reads every register of a block and of its sub-blocks once and compares each field whose reset value can be
    // read back with that value: one error HEXK_CSR_RESET per register with the wrong fields, then the summary
    // HEXK_CSR_RESET_DONE. Left out: excluded registers, fields and blocks, registers that are not in the map,
-   // and fields that have no reset value, are volatile, cannot be read or have no check.
-   task check_reset_values(uvm_reg_block blk);
+   // and fields that have no reset value, are volatile, cannot be read or have no check. With include_volatile a
+   // volatile field is checked too, although UVM gives every volatile field UVM_NO_CHECK: for a block that is quiet
+   // after a reset, whose counters and status bits must be at their reset values. The reads are part of seq.
+   task check_reset_values(uvm_reg_block blk, bit include_volatile = 0, uvm_sequence_base seq = null);
       uvm_reg      regs        [$];
       bit          was_checked;
       bit          was_wrong;
@@ -214,7 +223,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       end
       blk.get_registers(regs);
       foreach (regs[i]) begin
-         check_reset_of(regs[i], blk, was_checked, was_wrong);
+         check_reset_of(regs[i], blk, include_volatile, seq, was_checked, was_wrong);
          if (was_checked) begin
             checked++;
             wrong += was_wrong;
@@ -231,19 +240,20 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
              ), UVM_LOW);
    endtask : check_reset_values
 
-   // Runs the bit-bash sequence of UVM on a block, in the sequence parent; it honours the exclusions and reports
-   // under its own ID.
-   task bit_bash(uvm_reg_block blk);
+   // Runs the bit-bash sequence of UVM on a block, below seq (or the member parent); it honours the exclusions and
+   // reports under its own ID.
+   task bit_bash(uvm_reg_block blk, uvm_sequence_base seq = null);
       uvm_reg_bit_bash_seq bit_bash_seq;
       longint unsigned     serial;
       if (blk == null) begin
          report_null("bit_bash", "block");
          return;
       end
-      bit_bash_seq       = uvm_reg_bit_bash_seq::type_id::create("bit_bash_seq");
+      bit_bash_seq = uvm_reg_bit_bash_seq::type_id::create("bit_bash_seq");
+      `hexk_randomize_or_fatal(bit_bash_seq, "HEXK_CSR_RAND")
       bit_bash_seq.model = blk;
       serial             = start_access("bit-bash of", blk.get_full_name());
-      bit_bash_seq.start(null, parent);
+      bit_bash_seq.start(null, parent_of(seq));
       finish_access(serial);
    endtask : bit_bash
 
@@ -295,7 +305,8 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
 
    // Checks the reset value of one register: checked is 0 when it is left out, wrong is 1 when a field differs or
    // the read failed.
-   local task check_reset_of(uvm_reg rg, uvm_reg_block top, output bit checked, output bit wrong);
+   local task check_reset_of(uvm_reg rg, uvm_reg_block top, bit include_volatile, uvm_sequence_base seq,
+                             output bit checked, output bit wrong);
       uvm_reg_field  fields   [$];
       uvm_reg_field  used     [$];
       string         diffs    [$];
@@ -310,7 +321,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       end
       rg.get_fields(fields);
       foreach (fields[i]) begin
-         if (reset_readable(fields[i])) begin
+         if (reset_readable(fields[i], include_volatile)) begin
             used.push_back(fields[i]);
          end
       end
@@ -318,7 +329,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
          return;
       end
       checked = 1;
-      read_reg(rg, value, ok);
+      read_reg(rg, value, ok, seq);
       if (!ok) begin
          hexk_check_stats::record_fail("HEXK_CSR_RESET");
          wrong = 1;
@@ -343,15 +354,15 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
 
    // A spin-wait, which is in flight from its start to its end, also between its reads.
    local task poll(uvm_reg rg, uvm_reg_data_t want, uvm_reg_data_t mask, int unsigned lsb, string name, string id,
-                   output bit seen);
+                   output bit seen, input uvm_sequence_base seq);
       longint unsigned serial = start_access("spin-wait on", name);
-      poll_reads(rg, want, mask, lsb, name, id, seen);
+      poll_reads(rg, want, mask, lsb, name, id, seen, seq);
       finish_access(serial);
    endtask : poll
 
    // The reads of a spin-wait: until the bits of mask are want (already masked), the time limit, or a failed read.
    local task poll_reads(uvm_reg rg, uvm_reg_data_t want, uvm_reg_data_t mask, int unsigned lsb, string name, string id,
-                         output bit seen);
+                         output bit seen, input uvm_sequence_base seq);
       uvm_reg_data_t   value;
       bit              ok;
       longint unsigned start_ps = $time;
@@ -363,7 +374,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       seen = 0;
       forever begin
          before_ps = $time;
-         read_reg(rg, value, ok);
+         read_reg(rg, value, ok, seq);
          if (!ok) begin
             return;
          end
@@ -401,14 +412,19 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       end
    endtask : poll_reads
 
-   // Reads a register with the settings of this object; ok is 0 after a status other than UVM_IS_OK.
-   local task read_reg(uvm_reg rg, output uvm_reg_data_t value, output bit ok);
+   // Reads a register with the settings of this object, as part of seq; ok is 0 after a status other than UVM_IS_OK.
+   local task read_reg(uvm_reg rg, output uvm_reg_data_t value, output bit ok, input uvm_sequence_base seq);
       uvm_status_e     status;
       longint unsigned serial = start_access("read of", rg.get_full_name());
-      rg.read(status, value, path, map, parent);
+      rg.read(status, value, path, map, parent_of(seq));
       finish_access(serial);
       ok = status_ok(status, "read", rg.get_full_name());
    endtask : read_reg
+
+   // The parent sequence of an access: seq, or the member parent when the caller named none.
+   local function uvm_sequence_base parent_of(uvm_sequence_base seq);
+      return (seq != null) ? seq : parent;
+   endfunction : parent_of
 
    // 1 for UVM_IS_OK; otherwise the error HEXK_CSR_STATUS and 0.
    local function bit status_ok(uvm_status_e status, string kind, string name);
@@ -436,14 +452,13 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       return rg.get_rights(map) != "WO";
    endfunction : reset_readable_reg
 
-   // 1 when a field takes part in the reset check: it has a reset value of reset_kind, is not volatile, can be
-   // read, is compared, and is not excluded.
-   local function bit reset_readable(uvm_reg_field field);
+   // 1 when a field takes part in the reset check: it has a reset value of reset_kind, can be read, is not
+   // excluded, and is either volatile with include_volatile or not volatile and compared.
+   local function bit reset_readable(uvm_reg_field field, bit include_volatile);
       // A variable and not an operand of &&: Verilator 5.046 miscompiles "inside" as an operand of a logical operator.
       bit write_only = field.get_access(map) inside {"WO", "WOC", "WOS", "WO1", "NOACCESS"};
-      if (write_only || !field.has_reset(
-              reset_kind
-          ) || field.is_volatile() || field.get_compare() == UVM_NO_CHECK) begin
+      bit compared = field.is_volatile() ? include_volatile : field.get_compare() != UVM_NO_CHECK;
+      if (write_only || !field.has_reset(reset_kind) || !compared) begin
          return 0;
       end
       return !is_excluded(field.get_full_name(), HEXK_CSR_RESET_CHECK);
@@ -494,6 +509,7 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       if (target == null) begin
          target = uvm_root::get();
       end
+      // FAC-9 waived: the severity is a variable, and the _context macros of UVM 1.2 fail slang -Wint-bool-conv.
       if (target.uvm_report_enabled(verbosity, severity, id) != 0) begin
          target.uvm_report(severity, id, text, verbosity, `uvm_file, `uvm_line, "", 1);
       end

@@ -60,6 +60,7 @@ module hexk_clk_rst_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          forever begin
             clk_rst_agent.status.reset_asserted.wait_trigger();
             `uvm_info("EXAMPLE", "the reset is asserted: a scoreboard drops its items here", UVM_NONE)

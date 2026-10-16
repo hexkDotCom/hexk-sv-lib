@@ -22,7 +22,7 @@
 class hexk_clk_rst_reset_seq extends uvm_sequence #(hexk_clk_rst_item);
 
    // Rising edges of the clock for which the reset is held.
-   rand int unsigned     hold_cycles;
+   rand int unsigned     hold_cycles  = 5;
 
    // Time in picoseconds for which the reset is held after the edges.
    rand longint unsigned hold_ps;
@@ -31,7 +31,9 @@ class hexk_clk_rst_reset_seq extends uvm_sequence #(hexk_clk_rst_item);
    rand bit              sync_assert;
 
    // 1: released at a rising edge of the clock; 0: released when the hold is over.
-   rand bit              sync_release;
+   rand bit              sync_release = 1;
+
+   `uvm_object_utils(hexk_clk_rst_reset_seq)
 
    // What a plain randomize() gives; a test overrides what it wants different.
    constraint default_values_cstr {
@@ -41,8 +43,6 @@ class hexk_clk_rst_reset_seq extends uvm_sequence #(hexk_clk_rst_item);
       soft sync_release == 1;
    }
 
-   `uvm_object_utils(hexk_clk_rst_reset_seq)
-
    // Creates the sequence.
    function new(string name = "hexk_clk_rst_reset_seq");
       super.new(name);
@@ -50,7 +50,8 @@ class hexk_clk_rst_reset_seq extends uvm_sequence #(hexk_clk_rst_item);
 
    // Sends one reset item; returns when the reset is released.
    task body();
-      req = hexk_clk_rst_item::type_id::create("req");
+      // Under the name of the sequencer, so that a factory override of one agent's items can name its path.
+      req = hexk_clk_rst_item::type_id::create("req", null, get_sequencer().get_full_name());
       start_item(req);
       `hexk_randomize_with_or_fatal(req, "HEXK_CLK_RST_RAND", op == HEXK_CLK_RST_RESET;)
       req.hold_cycles  = hold_cycles;

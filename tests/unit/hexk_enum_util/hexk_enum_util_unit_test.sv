@@ -40,6 +40,12 @@ module hexk_enum_util_unit_test;
       HEXK_UT_WIDE_ONE = 65'h0_0000_0000_0000_0001,
       HEXK_UT_WIDE_TOP = 65'h1_0000_0000_0000_0000
    } hexk_ut_wide_e;
+
+   // Enum of a four-state type with a member whose value is X; variables have two states on Verilator.
+   typedef enum logic {
+      HEXK_UT_STATE_ZERO    = 1'b0,
+      HEXK_UT_STATE_UNKNOWN = 1'bx
+   } hexk_ut_state_e;
 `endif
 
    string          name = "hexk_enum_util_ut";
@@ -214,6 +220,13 @@ module hexk_enum_util_unit_test;
       `FAIL_UNLESS_STR_EQUAL(wide_map(), "2;ONE=1;TOP=10000000000000000")
       `FAIL_UNLESS_STR_EQUAL(bit_text(hexk_enum_util#(hexk_ut_wide_e)::is_member(0)), "0")
       `FAIL_UNLESS_STR_EQUAL(bit_text(hexk_enum_util#(hexk_ut_wide_e)::is_member(1)), "1")
+   `SVTEST_END
+
+   // Variables have two states on Verilator, so the enum with an X member and its test are left out there.
+   `SVTEST(name_finds_a_member_whose_value_has_x_bits)
+      `FAIL_UNLESS_STR_EQUAL(hexk_enum_util#(hexk_ut_state_e)::name(HEXK_UT_STATE_UNKNOWN), "HEXK_UT_STATE_UNKNOWN")
+      `FAIL_UNLESS_STR_EQUAL(hexk_enum_util#(hexk_ut_state_e)::name(HEXK_UT_STATE_ZERO), "HEXK_UT_STATE_ZERO")
+      `FAIL_UNLESS_STR_EQUAL(hexk_enum_util#(hexk_ut_state_e)::name(hexk_ut_state_e'(1'b1)), "")
    `SVTEST_END
 `endif
 

@@ -3,7 +3,8 @@
 ## 1. Summary
 
 Clock and reset agent: an interface that generates one clock and one reset, and a UVM agent
-that changes them from sequences (reset, frequency, stop and start) and tells the testbench
+that changes them from sequences (reset, assert and release of the reset, frequency, stop and
+start) and tells the testbench
 when the reset is asserted and released.
 
 ## 2. When to use / when not to use
@@ -33,7 +34,9 @@ rule IFC-2 asks for one place).
 - `src/agents/hexk_clk_rst/hexk_clk_rst_monitor.sv`
 - `src/agents/hexk_clk_rst/hexk_clk_rst_pkg.sv`
 - `src/agents/hexk_clk_rst/hexk_clk_rst_status.sv`
+- `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_assert_seq.sv`
 - `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_clock_seq.sv`
+- `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_release_seq.sv`
 - `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_reset_seq.sv`
 - `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_start_seq.sv`
 - `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_stop_seq.sv`
@@ -44,16 +47,16 @@ rule IFC-2 asks for one place).
 From `src/agents/hexk_clk_rst/hexk_clk_rst_agent.sv`:
 
 ```systemverilog
-// Creates the agent, its port and its status; the children are created in build_phase.
+// Creates the agent and its status; the children, and with the monitor the port, come in build_phase.
 function new(string name, uvm_component parent);
 // UVM callback: checks the cfg and its interface, creates the monitor and, in active mode, sequencer and driver.
 function void build_phase(uvm_phase phase);
-// UVM callback: connects the driver to the sequencer and the port of the monitor to the port of the agent.
+// UVM callback: connects the driver to the sequencer.
 function void connect_phase(uvm_phase phase);
 // UVM callback: tells the interface the mode, the active level of the reset and the seed of the jitter.
 function void start_of_simulation_phase(uvm_phase phase);
 // UVM hook: the mode of the cfg.
-virtual function uvm_active_passive_enum get_is_active();
+function uvm_active_passive_enum get_is_active();
 // hexk_clk_countable: number of rising edges of the clock so far.
 virtual function longint unsigned get_clk_count();
 // hexk_clk_countable: waits for n rising edges of the clock; returns at once when n is 0.
@@ -111,7 +114,7 @@ task automatic wait_stopped();
 function automatic logic pin_value(bit active);
 // Asserts (1) or releases (0) the reset at once.
 function automatic void drive_reset(bit active);
-// Asserts or releases the reset in the time step of a rising edge, after the edge: the DUT sees it at the next edge. With wait_for_edge it waits for the next rising edge first; without, the caller is at an edge.
+// Asserts or releases the reset in the time step of a rising edge, after the edge: the DUT sees it at the next edge. With wait_for_edge it waits for the next rising edge first; without, the caller is at an edge. Returns when the pin has its new value, still in that time step.
 task automatic drive_reset_at_edge(bit active, bit wait_for_edge);
 // 1 when the pin has a level; active then says whether the reset is asserted.
 function automatic bit get_reset(output bit active);
@@ -121,6 +124,8 @@ task automatic wait_reset_change();
 task automatic wait_ps(longint unsigned duration_ps);
 // Number of rising edges of clk since the start of the simulation.
 function automatic longint unsigned get_clk_count();
+// Number of times the generator started the clock; a check of the period skips the interval across a stop.
+function automatic int unsigned get_start_count();
 // Waits for n rising edges of clk; returns at once when n is 0.
 task automatic wait_clks(int unsigned n);
 ```
@@ -151,15 +156,19 @@ From `src/agents/hexk_clk_rst/hexk_clk_rst_monitor.sv`:
 function new(string name, uvm_component parent);
 // UVM callback: takes the interface from the cfg; the agent has checked both.
 function void connect_phase(uvm_phase phase);
-// UVM callback: reports every change of the reset between asserted and released. A reset that is asserted at the start is reported; a pin without a level is neither and changes nothing.
+// UVM callback: watches the reset and, with cfg.check_period, the clock.
 task run_phase(uvm_phase phase);
+// Number of intervals of the clock that were checked.
+function int unsigned num_checked();
+// Number of intervals of the clock that were checked while the status gave the period period_ps.
+function int unsigned num_checked_at(longint unsigned period_ps);
 ```
 
 From `src/agents/hexk_clk_rst/hexk_clk_rst_pkg.sv`:
 
 ```systemverilog
 // What an item asks the driver to do; an item of the monitor is always HEXK_CLK_RST_RESET.
-typedef enum bit [1:0] { HEXK_CLK_RST_RESET, HEXK_CLK_RST_CLOCK, HEXK_CLK_RST_STOP, HEXK_CLK_RST_START } hexk_clk_rst_op_e;
+typedef enum bit [2:0] { HEXK_CLK_RST_RESET, HEXK_CLK_RST_CLOCK, HEXK_CLK_RST_STOP, HEXK_CLK_RST_START, HEXK_CLK_RST_ASSERT, HEXK_CLK_RST_RELEASE } hexk_clk_rst_op_e;
 ```
 
 From `src/agents/hexk_clk_rst/hexk_clk_rst_status.sv`:
@@ -175,12 +184,30 @@ function real get_freq_mhz();
 function string convert2string();
 ```
 
+From `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_assert_seq.sv`:
+
+```systemverilog
+// Creates the sequence.
+function new(string name = "hexk_clk_rst_assert_seq");
+// Sends one assert item; returns when the reset is asserted.
+task body();
+```
+
 From `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_clock_seq.sv`:
 
 ```systemverilog
 // Creates the sequence.
 function new(string name = "hexk_clk_rst_clock_seq");
 // Sends one clock item; returns at the rising edge from which the new clock holds.
+task body();
+```
+
+From `src/agents/hexk_clk_rst/sequences/hexk_clk_rst_release_seq.sv`:
+
+```systemverilog
+// Creates the sequence.
+function new(string name = "hexk_clk_rst_release_seq");
+// Sends one release item; returns when the reset is released.
 task body();
 ```
 
@@ -235,14 +262,16 @@ Types, signals and members that the listing above does not show:
 | `HEXK_CLK_RST_CLOCK` | give the clock a new period, duty cycle and jitter |
 | `HEXK_CLK_RST_STOP` | stop the clock, and start it again after `hold_ps` if that is above 0 |
 | `HEXK_CLK_RST_START` | start the clock |
+| `HEXK_CLK_RST_ASSERT` | assert the reset and leave it asserted |
+| `HEXK_CLK_RST_RELEASE` | release the reset |
 
 | Member of `hexk_clk_rst_item` | Used by | Meaning |
 |---|---|---|
 | `rand hexk_clk_rst_op_e op` | all | What the driver does. |
 | `rand int unsigned hold_cycles` | reset | Rising edges for which the reset is held. |
 | `rand longint unsigned hold_ps` | reset, stop | Time for which the reset is held after the edges; time after which a stopped clock starts again. |
-| `rand bit sync_assert` | reset | 1: asserted at the next rising edge; 0: at once. |
-| `rand bit sync_release` | reset | 1: released at a rising edge; 0: when the hold is over. |
+| `rand bit sync_assert` | reset, assert | 1: asserted at the next rising edge; 0: at once. |
+| `rand bit sync_release` | reset, release | 1: released at a rising edge (of a reset item: the edge that ends the hold); 0: at once, or when the hold is over. |
 | `rand longint unsigned period_ps` | clock | Period. |
 | `rand int unsigned duty_percent` | clock | Share of the period in which the clock is high. |
 | `rand longint unsigned jitter_ps` | clock | Largest distance of a rising edge from its ideal time. |
@@ -253,7 +282,9 @@ The agent has the members `cfg`, `status`, `sqr`, `drv`, `mon` and `ap`; the mem
 cfg and of the sequences are in section 5. The agent implements
 `hexk_uvm_pkg::hexk_clk_countable`.
 
-`hexk_clk_rst_status`, the member `status` of the agent, holds what changes during the run:
+`hexk_clk_rst_status`, the member `status` of the agent, holds what changes during the run.
+Its members are read-only for the testbench: the agent writes them, and a value written by
+the testbench changes what the status says, not the clock or the reset.
 
 | Member | Meaning |
 |---|---|
@@ -312,9 +343,16 @@ The clock, in active mode:
   then stays 0; a stop during the low time takes effect at the end of that low time, without
   a rising edge. The item is done when the clock has stopped. With `hold_ps` above 0 the
   driver starts the clock again after that time, and the item is done at the first rising
-  edge. A stop of a stopped clock does nothing.
+  edge. A stop without `hold_ps` of a stopped clock does nothing; one with `hold_ps` keeps
+  the clock stopped for that time and then starts it.
 - **Start** (`HEXK_CLK_RST_START`): the next rising edge comes one low time of the period
   after the start. The item is done at that edge. A start of a running clock does nothing.
+- **Assert** (`HEXK_CLK_RST_ASSERT`) and **release** (`HEXK_CLK_RST_RELEASE`) change the reset
+  and nothing else, so that clock, stop and start items can come in between: a warm reset
+  that stops or changes the clock while the reset is held is assert, stop or clock, start,
+  release. With `sync_assert` or `sync_release` the change comes at the next rising edge,
+  otherwise at once; the item is done when the reset has changed. An assert of an asserted
+  reset and a release of a released one change nothing.
 - The driver notes the values it applied in `status.period_ps`, `status.duty_percent` and
   `status.jitter_ps`, so the status always tells the clock that is running (guide rule
   CFG-9): a new clock of a running clock at the rising edge from which it holds, that of a
@@ -352,11 +390,13 @@ The reset, in active mode:
   in that order: the reset is released when the item is done. Such a pulse has no width;
   whether a DUT sees it depends on the simulator. Give a reset a hold.
 - When the clock is stopped, a step that needs a rising edge cannot end. The driver does
-  not wait: a reset item with `hold_cycles` above 0, `sync_assert` or `sync_release` while
-  the clock is stopped is the error `HEXK_CLK_RST_STOPPED`, and those parts are left out
-  (assert at once, hold for `hold_ps`, release at once).
+  not wait: a reset item with `hold_cycles` above 0, `sync_assert` or `sync_release`, and an
+  assert or release item with its `sync_` bit, while the clock is stopped are the error
+  `HEXK_CLK_RST_STOPPED`, and those parts are left out (assert at once, hold for `hold_ps`,
+  release at once).
 - Items are carried out one after the other. A reset item holds the driver until the
-  release; a clock, stop or start item waits behind it.
+  release; a clock, stop or start item waits behind it. To change the clock while the reset
+  is asserted, use an assert and a release item instead.
 
 The monitor, in both modes:
 
@@ -369,6 +409,19 @@ The monitor, in both modes:
   that time. A pin that is X or Z is neither: nothing is reported until it has a level, and
   the same level after an X is not a change.
 - Each change is also the info `HEXK_CLK_RST_RESET` with verbosity `UVM_MEDIUM`.
+- With `cfg.check_period` it also checks the clock: the time between two rising edges must
+  be `status.period_ps` within twice `status.jitter_ps` (each of the two edges may move by
+  the jitter); otherwise it is the error `HEXK_CLK_RST_PERIOD`, counted by
+  `hexk_check_stats`. An interval is not checked when the reset is asserted at either of its
+  edges, when the period or the jitter of the status changed between them (a clock sequence
+  changes the status at the first edge of the new clock; a change of the duty cycle alone
+  keeps every interval at one period within the jitter, and is checked), or when the generator stopped and started the clock between
+  them. A passive agent drives no clock, so a stop of the DUT's clock outside reset is a
+  long interval there; its status keeps the clock of the cfg. `mon.num_checked()` and
+  `mon.num_checked_at(period_ps)` tell how many intervals were checked, in all and while the
+  status gave that period, so a test can check that a clock it set was checked at all.
+  Clearing `cfg.check_period` during the run ends the check at the next rising edge, for the
+  rest of the run.
 
 Passive mode:
 
@@ -393,9 +446,10 @@ The agent:
   sets it instead with `uvm_config_db#(hexk_clk_rst_agent_cfg)::set(this, "<agent path>",
   "cfg", cfg)`; the agent looks there only when nothing was assigned (CFG-4). A `cfg` that is
   still null, or a null `cfg.vif`, in the build phase is the fatal `HEXK_CLK_RST_CFG`.
-- The agent creates `ap` and `status` in its constructor, so both exist before the build
-  phase; a consumer can connect to `ap` or keep `status` at any time. The monitor writes
-  through `ap`, which the agent connects to the port of the monitor.
+- The agent creates `status` in its constructor, so it exists before the build phase and a
+  consumer can keep it at any time. `ap` of the agent is the port of its monitor (guide rule
+  CMP-10): the agent sets it in its build phase, when it creates the monitor, so a consumer
+  connects to it in its connect phase; before the build phase it is null.
 - The agent builds `mon` always and `sqr` and `drv` in active mode, and notes the clock of
   the cfg in `status`; in passive mode the status keeps that clock, which the agent does not
   drive. `get_is_active()` returns `cfg.is_active`.
@@ -409,8 +463,11 @@ The agent:
   uses, in the order of the declarations, and `unpack()` reads them back.
 - The driver and the monitor work in the run phase only. The sequences do not raise
   objections and work from any phase.
-- The defaults of the members of the sequences are soft constraints:
-  `randomize() with { hold_cycles == 20; }` overrides one. A sequence sends one item; a
+- The members of the sequences start at their defaults, and each default is also a soft
+  constraint: a sequence started without `randomize()` and one after a plain `randomize()`
+  use them alike, and `randomize() with { hold_cycles == 20; }` overrides one. The sequences
+  create their item as `<sequencer path>.req` and the monitor as `<monitor path>.item`, so a
+  factory instance override can change the items of one agent. A sequence sends one item; a
   failed randomization of that item is the fatal `HEXK_CLK_RST_RAND`.
 
 Simulators:
@@ -419,6 +476,9 @@ Simulators:
   instances it wakes the tasks of one instance on events of another, so a testbench with
   more than one clock and reset agent does not work there. It also cannot override a soft
   constraint with a constraint of the call: assign the members of a sequence instead.
+  Killing the run phase of the monitor there does not end the thread of `check_period`;
+  UVM ends the run phase when no time is left to pass, so this matters only in a unit test
+  that runs the phases by hand (clear `cfg.check_period` to end the thread).
 
 ## 5. Configuration
 
@@ -434,6 +494,7 @@ Simulators:
 | `start_clock` | 1 | 0: the clock is stopped until a start sequence. |
 | `reset_at_start` | 1 | 0: the reset is released from the start of the run phase. |
 | `jitter_seed` | 0 | Seed of the jitter; 0 derives it from the name of the agent. |
+| `check_period` | 0 | 1: the monitor checks every interval of the clock against the status (`HEXK_CLK_RST_PERIOD`). |
 
 `period_ps`, `duty_percent`, `jitter_ps` and `phase_ps` are `rand`. A plain `randomize()`
 keeps the defaults (soft constraints) and the legal values of section 4.
@@ -448,6 +509,8 @@ keeps the defaults (soft constraints) and the legal values of section 4.
 | `hexk_clk_rst_clock_seq::duty_percent` | 50 | New duty cycle. |
 | `hexk_clk_rst_clock_seq::jitter_ps` | 0 | New jitter. |
 | `hexk_clk_rst_stop_seq::stop_ps` | 0 | Time after which the clock starts again; 0 leaves it stopped. |
+| `hexk_clk_rst_assert_seq::sync_assert` | 0 | 1: asserted at the next rising edge. |
+| `hexk_clk_rst_release_seq::sync_release` | 1 | 1: released at the next rising edge. |
 
 There are no plusargs and no compile-time switches.
 
@@ -459,6 +522,7 @@ There are no plusargs and no compile-time switches.
 | `HEXK_CLK_RST_CFG` | fatal |  |
 | `HEXK_CLK_RST_CLOCK` | info |  |
 | `HEXK_CLK_RST_ILLEGAL` | error |  |
+| `HEXK_CLK_RST_PERIOD` | error |  |
 | `HEXK_CLK_RST_RAND` | fatal |  |
 | `HEXK_CLK_RST_RESET` | info |  |
 | `HEXK_CLK_RST_STOPPED` | error |  |
@@ -470,6 +534,7 @@ There are no plusargs and no compile-time switches.
 | `HEXK_CLK_RST_CFG` | The agent has no cfg, assigned or in `uvm_config_db`, or the cfg has no interface. |
 | `HEXK_CLK_RST_CLOCK` | The clock was set, stopped or started (`UVM_MEDIUM`). |
 | `HEXK_CLK_RST_ILLEGAL` | The clock of the cfg or of an item is not legal. |
+| `HEXK_CLK_RST_PERIOD` | With `cfg.check_period`, the time between two rising edges is not the period of the status within twice its jitter. |
 | `HEXK_CLK_RST_RAND` | A sequence could not randomize its item. |
 | `HEXK_CLK_RST_RESET` | The reset was asserted or released (`UVM_MEDIUM`). |
 | `HEXK_CLK_RST_STOPPED` | A reset item needs clock edges, but the clock is stopped. |
@@ -543,6 +608,7 @@ module hexk_clk_rst_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          forever begin
             clk_rst_agent.status.reset_asserted.wait_trigger();
             `uvm_info("EXAMPLE", "the reset is asserted: a scoreboard drops its items here", UVM_NONE)

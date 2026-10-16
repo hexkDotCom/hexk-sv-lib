@@ -19,6 +19,13 @@ that the count is 0. Only the suites that test reporting itself let errors throu
 list says which and how many. The check reads lines in the layout of UVM: a message printed
 while a test has switched the report server to another layout is not seen by it.
 
+The core has no UVM and reports an illegal argument with `$error`, so the same group also
+fails unless the core messages in its log, per suite and with their full text and count, are
+exactly those that `expected_core_errors.txt` lists: a negative test that gets its fallback
+value without its message fails, and so does a legal call that reports one.
+`scripts/hexk_core_errors.awk` finds them in the log of each simulator. A new negative test
+of the core adds its message there.
+
 `make test SIM=questa UVM=1.2|2020 [TEST=<module>]` runs the same two groups on Questa
 (Gate 2); the logs are `$SVUNIT_OUT/questa_core/test.log` and
 `$SVUNIT_OUT/questa_uvm_<UVM>/test.log`. SVUnit only generates the test runner there

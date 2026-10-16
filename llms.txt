@@ -2,7 +2,7 @@
 
 > Vendor-neutral SystemVerilog/UVM utility library: checks, reporting, end-of-test logic,
 > delays, scoreboard, memory model, register accesses, string helpers, clock/reset. Version
-> 0.8.0, experimental: APIs may still change before 1.0. Only the modules listed below exist.
+> 0.9.0, experimental: APIs may still change before 1.0. Only the modules listed below exist.
 > Every global symbol starts with `hexk_` (defines and message IDs with `HEXK_`, plusargs of
 > the library with `+hexk_`; the optional base test also defines the knobs `+perf_mode` and
 > `+coverage`).
@@ -15,6 +15,7 @@ configuration, messages emitted, minimal example, anti-patterns, status.
 
 - [README](README.md): what the library is, where it has been tested, quick start
 - [Integration](docs/integration.md): filelists, FuseSoC cores, compile-time switches
+- [Regression](docs/regression.md): checking how each run ended, against what it must end with
 - [Using with AI](docs/USING_WITH_AI.md): snippet for the instruction file of your project
 - [HEXK SystemVerilog/UVM Style Guide](https://github.com/hexkDotCom/sv-uvm-style-guide): the
   rules all library code follows
@@ -74,7 +75,8 @@ configuration, messages emitted, minimal example, anti-patterns, status.
 - [hexk_report_catcher](docs/api/hexk_report_catcher.md): expected errors, warnings and
   fatals for negative tests
 - [hexk_objection_aggregator](docs/api/hexk_objection_aggregator.md): one objection per
-  phase while registered objects are busy, and a report of who is busy and why
+  phase while registered objects are busy, a report of who is busy and why, and a wait with a
+  time limit until a chosen group of them is idle
 - [hexk_eot_registry](docs/api/hexk_eot_registry.md): end-of-test checks for objects that
   are not components, run in check_phase
 - [hexk_watchdog](docs/api/hexk_watchdog.md): global timeout and inactivity limit with
@@ -90,7 +92,8 @@ configuration, messages emitted, minimal example, anti-patterns, status.
 - [hexk_base_test](docs/api/hexk_base_test.md): optional common base test and testbench-top
   include: report server, knobs, aggregator, registry, watchdog, TEST PASSED/FAILED line
 - [hexk_clk_rst](docs/api/hexk_clk_rst.md): clock and reset agent: interface that generates a
-  clock and a reset, sequences for reset, frequency, stop and start, reset events, clock count
+  clock and a reset, sequences for reset, frequency, stop and start, reset events, clock count,
+  a check of the clock period
 - [hexk_valid_ready](docs/api/hexk_valid_ready.md): valid/ready agent, initiator or responder,
   with delays from hexk_delay, protocol assertions, a monitor per transfer and coverage
 - [hexk_pins](docs/api/hexk_pins.md): interface for pins without a protocol (GPIO, straps,
@@ -98,4 +101,6 @@ configuration, messages emitted, minimal example, anti-patterns, status.
 
 ## Optional
 
+- [Reference testbench](tests/reference/README.md): a complete UVM testbench of a small DUT
+  that uses most modules together; an example of how they fit in one environment
 - [Changelog](CHANGELOG.md)

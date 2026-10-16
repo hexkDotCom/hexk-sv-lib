@@ -31,7 +31,7 @@ From `src/uvm/data/hexk_regex.sv`:
 function new(string include_re = "", string exclude_re = "");
 // True when s matches the include expression (or there is none) and not the exclude expression.
 function bit is_match(string s);
-// True when the regular expression re matches s; a match anywhere in s counts.
+// True when the regular expression re matches s; a match anywhere in s counts. An expression without an operator is compared as a string, with or without the regex DPI code of UVM.
 static function bit match(string re, string s);
 // Expression that matches exactly the strings the glob matches (* any text, ? any one character).
 static function string glob_to_regex(string glob);
@@ -57,23 +57,30 @@ static function string glob_to_regex(string glob);
   every other character matches itself, including characters that are special in a regular
   expression.
 - Without the regex DPI code (`+define+UVM_NO_DPI` or `+define+UVM_REGEX_NO_DPI`), UVM's
-  `uvm_re_match` only understands globs: `*`, `?`, matched against the whole string. `match`
-  and the filter then take globs instead of regular expressions, and code that goes through
-  `glob_to_regex` keeps working. UVM's glob matcher removes one `^` at the start of its
+  `uvm_re_match` only understands globs: `*`, `?`, matched against the whole string. An
+  expression without an operator, with or without `^` and `$`, still means what it means with
+  the DPI code, since the class compares it as a string (see below): `"^DRV_PARITY$"` is
+  "equals" and `"SB_"` is "contains" in both builds. An expression with an operator is a glob
+  there, and code that goes through `glob_to_regex` keeps working. UVM's glob matcher removes one `^` at the start of its
   expression and takes an empty expression as "matches everything"; `glob_to_regex`
   therefore returns the glob with a `^` in front, which is the one that is removed. So a
   glob that starts with `^` keeps that character, and an empty glob matches only the empty
-  string, as with the DPI code. The define must be given to the whole compilation, because
+  string, as with the DPI code. One glob differs there: a glob that ends with `$` and has no
+  other character that is special in a regular expression, such as `"cost$"`, becomes
+  `"^cost$"`, which the class compares as "equals `cost`"; it matches `"cost"`, not
+  `"cost$"`. UVM's glob matcher cannot express it otherwise. The define must be given to the whole compilation, because
   the library looks at it too. Simulated once on Questa 2024.1 (2026-10-14), with UVM 1.2
   and `+define+UVM_REGEX_NO_DPI` and with UVM 2020.3.1 and `+define+UVM_NO_DPI`; UVM
-  2020.3.1 does not compile with `UVM_REGEX_NO_DPI` alone. It is not part of the gates.
+  2020.3.1 does not compile with `UVM_REGEX_NO_DPI` alone; the plain-expression rule above
+  was run on Questa 2024.1 with UVM 1.2 and `UVM_REGEX_NO_DPI` on 2026-10-15 and gave the
+  answers of the DPI build. It is not part of the gates.
 - A filter object looks at its two expressions once, when it is created. An expression
   without an operator, with or without `^` at its start and `$` at its end, is matched by a
   string comparison inside the class: "contains", "starts with", "ends with" or "equals".
   Every other expression goes to UVM at each `is_match`. The answers are the same; only the
   cost differs. An expression that starts with `/` always goes to UVM, which removes a `/`
-  at both ends. Without the regex DPI code everything goes to UVM. The static `match` always
-  goes to UVM.
+  at both ends. The static `match` classifies its expression the same way at each call, and
+  both do so also without the regex DPI code.
 - Nothing is reported. An expression that UVM cannot compile simply does not match, and UVM
   may print its own message.
 - **Cost.** For an expression with operators the cost is that of `uvm_re_match`. UVM 1.2

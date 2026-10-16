@@ -89,6 +89,8 @@ Then pick a module in [docs/api/](docs/api/) and start from its minimal example 
 - [docs/integration.md](docs/integration.md): filelists, command lines, FuseSoC, compile-time
   switches, another prefix, and "What works where": which feature works how on which
   simulator, UVM version and DPI setting.
+- [docs/regression.md](docs/regression.md): checking how each run of a regression ended, against
+  what it must end with (`scripts/hexk_check_run.py`).
 - [examples/](examples/): a minimal, compiled and run example per module.
 - [llms.txt](llms.txt): index of the contracts for AI assistants;
   [docs/USING_WITH_AI.md](docs/USING_WITH_AI.md): a snippet for the instruction file of a
@@ -99,13 +101,13 @@ Then pick a module in [docs/api/](docs/api/) and start from its minimal example 
 
 The library comes with its own tests: unit tests per module, every example, and a smoke
 testbench (a small UVM testbench that uses the library the way a project does). Results for
-version 0.8.0:
+version 0.9.0:
 
 | Simulator | UVM | Unit tests | Examples | Smoke testbench |
 |---|---|---|---|---|
-| Verilator 5.046 | none (core) and 2020.3.1 | 693 of 693 | elaborated with slang | elaborated with slang |
-| Questa 2024.1 | 1.2 and 2020.3.1 | 748 of 748 with each | 36 of 36 run with each | 3 of 3 tests with each |
-| VCS X-2025.06 | 1.2 and 2020.3.1 | 748 of 748 with each | 36 of 36 run with each | 3 of 3 tests with each |
+| Verilator 5.046 | none (core) and 2020.3.1 | 765 of 765 | elaborated with slang | elaborated with slang |
+| Questa 2024.1 | 1.2 and 2020.3.1 | 826 of 826 with each | 36 of 36 run with each | 3 of 3 tests with each |
+| VCS X-2025.06 | 1.2 and 2020.3.1 | 826 of 826 with each | 36 of 36 run with each | 3 of 3 tests with each |
 | Xcelium | | not run | not run | not run |
 
 Everything is written to lint, compile and simulate on Verilator. Where Verilator 5.046
@@ -117,6 +119,12 @@ tests, the pins interface and the smoke testbench run on Questa and VCS only.
 The library has branches for Xcelium (`HEXK_SIM_NAME`, `HEXK_STACKTRACE`), written from its
 documentation; nothing has been compiled or run there. A report from an Xcelium user is
 welcome.
+
+A reference testbench ([tests/reference](tests/reference/README.md)) checks the library from the
+outside: a complete UVM testbench of a small DUT, built from the library the way a project
+builds one, whose results are compared with the library models and with fixed vectors computed
+without the library. It runs on Questa and VCS: 16 of 16 runs end as expected with each UVM
+version.
 
 To run the tests yourself, see [tests/README.md](tests/README.md). Running the unit tests of the
 modules you use on your own simulator is a good first check, and a good attachment to a bug

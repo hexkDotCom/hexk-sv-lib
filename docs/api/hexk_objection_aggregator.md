@@ -3,7 +3,9 @@
 ## 1. Summary
 
 Component that keeps the run-time phases alive while testbench objects still have work
-outstanding, with one UVM objection per phase, and that can say who is busy and why.
+outstanding, with one UVM objection per phase, and that can say who is busy and why. With it,
+`hexk_busy_group`: a chosen group of the same objects, for a wait with a time limit in the
+middle of a test.
 
 ## 2. When to use / when not to use
 
@@ -20,15 +22,38 @@ sequence (OBJ-1). Do not use it as a timeout; that is `hexk_watchdog`. Do not re
 object whose `is_busy()` can stay 1 for ever by design, such as a free-running clock
 generator. Sequences that object on their own follow OBJ-6 and do not need the aggregator.
 
+Use `hexk_busy_group` where a test or a sequence must wait in the middle of a phase until some
+of these objects are idle: before a reset that must lose nothing, before a reconfiguration,
+after a burst. The aggregator only acts at the end of a phase; a group answers at any time and
+for the members it was given.
+
 ## 3. API
 
 <!-- HEXK_GEN:BEGIN files -->
+- `src/uvm/eot/hexk_busy_group.sv`
 - `src/uvm/eot/hexk_objectable.sv`
 - `src/uvm/eot/hexk_objection_aggregator.sv`
 - `src/uvm/eot/hexk_objection_member.sv`
 <!-- HEXK_GEN:END files -->
 
 <!-- HEXK_GEN:BEGIN api -->
+From `src/uvm/eot/hexk_busy_group.sv`:
+
+```systemverilog
+// Creates an empty group, which is never busy.
+function new(string name = "hexk_busy_group");
+// Adds an object under a name for the reasons; a null handle, the group itself or a second registration is an error.
+function void register(hexk_objectable obj, string name);
+// Number of members.
+function int unsigned size();
+// 1 while at least one member is busy.
+virtual function bit is_busy();
+// The busy members, one line "<name>: <reason>" each, a reason of several lines indented; "" when none is busy.
+virtual function string busy_reason();
+// Waits until no member is busy; idle is 1 when that came. A group that is idle returns at once, without time passing. After timeout_ps without that it is an error with the caller's ID that names the busy members; a timeout_ps of 0 waits without a limit, as does one that would end after hexk_wait_util::LAST_PS. A poll_interval_ps of 0 is the error HEXK_BUSY_POLL, without a wait.
+task wait_idle(longint unsigned timeout_ps, string id, output bit idle);
+```
+
 From `src/uvm/eot/hexk_objectable.sv`:
 
 ```systemverilog
@@ -132,11 +157,34 @@ Errors:
 - `is_busy()` and `busy_reason()` are called from the phasing code and from reports. They
   must return at once, must not report through UVM, and must not change state.
 
+`hexk_busy_group`:
+
+- A `uvm_object`, created with `type_id::create`. `register(obj, name)` adds a member; a null
+  handle, the group itself and an object that is already a member are the error
+  `HEXK_BUSY_REGISTER` and change nothing. There is no way to remove a member. `size()` is the
+  number of members.
+- It implements `hexk_objectable`: `is_busy()` is 1 while a member is busy; `busy_reason()`
+  has one line `<name>: <busy_reason() of the member>` per busy member, in the order of
+  registration, further lines of a reason indented by four spaces, and is empty when no
+  member is busy. So a group can be registered with the aggregator, or be a member of
+  another group.
+- `wait_idle(timeout_ps, id, idle)` returns at once, without time passing, when no member is
+  busy. Otherwise it looks again every `poll_interval_ps` (10 ns by default) and returns at
+  the first look at which no member is busy, with `idle` 1. When `timeout_ps` has passed
+  without that, the last look being at the limit, it is a `UVM_ERROR` with the caller's `id`
+  and the text `<group name>: still busy after <time>:` followed by `busy_reason()`, and
+  `idle` is 0. A `timeout_ps` of 0 waits without a limit, as does one that would end after
+  `hexk_wait_util::LAST_PS`. A `poll_interval_ps` of 0 with a busy member is the error
+  `HEXK_BUSY_POLL`, without a wait, and `idle` is 0.
+- Seeing the group idle does not keep it idle: the caller stops what makes the members busy
+  before the wait. A member may be busy again right after `wait_idle()` returned.
+
 ## 5. Configuration
 
 | Member | Default | Meaning |
 |---|---|---|
 | `poll_interval_ps` | `100_000` (100 ns) | Time in picoseconds between two looks at `is_busy()` while the end of a phase is held back. Set it in the test, to about one clock period of the slowest interface that a polled object watches. |
+| `hexk_busy_group::poll_interval_ps` | `10_000` (10 ns) | Time in picoseconds between two looks at the members in `wait_idle()`. |
 
 `poll_interval_ps` is a whole number of picoseconds (`docs/integration.md`, "Times"): write
 `` `hexk_ps(10ns) `` or `10_000`.
@@ -148,6 +196,8 @@ There are no plusargs.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
+| `HEXK_BUSY_POLL` | error |  |
+| `HEXK_BUSY_REGISTER` | error |  |
 | `HEXK_OBJECTION_BUSY` | info |  |
 | `HEXK_OBJECTION_IMBALANCE` | error |  |
 | `HEXK_OBJECTION_POLL` | error |  |
@@ -155,7 +205,8 @@ There are no plusargs.
 | `HEXK_OBJECTION_UNKNOWN` | error |  |
 <!-- HEXK_GEN:END emits -->
 
-`HEXK_OBJECTION_BUSY` has verbosity `UVM_LOW`.
+`HEXK_OBJECTION_BUSY` has verbosity `UVM_LOW`. `HEXK_BUSY_REGISTER` and `HEXK_BUSY_POLL` come
+from `hexk_busy_group`, which reports the timeout of `wait_idle()` with the caller's ID.
 
 ## 7. Minimal example
 
@@ -233,6 +284,7 @@ module hexk_objection_aggregator_example;
       endfunction : build_phase
 
       task run_phase(uvm_phase phase);
+         super.run_phase(phase);
          phase.raise_objection(this, "stimulus");
          scoreboard.expect_responses(2);
          fork
@@ -278,13 +330,18 @@ endmodule : hexk_objection_aggregator_example
 - **A `poll_interval_ps` of a different order of magnitude than the testbench clocks.** Far
   below a clock period it costs simulation time; far above, every held phase ends late by up
   to one interval.
+- **A loop of `is_busy()` calls with a fixed delay** in a test or a sequence. Put the objects
+  into a `hexk_busy_group` and call `wait_idle()`: it has a time limit and names who is still
+  busy.
+- **Two groups that contain each other.** `is_busy()` then calls itself for ever; a group
+  only refuses itself as a direct member.
 
 ## 9. Status
 
 <!-- HEXK_GEN:BEGIN status -->
 | Stability | Since |
 |---|---|
-| experimental | 0.7.0 |
+| experimental | 0.9.0 |
 <!-- HEXK_GEN:END status -->
 
 Where it has been tested: see the top-level `README.md`. The unit tests call the

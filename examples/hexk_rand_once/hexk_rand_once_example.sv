@@ -20,9 +20,11 @@ module hexk_rand_once_example;
    class hexk_example_env_cfg extends uvm_object;
       rand int unsigned num_channels;
 
-      constraint num_channels_cstr {num_channels inside {[1 : 8]};}
-
       `hexk_rand_once_guard_decl
+
+      `uvm_object_utils(hexk_example_env_cfg)
+
+      constraint num_channels_cstr {num_channels inside {[1 : 8]};}
 
       function new(string name = "hexk_example_env_cfg");
          super.new(name);

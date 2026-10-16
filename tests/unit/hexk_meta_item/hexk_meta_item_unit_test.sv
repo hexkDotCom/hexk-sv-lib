@@ -10,6 +10,33 @@
 `include "svunit_defines.svh"
 `include "uvm_macros.svh"
 
+// A meta item specialized in a package with the time unit of the command line, 1 ns in the tests, for an item class
+// of that package: Questa 2024.1 then takes $time and %t in the meta item in the time unit of the package.
+package hexk_meta_item_ut_item_pkg;
+   import uvm_pkg::*;
+   import hexk_uvm_pkg::hexk_meta_item;
+
+   // Item without fields.
+   class hexk_ut_pkg_item extends uvm_object;
+      function new(string object_name = "hexk_ut_pkg_item");
+         super.new(object_name);
+      endfunction : new
+
+      function string convert2string();
+         return "pkg item";
+      endfunction : convert2string
+   endclass : hexk_ut_pkg_item
+
+   // The meta item of these items.
+   typedef hexk_meta_item#(hexk_ut_pkg_item) hexk_ut_pkg_meta_t;
+
+   // A new item wrapped in a meta item, by code of this package.
+   function automatic hexk_ut_pkg_meta_t wrap_new_item();
+      hexk_ut_pkg_item item = new();
+      return hexk_ut_pkg_meta_t::wrap(item);
+   endfunction : wrap_new_item
+endpackage : hexk_meta_item_ut_item_pkg
+
 module hexk_meta_item_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
@@ -25,11 +52,11 @@ module hexk_meta_item_unit_test;
          super.new(object_name);
       endfunction : new
 
-      virtual function string convert2string();
+      function string convert2string();
          return $sformatf("data=%0d", data);
       endfunction : convert2string
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_ut_packet other;
          return $cast(other, rhs) && other.data == data;
       endfunction : do_compare
@@ -92,6 +119,17 @@ module hexk_meta_item_unit_test;
           meta.uid.convert2string()
       );
    endfunction : wrapped
+
+   // What wrap() of the meta item of hexk_meta_item_ut_item_pkg stores: "<nanoseconds since the start of the test>
+   // <1 when the text has the time as %t prints it here, else the text and the expected one>".
+   function automatic string wrapped_item_of_a_package();
+      hexk_meta_item_ut_item_pkg::hexk_ut_pkg_meta_t meta = hexk_meta_item_ut_item_pkg::wrap_new_item();
+      string text = meta.convert2string();
+      string expected = $sformatf("@%0t: pkg item", $realtime);
+      return $sformatf(
+          "%0dns %s", (meta.timestamp_ps - start_ps) / 1000, (text == expected) ? "1" : {text, " / ", expected}
+      );
+   endfunction : wrapped_item_of_a_package
 
    // "equal" or "different" for two meta items whose packets hold the given data and whose meta data differ.
    function automatic string compare_packets(int unsigned first_data, int unsigned second_data);
@@ -174,6 +212,11 @@ module hexk_meta_item_unit_test;
    `SVTEST(wrap_keeps_the_item_and_stamps_it_with_the_time)
       advance(25ns);
       `FAIL_UNLESS_STR_EQUAL(wrapped(), "1 25ns env.monitor pkt:000000")
+   `SVTEST_END
+
+   `SVTEST(the_time_is_in_picoseconds_for_an_item_class_of_a_package)
+      advance(25ns);
+      `FAIL_UNLESS_STR_EQUAL(wrapped_item_of_a_package(), "25ns 1")
    `SVTEST_END
 
    `SVTEST(compare_looks_at_the_items_only)

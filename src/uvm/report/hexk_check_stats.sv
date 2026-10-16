@@ -211,6 +211,43 @@ virtual class hexk_check_stats;
       return width <= HEXK_CHECK_MAX_WIDTH;
    endfunction : fits
 
+   // 1 when value, a number by its own signedness, fits width bits as an unsigned or as a signed number: every bit
+   // from width up is 0, or every bit from width - 1 up is 1. A bit that is X or Z there does not fit.
+   static function bit value_fits(hexk_check_num_t value, int unsigned width);
+      // Called from every check: one copy of the code instead of one per call.
+      // verilator no_inline_task
+      hexk_check_num_t above = value >> width;
+      hexk_check_num_t from_sign = value >>> (width - 1);
+      return width >= $bits(hexk_check_num_t) || above === '0 || from_sign === '1;
+   endfunction : value_fits
+
+   // value_fits for the numbers of the checks whose operands have at most HEXK_CHECK_WORD_WIDTH bits.
+   static function bit value_fits_word(hexk_check_word_num_t value, int unsigned width);
+      // Called from every check: one copy of the code instead of one per call.
+      // verilator no_inline_task
+      hexk_check_word_num_t above = value >> width;
+      hexk_check_word_num_t from_sign = value >>> (width - 1);
+      return width >= $bits(hexk_check_word_num_t) || above === '0 || from_sign === '1;
+   endfunction : value_fits_word
+
+   // Message of a check whose second operand, what, does not fit the width bits of its first operand, first.
+   static function string unfit_text(string msg, string what, hexk_check_num_t value, string first, int unsigned width);
+      // Called from every check: one copy of the code instead of one per call.
+      // verilator no_inline_task
+      return $sformatf(
+          "%s%s=%s does not fit the %0d bits of %s, as an unsigned or a signed number: not compared",
+          prefix(
+              msg
+          ),
+          what,
+          num_text(
+              value, width
+          ),
+          width,
+          first
+      );
+   endfunction : unfit_text
+
    // Message of a check on an operand that is too wide to be compared; what names the operand.
    static function string too_wide_text(string msg, string what, int unsigned width);
       string head = {prefix(msg), what};

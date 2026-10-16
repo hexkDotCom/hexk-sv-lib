@@ -47,8 +47,9 @@ class hexk_sb_stream #(
    // Set while the stream is above max_outstanding and that has been reported.
    bit outstanding_reported;
 
-   // A waiting item: the item, its latency stamp (the time in picoseconds from which its latency counts; expected
-   // items only) and its serial number in the order of the writes (only with track_waits).
+   // A waiting item: the item, its stamp in picoseconds (of an expected item the time from which its latency counts,
+   // of an actual item the time it arrived) and its serial number in the order of the writes (only with
+   // track_waits).
    typedef struct {
       T                item;
       longint unsigned stamp_ps;
@@ -136,12 +137,13 @@ class hexk_sb_stream #(
       expected_by_key[key].push_back(entry);
    endfunction : store_expected
 
-   // Adds an actual item as the newest one under its key.
-   function void store_actual(KEY key, T item);
+   // Adds an actual item as the newest one under its key, with the time in picoseconds at which it arrived.
+   function void store_actual(KEY key, T item, longint unsigned arrived_ps);
       entry_t entry;
       num_actual++;
-      entry.item   = item;
-      entry.serial = track_waits ? note_write(key, 1) : 0;
+      entry.item     = item;
+      entry.stamp_ps = arrived_ps;
+      entry.serial   = track_waits ? note_write(key, 1) : 0;
       if (!keyed) begin
          actual_queue.push_back(entry);
          return;
@@ -170,8 +172,8 @@ class hexk_sb_stream #(
       return entry.item;
    endfunction : take_expected
 
-   // Removes and returns the actual item at a position under a key.
-   function T take_actual(KEY key, int unsigned position);
+   // Removes and returns the actual item at a position under a key, with the time in picoseconds at which it arrived.
+   function T take_actual(KEY key, int unsigned position, output longint unsigned arrived_ps);
       entry_t entry;
       num_actual--;
       if (!keyed) begin
@@ -184,6 +186,7 @@ class hexk_sb_stream #(
             actual_by_key.delete(key);
          end
       end
+      arrived_ps = entry.stamp_ps;
       return entry.item;
    endfunction : take_actual
 
@@ -298,7 +301,7 @@ class hexk_sb_stream #(
          drop_taken_entries();
       end
       entry.serial     = next_serial++;
-      entry.written_ps = $time;
+      entry.written_ps = hexk_wait_util::now_ps();
       entry.key        = key;
       entry.is_actual  = is_actual;
       writes.push_back(entry);

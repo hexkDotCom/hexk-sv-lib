@@ -35,7 +35,7 @@ class hexk_value_wrapper #(
    `uvm_object_param_utils(hexk_value_wrapper#(T))
 
    // Name of the class in messages and printouts; without it UVM has none for a class with parameters.
-   virtual function string get_type_name();
+   function string get_type_name();
       return "hexk_value_wrapper";
    endfunction : get_type_name
 
@@ -46,7 +46,7 @@ class hexk_value_wrapper #(
 
    // Creates a wrapper through the factory that holds the given value and tolerance.
    static function hexk_value_wrapper#(T) wrap(T wrapped_value, longint unsigned wrapped_tolerance = 0);
-      hexk_value_wrapper #(T) wrapper = type_id::create("hexk_value_wrapper");
+      hexk_value_wrapper #(T) wrapper = type_id::create("wrapper");
       wrapper.value     = wrapped_value;
       wrapper.tolerance = wrapped_tolerance;
       return wrapper;

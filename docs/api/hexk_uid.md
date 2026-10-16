@@ -67,7 +67,9 @@ function hexk_uid new_uid(string label);
   `seq_wr:000012/item:000003`. `convert2string()` builds it on every call; an ID stores only
   its parent, label and number.
 - An ID never changes. Two IDs with the same text can only come from two pools, that is from
-  before and after `reset_for_test()`, or from a label that holds `:` or `/`.
+  before and after `reset_for_test()`, from a label that holds `:` or `/`, from the wrap of
+  the numbers above, or from the fallback of `HEXK_UID_LENGTH`, whose new chain without a
+  parent can equal the text of another such fallback.
 - A label with `:` or `/`, the two characters that separate the parts of the text, is the
   error `HEXK_UID_LABEL`: the texts of two different IDs could then be equal. The ID is
   created with the label as given. The check is made for the first ID of a label, in the

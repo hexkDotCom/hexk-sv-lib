@@ -113,14 +113,23 @@ class SourceFile:
         return " ".join(part for part in doc if part)
 
     def statement_from(self, index):
-        """The declaration that starts on line index, up to its first ';', on one line."""
+        """The declaration that starts on line index, up to its first ';' outside braces, on one line."""
         parts = []
+        depth = 0
         for line in self.lines[index:]:
             code = self.code_of(line).strip()
             parts.append(code)
-            if ";" in code:
+            depth += code.count("{") - code.count("}")
+            if depth <= 0 and ";" in code.rsplit("}", 1)[-1]:
                 break
-        return re.sub(r"\s+", " ", " ".join(parts)).split(";", 1)[0] + ";"
+        text = re.sub(r"\s+", " ", " ".join(parts))
+        # The first ';' at brace depth 0 ends the declaration; those of a struct body are inside braces.
+        depth = 0
+        for position, char in enumerate(text):
+            depth += (char == "{") - (char == "}")
+            if char == ";" and depth == 0:
+                return text[:position + 1]
+        return text.rstrip(";") + ";"
 
     def parse_symbols(self):
         guard = self.name.upper().replace(".", "_")

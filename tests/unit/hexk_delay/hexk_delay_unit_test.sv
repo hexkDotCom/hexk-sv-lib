@@ -179,6 +179,56 @@ module hexk_delay_unit_test;
       return $sformatf("%s %s %s others=%0d", seen_text(hits_a), seen_text(hits_b), most_text(hits_c > hits_a), others);
    endfunction : histogram_of
 
+   // "yes" when value comes up lo to hi times in the next count delays, otherwise the number of times.
+   function automatic string hits_within(int unsigned count, int unsigned value, int unsigned lo, int unsigned hi);
+      int unsigned hits = 0;
+      repeat (count) begin
+         if (delay.next() == value) begin
+            hits++;
+         end
+      end
+      return (hits >= lo && hits <= hi) ? "yes" : $sformatf("%0d hits", hits);
+   endfunction : hits_within
+
+   // The next count delays of mode bursty, taken as runs of zeros that each end with a gap; the run after the last
+   // gap is left out. Gives "runs <shortest>..<longest> gaps <smallest>..<largest>".
+   function automatic string burst_shape(int unsigned count);
+      int unsigned zeros = 0;
+      int unsigned zeros_min = '1;
+      int unsigned zeros_max = 0;
+      int unsigned gap_min = '1;
+      int unsigned gap_max = 0;
+      int unsigned value;
+      repeat (count) begin
+         value = delay.next();
+         if (value == 0) begin
+            zeros++;
+            continue;
+         end
+         if (zeros < zeros_min) begin
+            zeros_min = zeros;
+         end
+         if (zeros > zeros_max) begin
+            zeros_max = zeros;
+         end
+         if (value < gap_min) begin
+            gap_min = value;
+         end
+         if (value > gap_max) begin
+            gap_max = value;
+         end
+         zeros = 0;
+      end
+      return $sformatf("runs %0d..%0d gaps %0d..%0d", zeros_min, zeros_max, gap_min, gap_max);
+   endfunction : burst_shape
+
+   // Draws the next count delays and ignores them.
+   function automatic void skip(int unsigned count);
+      repeat (count) begin
+         void'(delay.next());
+      end
+   endfunction : skip
+
    // "seen" for a count above 0, otherwise "never".
    function automatic string seen_text(int unsigned hits);
       if (hits == 0) begin
@@ -400,6 +450,13 @@ module hexk_delay_unit_test;
       `FAIL_UNLESS_STR_EQUAL(histogram_of(300, 1, 19, 31), "never never fewer others=300")
    `SVTEST_END
 
+   `SVTEST(mode_bursty_keeps_every_burst_length_and_gap_within_their_limits)
+      set_mode(HEXK_DELAY_BURSTY);
+      set_bursts(1, 2, 20, 30);
+      `FAIL_UNLESS_STR_EQUAL(burst_shape(300), "runs 1..2 gaps 20..30")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "0")
+   `SVTEST_END
+
    `SVTEST(a_burst_ends_when_the_mode_changes)
       set_mode(HEXK_DELAY_BURSTY);
       set_bursts(3, 3, 7, 7);
@@ -439,6 +496,21 @@ module hexk_delay_unit_test;
       set_weight(5, 0);
       set_weight(9, 6);
       `FAIL_UNLESS_STR_EQUAL(histogram_of(400, 2, 5, 9), "seen never most others=0")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "0")
+   `SVTEST_END
+
+   // The bands are about six standard deviations of the binomial distribution wide on each side of the expected
+   // count, so a correct generator does not leave them by chance; the seed is fixed in any case.
+   `SVTEST(mode_weighted_picks_values_in_proportion_to_their_weights)
+      set_mode(HEXK_DELAY_WEIGHTED);
+      set_weight(2, 1);
+      set_weight(9, 6);
+      // Expected 342.9 of 400, standard deviation 7.0.
+      `FAIL_UNLESS_STR_EQUAL(hits_within(400, 9, 300, 385), "yes")
+      set_weight(2, 32'hFFFF_FFFF);
+      set_weight(9, 32'h5555_5555);
+      // A quarter of the weight, in a sum above 32 bits: expected 100 of 400, standard deviation 8.7.
+      `FAIL_UNLESS_STR_EQUAL(hits_within(400, 9, 50, 150), "yes")
       `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "0")
    `SVTEST_END
 
@@ -501,6 +573,48 @@ module hexk_delay_unit_test;
       `FAIL_UNLESS_STR_EQUAL(sequence_of(2), "3 3 ")
       set_mode(HEXK_DELAY_WEIGHTED);
       `FAIL_UNLESS_STR_EQUAL(sequence_of(2), "0 0 ")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "2")
+   `SVTEST_END
+
+   `SVTEST(mode_normal_with_a_mean_or_std_dev_above_the_largest_int_is_illegal)
+      set_mode(HEXK_DELAY_NORMAL);
+      set_mean(32'h7FFF_FFFF, 32'h7FFF_FFFF);
+      `FAIL_UNLESS_STR_EQUAL(cfg.illegal_reason(), "")
+      skip(3);
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "0")
+      set_mean(32'h8000_0000, 1);
+      `FAIL_UNLESS_STR_EQUAL(cfg.illegal_reason(), "mean (2147483648) or std_dev (1) is above 2147483647")
+      `FAIL_UNLESS_STR_EQUAL(sequence_of(3), "0 0 0 ")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "1")
+      set_mean(100, 10);
+      `FAIL_UNLESS_STR_EQUAL(average_within(200, 95, 105), "yes")
+      set_mean(100, 32'hFFFF_FFFF);
+      `FAIL_UNLESS_STR_EQUAL(cfg.illegal_reason(), "mean (100) or std_dev (4294967295) is above 2147483647")
+      `FAIL_UNLESS_STR_EQUAL(sequence_of(2), "0 0 ")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "2")
+      set_mean(100, 10);
+      `FAIL_UNLESS_STR_EQUAL(average_within(200, 95, 105), "yes")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "2")
+   `SVTEST_END
+
+   `SVTEST(mode_exponential_with_a_mean_above_the_largest_int_is_illegal)
+      set_mode(HEXK_DELAY_EXPONENTIAL);
+      set_mean(32'h7FFF_FFFF);
+      `FAIL_UNLESS_STR_EQUAL(cfg.illegal_reason(), "")
+      skip(3);
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "0")
+      set_mean(32'h8000_0000);
+      `FAIL_UNLESS_STR_EQUAL(cfg.illegal_reason(), "mean (2147483648) or std_dev (0) is above 2147483647")
+      `FAIL_UNLESS_STR_EQUAL(sequence_of(3), "0 0 0 ")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "1")
+      set_mean(20);
+      `FAIL_UNLESS_STR_EQUAL(average_within(1000, 17, 23), "yes")
+      set_mean(32'hFFFF_FFFF);
+      `FAIL_UNLESS_STR_EQUAL(cfg.illegal_reason(), "mean (4294967295) or std_dev (0) is above 2147483647")
+      `FAIL_UNLESS_STR_EQUAL(sequence_of(2), "0 0 ")
+      `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "2")
+      set_mean(20);
+      `FAIL_UNLESS_STR_EQUAL(average_within(1000, 17, 23), "yes")
       `FAIL_UNLESS_STR_EQUAL(cfg_errors(), "2")
    `SVTEST_END
 

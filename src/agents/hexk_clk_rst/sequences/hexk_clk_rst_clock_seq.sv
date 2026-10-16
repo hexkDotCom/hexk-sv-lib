@@ -22,13 +22,15 @@
 class hexk_clk_rst_clock_seq extends uvm_sequence #(hexk_clk_rst_item);
 
    // Period of the clock in picoseconds.
-   rand longint unsigned period_ps;
+   rand longint unsigned period_ps    = hexk_clk_rst_agent_cfg::DEFAULT_PERIOD_PS;
 
    // Share of the period in which the clock is high, 1 to 99.
-   rand int unsigned     duty_percent;
+   rand int unsigned     duty_percent = hexk_clk_rst_agent_cfg::DEFAULT_DUTY_PERCENT;
 
    // Largest distance of a rising edge from its ideal time, in picoseconds.
    rand longint unsigned jitter_ps;
+
+   `uvm_object_utils(hexk_clk_rst_clock_seq)
 
    // What a plain randomize() gives; a test overrides what it wants different.
    constraint default_values_cstr {
@@ -37,8 +39,6 @@ class hexk_clk_rst_clock_seq extends uvm_sequence #(hexk_clk_rst_item);
       soft jitter_ps == 0;
    }
 
-   `uvm_object_utils(hexk_clk_rst_clock_seq)
-
    // Creates the sequence.
    function new(string name = "hexk_clk_rst_clock_seq");
       super.new(name);
@@ -46,7 +46,8 @@ class hexk_clk_rst_clock_seq extends uvm_sequence #(hexk_clk_rst_item);
 
    // Sends one clock item; returns at the rising edge from which the new clock holds.
    task body();
-      req = hexk_clk_rst_item::type_id::create("req");
+      // Under the name of the sequencer, so that a factory override of one agent's items can name its path.
+      req = hexk_clk_rst_item::type_id::create("req", null, get_sequencer().get_full_name());
       start_item(req);
       `hexk_randomize_with_or_fatal(req, "HEXK_CLK_RST_RAND", op == HEXK_CLK_RST_CLOCK;)
       req.period_ps    = period_ps;

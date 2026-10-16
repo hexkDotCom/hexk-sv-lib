@@ -17,6 +17,7 @@
 
 // Interface whose signals are operands of checks through a virtual interface.
 interface hexk_ut_check_if;
+   timeunit 1ns; timeprecision 1ps;
    logic        [7:0] data;
    logic signed [7:0] level;
 endinterface : hexk_ut_check_if
@@ -40,16 +41,17 @@ module hexk_check_macros_unit_test;
       endfunction : on_message
    endclass : hexk_ut_last_message
 
-   // Object with one compared field.
+   // Object with one compared field; the object whose compare() is called allows a difference up to its tolerance.
    class hexk_ut_item extends uvm_object;
       int value;
+      int tolerance;
       function new(string item_name = "hexk_ut_item");
          super.new(item_name);
       endfunction : new
 
-      virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      function bit do_compare(uvm_object rhs, uvm_comparer comparer);
          hexk_ut_item other;
-         return $cast(other, rhs) && other.value == value;
+         return $cast(other, rhs) && other.value >= value - tolerance && other.value <= value + tolerance;
       endfunction : do_compare
    endclass : hexk_ut_item
 
@@ -182,6 +184,39 @@ module hexk_check_macros_unit_test;
       endfunction : value
    endclass : hexk_ut_counter
 
+   // An object whose checks take a call of one of its own methods as the first operand.
+   class hexk_ut_holder;
+      int unsigned value = 12;
+
+      function int unsigned get_value();
+         return value;
+      endfunction : get_value
+
+      // An equality, a mask and an alignment check on get_value().
+      function void check_own_value();
+         `hexk_check_eq(get_value(), 12, "UT_METHOD")
+         `hexk_check_mask(get_value(), 32'h0000_000C, "UT_METHOD")
+         `hexk_check_aligned(get_value(), 4, "UT_METHOD")
+      endfunction : check_own_value
+   endclass : hexk_ut_holder
+
+   // Runs the checks of a hexk_ut_holder: "<passed> <failed>" of UT_METHOD.
+   function automatic string run_method_operand();
+      hexk_ut_holder holder = new();
+      int unsigned   passed = hexk_check_stats::num_passed("UT_METHOD");
+      int unsigned   failed = hexk_check_stats::num_failed("UT_METHOD");
+      holder.check_own_value();
+      return $sformatf(
+          "%0d %0d",
+          hexk_check_stats::num_passed(
+              "UT_METHOD"
+          ) - passed,
+          hexk_check_stats::num_failed(
+              "UT_METHOD"
+          ) - failed
+      );
+   endfunction : run_method_operand
+
    // Returns text and counts the call, to show when a message is built.
    function automatic string counted_text(string text);
       calls++;
@@ -273,8 +308,9 @@ module hexk_check_macros_unit_test;
       return outcome();
    endfunction : run_q_eq_negative_index
 
-   // Compares two items with the given values; a negative value stands for a null handle.
-   function automatic string run_obj_eq(int act_value, int exp_value);
+   // Compares two items with the given values; a negative value stands for a null handle. The expected item
+   // allows a difference of exp_tolerance.
+   function automatic string run_obj_eq(int act_value, int exp_value, int exp_tolerance = 0);
       hexk_ut_item act;
       hexk_ut_item exp;
       if (act_value >= 0) begin
@@ -282,8 +318,9 @@ module hexk_check_macros_unit_test;
          act.value = act_value;
       end
       if (exp_value >= 0) begin
-         exp       = new("exp");
-         exp.value = exp_value;
+         exp           = new("exp");
+         exp.value     = exp_value;
+         exp.tolerance = exp_tolerance;
       end
       mark();
       `hexk_check_obj_eq(act, exp, "UT_OBJ_EQ")
@@ -454,20 +491,34 @@ module hexk_check_macros_unit_test;
       return outcome();
    endfunction : run_order_wide
 
-   // Order checks whose second or third operand has 1101 bits, more than a check compares; its low bits are 0,
-   // so a check that cut it would pass.
+   // Checks whose second or third operand has 1101 bits, more than a check compares; its low bits are 0, so a
+   // check that cut it would pass.
    function automatic string run_wide_other_operand(string kind);
       logic [1100:0] too_wide = '0;
       int unsigned zero = 0;
+      logic [7:0] byte_zero = '0;
       too_wide[1090] = 1'b1;
       mark();
       case (kind)
-         "exp":   `hexk_check_ge(zero, too_wide, "UT_ORDER")
-         "lo":    `hexk_check_in_range(zero, too_wide, 5, "UT_ORDER")
-         default: `hexk_check_in_range(zero, 0, too_wide, "UT_ORDER")
+         "exp":     `hexk_check_ge(zero, too_wide, "UT_ORDER")
+         "lo":      `hexk_check_in_range(zero, too_wide, 5, "UT_ORDER")
+         "eq":      `hexk_check_eq(byte_zero, too_wide, "UT_ORDER")
+         "case_eq": `hexk_check_case_eq(byte_zero, too_wide, "UT_ORDER")
+         "mask":    `hexk_check_mask(byte_zero, too_wide, "UT_ORDER")
+         "aligned": `hexk_check_aligned(byte_zero, too_wide, "UT_ORDER")
+         default:   `hexk_check_in_range(zero, 0, too_wide, "UT_ORDER")
       endcase
       return outcome();
    endfunction : run_wide_other_operand
+
+   // A case equality of a signed value with itself whose top bit is X: the second operand is no wider than the
+   // first, so it fits, and the X bits match.
+   function automatic string run_signed_unknown_top();
+      logic signed [7:0] value = 8'bx000_0001;
+      mark();
+      `hexk_check_case_eq(value, value, "UT_ORDER")
+      return outcome();
+   endfunction : run_signed_unknown_top
 
    // Order checks on operands of exactly 64 bits, whose copies need one bit more for the sign, and on a
    // narrow first operand with a second one of 128 bits, which takes the wide copies.
@@ -534,15 +585,21 @@ module hexk_check_macros_unit_test;
       logic signed [ 7:0] minus_one = -8'sd1;
       mark();
       case (kind)
-         "fill_ones":         `hexk_check_eq(ones, '1, "UT_WIDTH")
-         "fill_ones_differs": `hexk_check_eq(almost, '1, "UT_WIDTH")
-         "fill_zeros":        `hexk_check_eq(zero, '0, "UT_WIDTH")
-         "signed_narrow":     `hexk_check_eq(wide_ones, minus_one, "UT_WIDTH")
-         "unsigned_narrow":   `hexk_check_eq(wide_ones, ones, "UT_WIDTH")
-         "wide_is_cut":       `hexk_check_eq(ones, 16'h01FF, "UT_WIDTH")
-         "negative_first":    `hexk_check_eq(minus_one, 8'hFF, "UT_WIDTH")
-         "mask_fill":         `hexk_check_mask(wide_ones, '1, "UT_WIDTH")
-         default:             `hexk_check_mask(wide_ones, ones, "UT_WIDTH")
+         "fill_ones":          `hexk_check_eq(ones, '1, "UT_WIDTH")
+         "fill_ones_differs":  `hexk_check_eq(almost, '1, "UT_WIDTH")
+         "fill_zeros":         `hexk_check_eq(zero, '0, "UT_WIDTH")
+         "signed_narrow":      `hexk_check_eq(wide_ones, minus_one, "UT_WIDTH")
+         "unsigned_narrow":    `hexk_check_eq(wide_ones, ones, "UT_WIDTH")
+         "wide_does_not_fit":  `hexk_check_eq(ones, 16'h01FF, "UT_WIDTH")
+         "wide_fits":          `hexk_check_eq(ones, 16'h00FF, "UT_WIDTH")
+         "minus_one_fits":     `hexk_check_eq(ones, -1, "UT_WIDTH")
+         "too_negative":       `hexk_check_eq(ones, -129, "UT_WIDTH")
+         "ne_does_not_fit":    `hexk_check_ne(zero, 256, "UT_WIDTH")
+         "mask_does_not_fit":  `hexk_check_mask(ones, 16'h01FF, "UT_WIDTH")
+         "align_does_not_fit": `hexk_check_aligned(zero, 260, "UT_WIDTH")
+         "negative_first":     `hexk_check_eq(minus_one, 8'hFF, "UT_WIDTH")
+         "mask_fill":          `hexk_check_mask(wide_ones, '1, "UT_WIDTH")
+         default:              `hexk_check_mask(wide_ones, ones, "UT_WIDTH")
       endcase
       return outcome();
    endfunction : run_widths
@@ -823,6 +880,15 @@ module hexk_check_macros_unit_test;
       `FAIL_UNLESS_STR_EQUAL(run_obj_eq(7, 8), "F E objects differ")
    `SVTEST_END
 
+   `SVTEST(an_operand_can_call_a_method_of_the_calling_class)
+      `FAIL_UNLESS_STR_EQUAL(run_method_operand(), "3 0")
+   `SVTEST_END
+
+   `SVTEST(check_obj_eq_lets_the_expected_object_decide)
+      `FAIL_UNLESS_STR_EQUAL(run_obj_eq(101, 100, 2), "P - ")
+      `FAIL_UNLESS_STR_EQUAL(run_obj_eq(103, 100, 2), "F E objects differ")
+   `SVTEST_END
+
    `SVTEST(check_obj_eq_handles_null)
       `FAIL_UNLESS_STR_EQUAL(run_obj_eq(-1, -1), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_obj_eq(7, -1), "F E objects differ")
@@ -943,6 +1009,21 @@ module hexk_check_macros_unit_test;
          "F E hi has 1101 bits and a check compares at most 1024: not compared")
    `SVTEST_END
 
+   `SVTEST(a_check_of_bits_on_a_wider_second_operand_fails_and_says_so)
+      `FAIL_UNLESS_STR_EQUAL(run_wide_other_operand("eq"),
+         "F E exp has 1101 bits and a check compares at most 1024: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_wide_other_operand("case_eq"),
+         "F E exp has 1101 bits and a check compares at most 1024: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_wide_other_operand("mask"),
+         "F E mask has 1101 bits and a check compares at most 1024: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_wide_other_operand("aligned"),
+         "F E align has 1101 bits and a check compares at most 1024: not compared")
+   `SVTEST_END
+
+   `SVTEST(a_signed_second_operand_no_wider_than_the_first_fits_with_an_unknown_top_bit)
+      `FAIL_UNLESS_STR_EQUAL(run_signed_unknown_top(), "P - ")
+   `SVTEST_END
+
    `SVTEST(an_order_check_on_64_bit_operands_keeps_sign_and_magnitude)
       `FAIL_UNLESS_STR_EQUAL(run_order_64("unsigned_gt_signed"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_order_64("signed_lt_unsigned"), "P - ")
@@ -995,13 +1076,27 @@ module hexk_check_macros_unit_test;
       `FAIL_UNLESS_STR_EQUAL(module_function_operand(), "6 calls, 0 failures")
    `SVTEST_END
 
+   `SVTEST(a_second_operand_that_does_not_fit_the_first_fails_the_check)
+      `FAIL_UNLESS_STR_EQUAL(run_widths("wide_does_not_fit"),
+         "F E exp=0x1ff does not fit the 8 bits of act, as an unsigned or a signed number: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_widths("wide_fits"), "P - ")
+      `FAIL_UNLESS_STR_EQUAL(run_widths("minus_one_fits"), "P - ")
+      `FAIL_UNLESS_STR_EQUAL(run_widths("too_negative"),
+         "F E exp=0xf7f does not fit the 8 bits of act, as an unsigned or a signed number: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_widths("ne_does_not_fit"),
+         "F E exp=0x100 does not fit the 8 bits of act, as an unsigned or a signed number: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_widths("mask_does_not_fit"),
+         "F E mask=0x1ff does not fit the 8 bits of val, as an unsigned or a signed number: not compared")
+      `FAIL_UNLESS_STR_EQUAL(run_widths("align_does_not_fit"),
+         "F E align=0x104 does not fit the 8 bits of val, as an unsigned or a signed number: not compared")
+   `SVTEST_END
+
    `SVTEST(the_second_operand_is_brought_to_the_width_of_the_first)
       `FAIL_UNLESS_STR_EQUAL(run_widths("fill_ones"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_widths("fill_ones_differs"), "F E act=0xfe exp=0xff (expected act == exp)")
       `FAIL_UNLESS_STR_EQUAL(run_widths("fill_zeros"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_widths("signed_narrow"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_widths("unsigned_narrow"), "F E act=0xffff exp=0xff (expected act == exp)")
-      `FAIL_UNLESS_STR_EQUAL(run_widths("wide_is_cut"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_widths("negative_first"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_widths("mask_fill"), "P - ")
       `FAIL_UNLESS_STR_EQUAL(run_widths("mask_narrow"), "F E val=0xffff has bits outside mask=0xff: 0xff00")

@@ -9,6 +9,12 @@ The blocks between `HEXK_GEN:BEGIN` and `HEXK_GEN:END` markers are generated fro
 `//!` tags and declarations in the source by `make docs`; do not edit them. Everything else
 is written by hand. `make pre_sim` fails when a generated block is out of date.
 
+The API of a module is what its contract lists. A type or constant declared inside a class
+(a `typedef` or `localparam`, such as the record of a queue entry) belongs to it only when the
+contract names it; the others are internal and may change in any version, even though
+SystemVerilog gives no portable way to make a `typedef` of a class `local`. The same holds
+for macros marked "Internal" in the source.
+
 ## Modules
 
 ### Core layer (no UVM)
@@ -66,7 +72,8 @@ is written by hand. `make pre_sim` fails when a generated block is out of date.
 - [hexk_report_catcher](hexk_report_catcher.md): expected errors, warnings and
   fatals for negative tests
 - [hexk_objection_aggregator](hexk_objection_aggregator.md): one objection per
-  phase while registered objects are busy, and a report of who is busy and why
+  phase while registered objects are busy, a report of who is busy and why, and a wait with a
+  time limit until a chosen group of them is idle
 - [hexk_eot_registry](hexk_eot_registry.md): end-of-test checks for objects that
   are not components, run in check_phase
 - [hexk_watchdog](hexk_watchdog.md): global timeout and inactivity limit with
@@ -82,7 +89,8 @@ is written by hand. `make pre_sim` fails when a generated block is out of date.
 - [hexk_base_test](hexk_base_test.md): optional common base test and testbench-top
   include: report server, knobs, aggregator, registry, watchdog, TEST PASSED/FAILED line
 - [hexk_clk_rst](hexk_clk_rst.md): clock and reset agent: interface that generates a
-  clock and a reset, sequences for reset, frequency, stop and start, reset events, clock count
+  clock and a reset, sequences for reset, frequency, stop and start, reset events, clock count,
+  a check of the clock period
 - [hexk_valid_ready](hexk_valid_ready.md): valid/ready agent, initiator or responder,
   with delays from hexk_delay, protocol assertions, a monitor per transfer and coverage
 - [hexk_pins](hexk_pins.md): interface for pins without a protocol (GPIO, straps,
