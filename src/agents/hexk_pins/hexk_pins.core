@@ -6,7 +6,7 @@ CAPI=2:
 # the tool flow.
 # The version in 'name' is written by 'make version'; do not edit it by hand.
 
-name: "hexkdotcom:hexk:pins:0.9.0"
+name: "hexkdotcom:hexk:pins:0.10.0"
 description: "hexk-sv-lib pins interface: drive, pull, force and sample miscellaneous pins"
 
 filesets:

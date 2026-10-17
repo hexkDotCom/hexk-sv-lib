@@ -23,9 +23,10 @@ class hexk_ref_back_to_back_test extends hexk_ref_base_test;
    endfunction : new
 
    // The input sends without delays, so that the packets of a burst follow each other closely.
-   virtual function void configure_test();
+   virtual function void modify_randomized_cfg();
+      super.modify_randomized_cfg();
       env_cfg.in_cfg.delay_cfg.mode = HEXK_DELAY_NONE;
-   endfunction : configure_test
+   endfunction : modify_randomized_cfg
 
    // UVM callback: the predictor publishes no results, which nobody could collect.
    function void end_of_elaboration_phase(uvm_phase phase);
@@ -34,9 +35,9 @@ class hexk_ref_back_to_back_test extends hexk_ref_base_test;
    endfunction : end_of_elaboration_phase
 
    // The bursts.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       return hexk_ref_back_to_back_vseq::type_id::create("back_to_back_seq");
-   endfunction : create_traffic
+   endfunction : create_scenario
 
    // The results go to no scoreboard in this test.
    virtual function int unsigned expected_matches();

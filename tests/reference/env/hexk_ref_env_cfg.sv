@@ -22,11 +22,11 @@ class hexk_ref_env_cfg extends uvm_object;
    rand hexk_valid_ready_agent_cfg #(WIDTH) in_cfg;
 
    // The cfgs of the two scoreboards: packet results, and the commits of the pipeline.
-   hexk_scoreboard_cfg                      result_sb_cfg;
-   hexk_scoreboard_cfg                      commit_sb_cfg;
+   rand hexk_scoreboard_cfg                 result_sb_cfg;
+   rand hexk_scoreboard_cfg                 commit_sb_cfg;
 
    // The cfg of the bus agent, with the register bus.
-   hexk_ref_bus_agent_cfg                   bus_cfg;
+   rand hexk_ref_bus_agent_cfg              bus_cfg;
 
    // The strap pins of the testbench (hexk_pins_if): pin STALL_PIN holds the input's ready at 0.
    localparam int unsigned NUM_STRAPS = 1;
@@ -72,8 +72,6 @@ class hexk_ref_env_cfg extends uvm_object;
       result_sb_cfg            = hexk_scoreboard_cfg::type_id::create("result_sb_cfg");
       commit_sb_cfg            = hexk_scoreboard_cfg::type_id::create("commit_sb_cfg");
       bus_cfg                  = hexk_ref_bus_agent_cfg::type_id::create("bus_cfg");
-      min_len                  = 1;
-      max_len                  = 16;
    endfunction : new
 
 endclass : hexk_ref_env_cfg

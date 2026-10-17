@@ -253,8 +253,9 @@ A trigger given on the command line cannot contain a comma.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 | `HEXK_REPORT_CFG` | warning |  |
+| `HEXK_REPORT_CLONE` | fatal |  |
 | `HEXK_REPORT_SUMMARY` | info |  |
 <!-- HEXK_GEN:END emits -->
 
@@ -263,6 +264,7 @@ A trigger given on the command line cannot contain a comma.
 | `HEXK_REPORT_CFG` | a plusarg value or a cfg field is not legal; the previous or default value is used |
 | `HEXK_REPORT_SUMMARY` | the summary table at the end of the test |
 | `HEXK_COPY_TYPE` | `copy()` of a `hexk_report_cfg` from an object of another class; nothing is copied |
+| `HEXK_REPORT_CLONE` | `set_cfg` or `get_cfg` could not clone the cfg as a `hexk_report_cfg` (a factory override that is not one) |
 
 ## 7. Minimal example
 

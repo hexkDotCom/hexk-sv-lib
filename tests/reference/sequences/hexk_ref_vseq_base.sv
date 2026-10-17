@@ -27,6 +27,10 @@ typedef enum bit [1:0] {
 class hexk_ref_vseq_base extends uvm_sequence;
 
    // The environment; assigned by the starter.
+   // SEQ-5 waived: the sequences reach the sequencers of the agents through the environment, not through members of
+   // their own: one handle gives every scenario the sequencers, the register utility, the register model and the
+   // checks of the environment.
+   // REG-6 waived: the register model is env.regs, through the same handle.
    hexk_ref_env    env;
 
    // 1: wait for DONE through the interrupt; 0: poll IRQ.DONE with interrupts off.
@@ -46,11 +50,11 @@ class hexk_ref_vseq_base extends uvm_sequence;
    endfunction : new
 
    // UVM callback: a sequence that is started without its environment cannot do anything.
-   task pre_body();
+   task pre_start();
       if (env == null) begin
          `uvm_fatal("REF_VSEQ_ENV", "env is null; the starter assigns it before start()")
       end
-   endtask : pre_body
+   endtask : pre_start
 
    // Whether packet i of random traffic is scrambled in the mode of the starter.
    function bit scramble_of(int unsigned i);
@@ -90,6 +94,8 @@ class hexk_ref_vseq_base extends uvm_sequence;
    // Waits for DONE, at most env.cfg.done_timeout_ps: for the interrupt, or by polling IRQ.DONE.
    // SEQ-13 waived: waiting for the interrupt line is what a test of an interrupt does; a monitor of the line would
    // only pass the same level on.
+   // CHK-7 waived: the scenario waits for the interrupt of its own packet, in line; nothing is interrupted, so no
+   // handler component and no lock are needed.
    task wait_done(output bit seen);
       if (use_irq) begin
          `hexk_wait_timeout(env.cfg.bus_cfg.vif.irq === 1'b1, env.cfg.done_timeout_ps * 1ps, "REF_DONE")

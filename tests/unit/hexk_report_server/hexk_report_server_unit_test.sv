@@ -452,13 +452,13 @@ module hexk_report_server_unit_test;
       hexk_report_cfg   cfg = make_cfg("");
       uvm_sequence_item other = new("other");
       string            result = "changed";
-      catcher.expect_msg("^HEXK_COPY_TYPE$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_COPY_TYPE$", UVM_FATAL, "", 0, -1, UVM_INFO);
       cfg.time_unit = HEXK_TIME_PS;
       cfg.copy(other);
       if (cfg.time_unit == HEXK_TIME_PS) begin
          result = "kept";
       end
-      result = $sformatf("%s %0d", result, catcher.get_count("^HEXK_COPY_TYPE$"));
+      result = $sformatf("%s %0d", result, catcher.get_count("^HEXK_COPY_TYPE$", UVM_FATAL));
       catcher.clear();
       return result;
    endfunction : cfg_after_a_copy_from_another_class

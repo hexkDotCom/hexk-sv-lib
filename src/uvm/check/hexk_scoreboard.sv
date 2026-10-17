@@ -15,10 +15,11 @@
 // of the item and need no derived class for a plain in-order scoreboard. Every comparison
 // of a pair counts as a check in hexk_check_stats, under the ID HEXK_SB_MISMATCH.
 // The scoreboard is busy for hexk_objection_aggregator while items wait, so the test does
-// not end before the last item has arrived; on_reset() drops what is waiting. With
+// not end before the last item has arrived; the env calls on_reset() when the DUT is reset,
+// and it drops what is waiting (CHK-6). With
 // cfg.max_wait_ps, an item that waits longer for its partner is an error and is dropped
-// (run_phase watches the waiting items; a derived class that overrides run_phase calls
-// super.run_phase).
+// (run_phase watches the waiting items and then never returns; a derived class that overrides
+// run_phase replaces it and does not call super.run_phase, CMP-4).
 //
 //! @module    hexk_scoreboard
 //! @since     0.7.0
@@ -33,6 +34,7 @@
 `define HEXK_SCOREBOARD_SV
 
 // The two imp classes of the scoreboard; a lint rule wants every class in a file of its own name.
+// TLM-4 waived: the imps carry the index of their stream, which uvm_analysis_imp_decl cannot.
 // verilator lint_off DECLFILENAME
 `hexk_analysis_imp_indexed_decl(expected_idx)
 `hexk_analysis_imp_indexed_decl(actual_idx)
@@ -43,7 +45,9 @@ class hexk_scoreboard #(
     type KEY = int
 ) extends uvm_scoreboard implements hexk_objectable;
 
+   // This scoreboard class, for the stream objects.
    typedef hexk_scoreboard#(T, KEY) this_t;
+   // The class of one stream of expected and actual items.
    typedef hexk_sb_stream#(T, KEY) stream_t;
 
    // Settings; assign before the build phase, or a cfg with the defaults is created.
@@ -133,6 +137,7 @@ class hexk_scoreboard #(
    endfunction : is_partner
 
    // Hook: turns an item written to an expected export into the item to wait for; null means nothing is expected.
+   // It must not change item, which the publisher may keep: return a clone to change it (TLM-5).
    virtual function T transform_expected(T item);
       return item;
    endfunction : transform_expected

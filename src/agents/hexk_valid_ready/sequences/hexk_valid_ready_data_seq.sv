@@ -65,6 +65,8 @@ class hexk_valid_ready_data_seq #(
          made = item_type.create_object("req");
          `hexk_cast_or_fatal(req, made, "HEXK_VALID_READY_RAND")
          start_item(req);
+         // SEQ-2 waived: a plain item is not randomized, since every random field of it is assigned below and a
+         // randomization costs several times the rest of the item.
          if (derived) begin
             `hexk_randomize_or_fatal(req, "HEXK_VALID_READY_RAND")
          end

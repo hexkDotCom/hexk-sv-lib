@@ -14,6 +14,8 @@
 `ifndef HEXK_REF_HANG_TEST_SV
 `define HEXK_REF_HANG_TEST_SV
 
+// MSG-9 waived: this test is meant to end FAILED, to show what a hang looks like; its line in the regression list
+// states the IDs, severities, counts and the scoreboard that reports the timeout.
 class hexk_ref_hang_test extends hexk_ref_base_test;
 
    `uvm_component_utils(hexk_ref_hang_test)
@@ -24,11 +26,11 @@ class hexk_ref_hang_test extends hexk_ref_base_test;
    endfunction : new
 
    // One packet into a DUT that hangs.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       hexk_ref_fault_vseq hang_seq = hexk_ref_fault_vseq::type_id::create("hang_seq");
       hang_seq.fault = HEXK_REF_FAULT_HANG;
       return hang_seq;
-   endfunction : create_traffic
+   endfunction : create_scenario
 
 endclass : hexk_ref_hang_test
 

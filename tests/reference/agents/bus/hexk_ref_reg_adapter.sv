@@ -38,16 +38,23 @@ class hexk_ref_reg_adapter extends uvm_reg_adapter;
    // A bus item as a register operation.
    function void bus2reg(uvm_sequence_item bus_item, ref uvm_reg_bus_op rw);
       hexk_ref_bus_item item;
-      if (!$cast(item, bus_item)) begin
-         `uvm_fatal("REF_ADAPTER", "bus2reg got an item of another class")
+      if (bus_item == null || !$cast(item, bus_item)) begin
+         `uvm_fatal("REF_ADAPTER", "bus2reg got null or an item of another class")
          return;
       end
       rw.kind    = item.we ? UVM_WRITE : UVM_READ;
       rw.addr    = uvm_reg_addr_t'(item.addr);
       rw.data    = item.we ? uvm_reg_data_t'(item.wdata) : uvm_reg_data_t'(item.rdata);
       rw.byte_en = uvm_reg_byte_en_t'(item.wstrb);
-      // An access without ack, cut off by a reset, or reading X or Z bits gave no value the register model can hold.
-      rw.status  = item.is_ok() ? UVM_IS_OK : UVM_NOT_OK;
+      // An access without ack or cut off by a reset gave no value the register model can hold, nor did a read of X or Z
+      // bits, which the model gets as UVM_HAS_X (guide TRN-6).
+      if (item.is_ok()) begin
+         rw.status = UVM_IS_OK;
+      end else if (item.status == HEXK_REF_BUS_OK) begin
+         rw.status = UVM_HAS_X;
+      end else begin
+         rw.status = UVM_NOT_OK;
+      end
    endfunction : bus2reg
 
 endclass : hexk_ref_reg_adapter

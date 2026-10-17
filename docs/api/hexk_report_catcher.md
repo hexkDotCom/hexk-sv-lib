@@ -28,10 +28,12 @@ verbosity of infos with it; use UVM's verbosity settings.
 From `src/uvm/report/hexk_report_catcher.sv`:
 
 ```systemverilog
-// Creates a catcher that is not registered anywhere; add_global() is the usual way to get one.
+// Creates a catcher that is not registered anywhere; add_to() and add_global() are the usual ways to get one.
 function new(string name = "hexk_report_catcher");
 // Creates a catcher and registers it for the messages of every reporter.
 static function hexk_report_catcher add_global();
+// Creates a catcher and registers it for the messages of one component (or other reporter) only, so that an expected error counts only when that component reports it. A null client registers for every reporter, as add_global() does.
+static function hexk_report_catcher add_to(uvm_report_object client);
 // Expects min_count to max_count messages of severity sev, matching the expressions; they become demote_to. max_count is min_count unless given: the shortest call expects exactly one message. NO_LIMIT has no maximum.
 function void expect_msg(string id_regex, uvm_severity sev = UVM_ERROR, string msg_regex = "", int unsigned min_count = 1, int max_count = SAME_AS_MIN, uvm_severity demote_to = UVM_INFO);
 // Expects a check with this ID to fail exactly count times, with messages of severity sev: they are demoted to info and counted as an expectation, and hexk_check_stats allows the failures. One call instead of expect_msg() and hexk_check_stats::expect_failures(). id is the ID itself, not an expression: the rule compares it as text, so an ID with characters such as "." or "[" matches only itself.
@@ -44,7 +46,7 @@ function void check_expectations();
 function int unsigned get_count(string id_regex, uvm_severity sev = UVM_ERROR);
 // Removes every rule and count; the catcher stays registered, and check_unchecked() checks it again.
 function void clear();
-// Calls check_expectations() of every catcher created by add_global() whose expectations were not checked since its last clear(); hexk_base_test calls it in its report phase, so that a test cannot forget it.
+// Calls check_expectations() of every catcher created by add_to() or add_global() whose expectations were not checked since its last clear(); hexk_base_test calls it in its check phase, so that a test cannot forget it.
 static function void check_unchecked();
 // Applies the first matching rule to the message being reported; the message is always passed on.
 function action_e catch();
@@ -80,18 +82,25 @@ function action_e catch();
 - `check_expectations` can be called more than once; it reports the state at each call and
   does not reset the counts. `clear` removes all rules and counts.
 - `hexk_report_catcher::check_unchecked()` calls `check_expectations` of every catcher created
-  by `add_global` that was not checked since it was created or last cleared.
-  `hexk_base_test` calls it in its report phase, so in a test derived from it the
-  expectations are checked even when the test does not call `check_expectations` itself; a
-  test that calls it in its check phase is not checked twice.
+  by `add_to` or `add_global` that was not checked since it was created or last cleared.
+  `hexk_base_test` calls it in its check phase, after the check phases of the env, so in a
+  test derived from it the expectations are checked even when the test does not call
+  `check_expectations` itself; a test that calls it earlier in its check phase is not checked
+  twice. A message that the test expects in a later phase is checked by the test itself.
 - The verdicts of `check_expectations` are errors of the root reporter of UVM, whatever
   reported the last message before the check. No `hexk_report_catcher` applies a rule to a
   message with the ID `HEXK_CATCHER_MISSING` or `HEXK_CATCHER_EXCESS`, so no rule, however
   broad, can hide a verdict. A report catcher of another class sees them like any other
   message.
 - The catcher always passes the message on (`THROW`); it never swallows one.
-- `add_global` registers the catcher for every reporter. Each call creates another catcher;
-  catchers are consulted in the order they were added.
+- `add_to(client)` registers the catcher for the messages of that component (or other
+  reporter) only: an error with the same ID from another component neither counts nor is
+  demoted by it (guide rule MSG-9). A null client is the same as `add_global`.
+- `add_global` registers the catcher for every reporter. Each call creates another catcher.
+  UVM consults the global catchers first, in the order they were added, then those of the
+  component. A rule matches the severity that the message has when it reaches the catcher,
+  so a global rule that changes the severity first hides the message from the rules of a
+  catcher of the component.
 
 ## 5. Configuration
 
@@ -158,8 +167,11 @@ endmodule : hexk_report_catcher_example
 ## 8. Anti-patterns
 
 - **Forgetting `check_expectations()` outside `hexk_base_test`.** Without it a test that
-  provokes nothing still passes. A test derived from `hexk_base_test` gets it in the report
+  provokes nothing still passes. A test derived from `hexk_base_test` gets it in the check
   phase; any other test calls it in its `check_phase`, or calls `check_unchecked()`.
+- **A global expectation for an error that one component reports.** An error with the same
+  ID from another component, such as a second scoreboard, then counts as the expected one.
+  Add the catcher to the component: `hexk_report_catcher::add_to(env.result_sb)`.
 - **`expect_msg` with `NO_LIMIT` for a message that the test provokes a known number of
   times.** An error storm then passes. Give the count, which is also the maximum.
 - **Unanchored ID expressions.** `expect_msg("SB")` also catches `SB_LEFTOVER` and

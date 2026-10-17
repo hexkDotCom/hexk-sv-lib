@@ -13,25 +13,32 @@
 // message of the check was demoted or switched off) and, unless switched off, at least one
 // executed check: a check macro, a comparison of a scoreboard, or what another checker counts
 // with hexk_check_stats::record_pass() and record_fail().
+// The verdict counts UVM reports and checks only: a $error or $fatal of a module, an interface,
+// an assertion or the core package, and an error of the simulator, are not among them. A
+// regression therefore also checks the log, as scripts/hexk_check_run.py does (guide TST-6).
 // report_banner(), which hexk_tb_top_inc.svh calls when the simulation ends, prints the verdict in
 // block letters: PASSED, FAILED, or ABORTED when the simulation ended before final_phase.
-// Every test has a global report catcher (catcher), with which a negative test expects its
-// messages, and a warning audit (warnings) on the report server: with fail_on_warnings (or
-// +hexk_fail_on_warnings=1), a warning that the test did not allow with allow_warning() is the
-// error HEXK_TEST_WARNING in the report phase.
+// Every test has a global report catcher (catcher); a negative test expects the errors of one
+// component with a catcher of hexk_report_catcher::add_to(), and check_phase checks every
+// catcher that the test did not check itself. Every test also has a warning audit (warnings) on
+// the report server: with fail_on_warnings (or +hexk_fail_on_warnings=1), a warning that the test
+// did not allow with allow_warning() is the error HEXK_TEST_WARNING in the report phase.
 // Each policy can be switched in the constructor of a block base test: install_report_server
 // keeps a report server of the project, stop_objection_propagation keeps the propagation of UVM,
 // require_checks lets a test without counted checks pass, fail_on_warnings makes a clean log a
 // condition of passing.
-// A block base test extends it and overrides the hooks do_type_overrides(), define_knobs(),
-// create_cfg() and modify_cfg(); it builds its env in its own build_phase after super.build_phase().
+// A block base test extends it and overrides the hooks do_type_overrides(), define_knobs() and
+// create_cfg(), which returns the cfg of the block; build_phase randomizes that cfg between the
+// hooks modify_cfg() and modify_randomized_cfg() (guide CFG-10, TST-2). The block base test builds
+// its env in its own build_phase after super.build_phase(). A test gives its stimulus in
+// create_stimulus(), which main_phase randomizes and starts under one objection.
 //
 //! @module    hexk_base_test
 //! @since     0.7.0
 //! @stability experimental
-//! @serves    TST-1 TST-2 TST-6 OBJ-5 OBJ-7
+//! @serves    TST-1 TST-2 TST-6 CFG-10 OBJ-5 OBJ-7 MSG-9
 //! @emits     HEXK_TEST_RESULT:info HEXK_TEST_CHECKS:info HEXK_TEST_NO_CHECKS:error HEXK_TEST_CHECK_FAILED:error
-//! @emits     HEXK_TEST_WARNING:error
+//! @emits     HEXK_TEST_WARNING:error HEXK_TEST_RAND:fatal
 //! @plusargs  +perf_mode +coverage +hexk_require_checks +hexk_fail_on_warnings
 
 `ifndef HEXK_BASE_TEST_SV
@@ -58,12 +65,16 @@ class hexk_base_test extends uvm_test;
    // Ends a test that hangs; its limits can be set in build_phase of a derived test.
    hexk_watchdog               watchdog;
 
-   // Global report catcher of the test, created in build_phase: a negative test expects its messages with it
-   // (expect_check(), expect_msg()); report_phase checks it.
+   // Global report catcher of the test, created in build_phase, for messages whose reporter does not matter; a negative
+   // test expects an error of one component with a catcher of hexk_report_catcher::add_to(). check_phase checks both.
    hexk_report_catcher         catcher;
 
    // Collects the warnings that the test did not allow; on the report server from build_phase on.
    hexk_warning_audit          warnings;
+
+   // The cfg of the block, as create_cfg() returned it; build_phase randomizes it between modify_cfg() and
+   // modify_randomized_cfg(). null when the block base test creates none.
+   uvm_object                  block_cfg;
 
    // When 1, a warning that the test did not allow with allow_warning() fails the test (HEXK_TEST_WARNING in
    // report_phase); +hexk_fail_on_warnings overrides it. Needs hexk_report_server.
@@ -76,7 +87,9 @@ class hexk_base_test extends uvm_test;
    bit                         install_report_server      = 1;
 
    // When 1, start_of_simulation_phase stops the objections of the run phase and of the run-time phases from
-   // propagating up the hierarchy; 0 leaves the propagation of UVM as it is.
+   // propagating up the hierarchy; 0 leaves the propagation of UVM as it is. Without propagation, the raised,
+   // dropped and all_dropped callbacks and the objection counts of the components above the one that objects
+   // see nothing: set 0 when the testbench relies on them (guide OBJ-5).
    bit                         stop_objection_propagation = 1;
 
    // The test of the simulation, recorded in its build_phase; null when no hexk_base_test was built.
@@ -107,14 +120,34 @@ class hexk_base_test extends uvm_test;
    virtual function void define_knobs();
    endfunction : define_knobs
 
-   // Hook: creates the cfg of the block, through the factory; called after the factory overrides and the knobs,
-   // before modify_cfg(), so that an override of a derived test reaches the cfg.
-   virtual function void create_cfg();
+   // Hook: creates the cfg of the block, through the factory, and returns it (null: no cfg); called after the factory
+   // overrides and the knobs, so that an override of a derived test reaches the cfg. build_phase randomizes it.
+   virtual function uvm_object create_cfg();
+      return null;
    endfunction : create_cfg
 
-   // Hook: changes to the cfg of the block before it is randomized; called last in build_phase, when knobs can be read.
+   // Hook: changes to the cfg of the block before it is randomized, when knobs can be read. A test pins a rand knob
+   // with rand_mode(0) and an assignment, or switches a constraint with constraint_mode(): a plain assignment to a
+   // rand knob is overwritten by the randomization (guide CFG-10).
    virtual function void modify_cfg();
    endfunction : modify_cfg
+
+   // Hook: changes to the cfg of the block after it was randomized, the last step of build_phase: plain assignments,
+   // which no constraint checks, so only for values that no constraint relates to others.
+   virtual function void modify_randomized_cfg();
+   endfunction : modify_randomized_cfg
+
+   // Hook: the stimulus of the test, created when main_phase starts (the env exists then); main_phase randomizes it
+   // and starts it on stimulus_sequencer() under one objection. null, the default, starts nothing.
+   virtual function uvm_sequence_base create_stimulus();
+      return null;
+   endfunction : create_stimulus
+
+   // Hook: the sequencer that the stimulus starts on; null, the default, for a virtual sequence without a virtual
+   // sequencer.
+   virtual function uvm_sequencer_base stimulus_sequencer();
+      return null;
+   endfunction : stimulus_sequencer
 
    // UVM callback: sets up report server, catcher, warning audit, knobs, aggregator, registry and watchdog, and calls
    // the hooks.
@@ -156,16 +189,22 @@ class hexk_base_test extends uvm_test;
       if (fail_on_warnings && hexk_report_server::get_installed() == null) begin
          `uvm_error("HEXK_TEST_WARNING", "fail_on_warnings needs hexk_report_server, which is not installed")
       end
-      create_cfg();
+      block_cfg = create_cfg();
       modify_cfg();
+      if (block_cfg != null) begin
+         `hexk_randomize_or_fatal(block_cfg, "HEXK_TEST_RAND")
+      end
+      modify_randomized_cfg();
    endfunction : build_phase
 
    // UVM callback: stops the objections of the run-time phases from propagating up the hierarchy, unless
    // stop_objection_propagation is 0.
    function void start_of_simulation_phase(uvm_phase phase);
-      uvm_domain common = uvm_domain::get_common_domain();
-      uvm_domain runtime = uvm_domain::get_uvm_domain();
+      uvm_domain common;
+      uvm_domain runtime;
       super.start_of_simulation_phase(phase);
+      common  = uvm_domain::get_common_domain();
+      runtime = uvm_domain::get_uvm_domain();
       if (!stop_objection_propagation) begin
          return;
       end
@@ -184,11 +223,32 @@ class hexk_base_test extends uvm_test;
       stop_propagation(runtime.find(uvm_post_shutdown_phase::get()));
    endfunction : start_of_simulation_phase
 
-   // UVM callback: checks the expectations of the report catchers that nobody checked, and reports the statistics
-   // of the check macros.
+   // UVM callback: runs the stimulus of create_stimulus(), randomized, on stimulus_sequencer() under one objection, and
+   // returns when it has ended; it returns at once without a stimulus. A derived test with a main_phase of its own
+   // calls super.main_phase() first or replaces it (guide CMP-4).
+   task main_phase(uvm_phase phase);
+      uvm_sequence_base stimulus;
+      super.main_phase(phase);
+      stimulus = create_stimulus();
+      if (stimulus == null) begin
+         return;
+      end
+      phase.raise_objection(this, "stimulus of the test");
+      `hexk_randomize_or_fatal(stimulus, "HEXK_TEST_RAND")
+      stimulus.start(stimulus_sequencer());
+      phase.drop_objection(this, "stimulus of the test done");
+   endtask : main_phase
+
+   // UVM callback: checks the expectations of the report catchers that nobody checked (guide MSG-9). The phase runs
+   // bottom-up, so the check phases of the env, where scoreboards report their leftovers, came first.
+   function void check_phase(uvm_phase phase);
+      super.check_phase(phase);
+      hexk_report_catcher::check_unchecked();
+   endfunction : check_phase
+
+   // UVM callback: reports the warnings that the test did not allow and the statistics of the check macros.
    function void report_phase(uvm_phase phase);
       super.report_phase(phase);
-      hexk_report_catcher::check_unchecked();
       if (fail_on_warnings && warnings.num_unexpected() != 0) begin
          `uvm_error("HEXK_TEST_WARNING",
                     $sformatf("%0d warnings that the test did not allow (allow_warning() allows one by its ID):\n%s",

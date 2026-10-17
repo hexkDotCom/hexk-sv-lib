@@ -38,10 +38,14 @@ function new(string name = "hexk_csr_util");
 task write(uvm_reg rg, uvm_reg_data_t value, uvm_sequence_base seq = null);
 // Reads a register, as part of seq; a status other than UVM_IS_OK is the error HEXK_CSR_STATUS, and value is then what UVM gave.
 task read(uvm_reg rg, output uvm_reg_data_t value, input uvm_sequence_base seq = null);
+// read() that also says whether the access worked: ok is 1 when its status was UVM_IS_OK, 0 otherwise (UVM_NOT_OK, UVM_HAS_X, a null register), so that a sequence can tell a value read from one it must not use (guide TRN-6).
+task read_ok(uvm_reg rg, output uvm_reg_data_t value, output bit ok, input uvm_sequence_base seq = null);
 // Writes a field the way UVM writes a field, as part of seq: alone where the map allows it, otherwise read, change, write.
 task write_field(uvm_reg_field field, uvm_reg_data_t value, uvm_sequence_base seq = null);
 // Reads the register of a field, as part of seq, and gives the value of the field.
 task read_field(uvm_reg_field field, output uvm_reg_data_t value, input uvm_sequence_base seq = null);
+// read_field() that also says whether the access worked, as read_ok() does.
+task read_field_ok(uvm_reg_field field, output uvm_reg_data_t value, output bit ok, input uvm_sequence_base seq = null);
 // Reads a register, as part of seq, and checks the bits of mask against exp; a difference is an error with the caller's ID. Counted in hexk_check_stats under that ID; a failed access counts as a failed check.
 task read_check(uvm_reg rg, uvm_reg_data_t exp, string id, uvm_reg_data_t mask = '1, uvm_sequence_base seq = null);
 // Reads the register of a field, as part of seq, and checks the field against exp; a difference is an error with the caller's ID. Counted in hexk_check_stats under that ID.
@@ -60,7 +64,7 @@ static function void exclude (string pattern, hexk_csr_check_e check = HEXK_CSR_
 static function bit is_excluded(string full_name, hexk_csr_check_e check);
 // Number of accesses through this object that have started and not ended.
 function int unsigned outstanding();
-// Forgets the accesses in flight, after a reset that killed the sequences that made them.
+// Forgets the accesses in flight, after a reset that killed the sequences that made them; a sequence that is killed in the middle of an access calls it from its do_kill() (SEQ-10).
 function void clear();
 // hexk_objectable: 1 while an access is in flight.
 virtual function bit is_busy();
@@ -94,6 +98,9 @@ Accesses:
   with `path` and `map` of the object and that parent. A status other than `UVM_IS_OK` is the error
   `HEXK_CSR_STATUS`, with the register and the status; `read()` then gives what UVM gave.
 - `read_field()` reads the whole register and gives the bits of the field at bit 0.
+- `read_ok()` and `read_field_ok()` are `read()` and `read_field()` with an output `ok`: 1 when
+  the access ended with `UVM_IS_OK`, 0 for any other status or a null register (guide rule
+  TRN-6), so that a sequence does not act on a value that was not read.
   `write_field()` is `write()` of the UVM field: alone where the map allows that, otherwise
   read-modify-write with the mirror of the other fields, as UVM does it; UVM then reports the
   warning `RegModel` "Individual field access not available".

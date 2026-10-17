@@ -19,9 +19,9 @@ class hexk_ref_multi_test extends hexk_ref_base_test;
    endfunction : new
 
    // The packets at their places.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       return hexk_ref_multi_vseq::type_id::create("multi_seq");
-   endfunction : create_traffic
+   endfunction : create_scenario
 
 endclass : hexk_ref_multi_test
 

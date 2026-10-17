@@ -92,7 +92,7 @@ From `src/uvm/hexk_check_macros.svh`:
 `define hexk_check_aligned_fatal(VAL, ALIGN, ID, MSG = "")
 // Fatal if OBJ.randomize() fails.
 `define hexk_randomize_or_fatal(OBJ, ID)
-// Fatal if OBJ.randomize() with the given constraints fails; CONSTRAINTS is written without braces.
+// Fatal if OBJ.randomize() with the given constraints fails; CONSTRAINTS is written without braces, and every variable of the calling scope in it is written with local:: (guide LNG-15).
 `define hexk_randomize_with_or_fatal(OBJ, ID, CONSTRAINTS)
 // Fatal if std::randomize(VAR) fails.
 `define hexk_std_randomize_or_fatal(VAR, ID)
@@ -393,6 +393,11 @@ endmodule : hexk_check_macros_example
   macro replaces: the macro also counts the passing case.
 - **Constraints with braces** in `` `hexk_randomize_with_or_fatal(obj, "ID", {x < 3;}) ``. Write
   them without the outer braces: `x < 3;`.
+- **A variable of the calling scope without `local::`** in the constraints of
+  `` `hexk_randomize_with_or_fatal ``. When the object has a member of the same name, the
+  constraint uses the member: write `num_items == local::num_words;`. Verilator 5.046 rejects
+  `local::` when the object is of a specialized parameterized class; there, give the variable a
+  name that the object has no member of.
 - **A string literal inside an operand of an `or_fatal` macro**, such as
   `` `hexk_cast_or_fatal(item, wrapper.create_object("item"), "ID") ``. These macros put their
   operands into the message as text, and Verilator rejects a quote inside it. Assign the

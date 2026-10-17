@@ -83,7 +83,7 @@ There are no plusargs.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 <!-- HEXK_GEN:END emits -->
 
 ## 7. Minimal example

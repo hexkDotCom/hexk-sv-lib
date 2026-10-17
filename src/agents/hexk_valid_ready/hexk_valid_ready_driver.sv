@@ -8,6 +8,7 @@
 // It is thin: the signals are driven by tasks of the interface. A reset ends the transfer
 // that is going on; the driver goes on when the reset is released. It is created by
 // hexk_valid_ready_agent in active mode; a testbench does not use it directly.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 //
 //! @module    hexk_valid_ready
 //! @since     0.7.0
@@ -91,6 +92,7 @@ class hexk_valid_ready_driver #(
          vif.wait_reset_released();
          send_or_abort(req, aborted);
          req.aborted = aborted;
+         req.status  = aborted ? UVM_NOT_OK : UVM_IS_OK;
          if (aborted) begin
             vif.idle_initiator(cfg.idle_data_x);
          end
@@ -163,6 +165,9 @@ class hexk_valid_ready_driver #(
       if (item != null && received) begin
          item.data        = word;
          item.wait_cycles = waited;
+         item.status      = $isunknown(word) ? UVM_HAS_X : UVM_IS_OK;
+      end else if (item != null) begin
+         item.status = UVM_NOT_OK;
       end
    endtask : receive_or_abort
 

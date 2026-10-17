@@ -21,7 +21,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    MSG-8 MSG-9
-//! @emits     HEXK_REPORT_SUMMARY:info HEXK_REPORT_CFG:warning
+//! @emits     HEXK_REPORT_SUMMARY:info HEXK_REPORT_CFG:warning HEXK_REPORT_CLONE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_REPORT_SERVER_SV
@@ -123,9 +123,10 @@ class hexk_report_server extends uvm_default_report_server;
       hexk_report_cfg taken;
       int unsigned    max_precision;
       string          unit;
-      if (cfg == null || !$cast(taken, cfg.clone())) begin
+      if (cfg == null) begin
          return;
       end
+      `hexk_cast_or_fatal(taken, cfg.clone(), "HEXK_REPORT_CLONE")
       unit = hexk_report_cfg::time_unit_text(taken.time_unit);
       // More digits would be below 1 fs, and the number of the time column would not fit 64 bits.
       max_precision = $unsigned(hexk_report_cfg::unit_exponent(taken.time_unit) - FS_EXPONENT);
@@ -145,7 +146,7 @@ class hexk_report_server extends uvm_default_report_server;
    // Returns a copy of the configuration in use; change it and give it to set_cfg.
    function hexk_report_cfg get_cfg();
       hexk_report_cfg duplicate;
-      void'($cast(duplicate, active_cfg.clone()));
+      `hexk_cast_or_fatal(duplicate, active_cfg.clone(), "HEXK_REPORT_CLONE")
       return duplicate;
    endfunction : get_cfg
 

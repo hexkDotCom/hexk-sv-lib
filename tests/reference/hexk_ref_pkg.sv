@@ -13,6 +13,8 @@
 `include "hexk_macros.svh"
 
 package hexk_ref_pkg;
+   timeunit 1ns; timeprecision 1ps;
+
    `include "uvm_macros.svh"
    import uvm_pkg::*;
    import hexk_core_pkg::hexk_crc;
@@ -56,6 +58,7 @@ package hexk_ref_pkg;
    `include "hexk_ref_back_to_back_vseq.sv"
    `include "hexk_ref_mem_vseq.sv"
    `include "hexk_ref_fault_vseq.sv"
+   `include "hexk_ref_test_vseq.sv"
    `include "hexk_ref_base_test.sv"
    `include "hexk_ref_pass_test.sv"
    `include "hexk_ref_vectors_test.sv"

@@ -13,7 +13,7 @@
 //! @module    hexk_value_wrapper
 //! @since     0.7.0
 //! @stability experimental
-//! @emits     HEXK_VALUE_WRAPPER_WIDTH:error HEXK_COPY_TYPE:error
+//! @emits     HEXK_VALUE_WRAPPER_WIDTH:error HEXK_COPY_TYPE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_VALUE_WRAPPER_SV
@@ -122,7 +122,7 @@ class hexk_value_wrapper #(
       hexk_value_wrapper #(T) other;
       super.do_copy(rhs);
       if (!$cast(other, rhs)) begin
-         `uvm_error("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
                                                 rhs.get_name(), rhs.get_type_name()))
          return;
       end

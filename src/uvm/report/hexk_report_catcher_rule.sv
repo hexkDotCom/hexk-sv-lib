@@ -26,19 +26,22 @@ class hexk_report_catcher_rule;
    // Regular expression on the message text; empty means any text.
    string msg_regex;
 
-   // Filters built from the two expressions.
+   // Filter built from the expression for the ID.
    hexk_regex id_filter;
+   // Filter built from the expression for the message text.
    hexk_regex msg_filter;
 
-   // Severity a message must have to match, and the severity it gets.
+   // Severity a message must have to match.
    uvm_severity from_severity;
+   // Severity a matching message gets.
    uvm_severity to_severity;
 
    // Set for an expectation (counted and checked), clear for a plain demotion.
    bit is_expectation;
 
-   // Limits of an expectation; a max_count below 0 means no upper limit.
+   // Least number of matching messages of an expectation.
    int unsigned min_count;
+   // Largest number of matching messages of an expectation; below 0 means no upper limit.
    int max_count;
 
    // Number of messages that matched this rule.

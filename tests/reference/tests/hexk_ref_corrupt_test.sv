@@ -25,16 +25,20 @@ class hexk_ref_corrupt_test extends hexk_ref_base_test;
    endfunction : new
 
    // One mismatch per packet is expected.
-   virtual function void configure_test();
-      catcher.expect_check("HEXK_SB_MISMATCH", NUM_PACKETS);
-   endfunction : configure_test
+   // UVM callback: the mismatches are expected from the result scoreboard, and from nothing else (guide MSG-9).
+   function void connect_phase(uvm_phase phase);
+      hexk_report_catcher result_catcher;
+      super.connect_phase(phase);
+      result_catcher = hexk_report_catcher::add_to(env.result_sb);
+      result_catcher.expect_check("HEXK_SB_MISMATCH", NUM_PACKETS);
+   endfunction : connect_phase
 
    // The packets with corrupted reads.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       hexk_ref_corrupt_vseq corrupt_seq = hexk_ref_corrupt_vseq::type_id::create("corrupt_seq");
       corrupt_seq.num_packets = NUM_PACKETS;
       return corrupt_seq;
-   endfunction : create_traffic
+   endfunction : create_scenario
 
    // No packet result matches.
    virtual function int unsigned expected_matches();

@@ -9,13 +9,17 @@
 // observers of the handshake.
 // It samples the channel at every rising edge of the clock, as the DUT does, and knows
 // whether a transfer is waiting, which the agent reports as "busy". It writes no item during
-// a reset. It is created by hexk_valid_ready_agent in every mode.
+// a reset. An item whose word has an X or Z bit has the status UVM_HAS_X. With the assertions of
+// the interface off (has_checks 0), the monitor itself reports a valid or ready without a level,
+// or data with an X or Z bit while valid is 1, as HEXK_VALID_READY_UNKNOWN in every clock cycle
+// out of reset (guide TRN-6). It is created by hexk_valid_ready_agent in every mode.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 //
 //! @module    hexk_valid_ready
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    CMP-5 CMP-12
-//! @emits     (none)
+//! @emits     HEXK_VALID_READY_UNKNOWN:error
 //! @plusargs  (none)
 
 `ifndef HEXK_VALID_READY_MONITOR_SV
@@ -83,6 +87,8 @@ class hexk_valid_ready_monitor #(
          cycle.in_reset = reset_active;
          cycle.valid = valid;
          cycle.ready = ready;
+         // CMP-5 waived: cycle_ap publishes a record of every edge, also during the reset; the record says so
+         // (in_reset, reset_began), and the coverage of the handshake needs the edges at which a reset begins.
          cycle_ap.write(cycle);
          if (reset_active || reset_since) begin
             waiting = 0;
@@ -90,6 +96,11 @@ class hexk_valid_ready_monitor #(
          was_in_reset = reset_active;
          if (reset_active) begin
             continue;
+         end
+         // The interface assertion known_a reports the same while it is on; one of the two reports, never both.
+         if (!vif.get_checks() && vif.has_unknown()) begin
+            `uvm_error("HEXK_VALID_READY_UNKNOWN",
+                       "valid or ready has no level, or data has an X or Z bit while valid is 1")
          end
          if (valid && ready) begin
             publish(data);
@@ -114,6 +125,7 @@ class hexk_valid_ready_monitor #(
       hexk_valid_ready_item #(DATA_WIDTH) item = hexk_valid_ready_item#(DATA_WIDTH)::type_id::create("item", this);
       item.data        = data;
       item.wait_cycles = waiting;
+      item.status      = $isunknown(data) ? UVM_HAS_X : UVM_IS_OK;
       ap.write(item);
    endfunction : publish
 

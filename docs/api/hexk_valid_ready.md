@@ -92,6 +92,10 @@ From `src/agents/hexk_valid_ready/hexk_valid_ready_if.sv`:
 function automatic void set_driver(bit as_initiator, bit drives);
 // Switches the protocol assertions on or off.
 function automatic void set_checks(bit enable);
+// 1 while the protocol assertions are on.
+function automatic bit get_checks();
+// 1 when valid or ready has no level now, or a bit of data while valid is 1: what the assertion known_a checks.
+function automatic bit has_unknown();
 // 1 while the reset is asserted or has no level.
 function automatic bit in_reset();
 // Number of times the reset was asserted so far.
@@ -125,7 +129,7 @@ function string convert2string();
 function void do_copy(uvm_object rhs);
 // UVM hook of compare(): the words are equal, X and Z bits included; the timing is not compared.
 function bit do_compare(uvm_object rhs, uvm_comparer comparer);
-// UVM hook of print() and sprint(): the word and the timing.
+// UVM hook of print() and sprint(): the word, the timing and the status.
 function void do_print(uvm_printer printer);
 // UVM hook of pack(): every member, in the order of the declarations; X and Z bits of the word become 0.
 function void do_pack(uvm_packer packer);
@@ -202,6 +206,7 @@ only. The driver and the monitor have no such limit.
 | `rand int delay_cycles` | Clock cycles before the driver offers the transfer; below 0, the default, the driver takes the delay of the cfg. |
 | `int unsigned wait_cycles` | Set by the monitor and by a driver: clock cycles for which `valid` waited for `ready`. |
 | `bit aborted` | Set by a driver: 1 when a reset ended the item before its transfer. |
+| `uvm_status_e status` | Set by a driver and by the monitor: `UVM_IS_OK`; `UVM_NOT_OK` when a reset ended the item; `UVM_HAS_X` when the word that a responder took or the monitor saw has an X or Z bit (guide rule TRN-6). Not compared. |
 
 | Member of a sequence | Default | Meaning |
 |---|---|---|
@@ -302,8 +307,12 @@ Reset:
 
 Monitor, in every mode:
 
-- Every transfer is one item on `ap` with `data` and `wait_cycles`; `delay_cycles` is not
-  set. A `valid` or `ready` that is X or Z counts as 0. The monitor creates a new item for
+- Every transfer is one item on `ap` with `data`, `wait_cycles` and `status` (`UVM_HAS_X`
+  when `data` has an X or Z bit); `delay_cycles` is not set. A `valid` or `ready` that is X
+  or Z counts as 0. With `has_checks` 0, when the assertions of the interface are off, the
+  monitor reports in every clock cycle out of reset what the assertion `known_a` would: the
+  error `HEXK_VALID_READY_UNKNOWN` for a `valid` or `ready` without a level, or `data` with
+  an X or Z bit while `valid` is 1. With `has_checks` 1 only the assertion reports it. The monitor creates a new item for
   every transfer; subscribers keep it and do not change it (`docs/integration.md`, "Items
   after they are published").
 - Every rising edge of the clock, also during a reset, is one `hexk_handshake_cycle_t` on
@@ -377,7 +386,7 @@ Items and cfg:
   sequences.
 - `copy()` and `clone()` of the cfg give the copy a `delay_cfg` of its own: a clone of the
   original one, of its class, or none when the original has none. `convert2string()` says
-  `none` then. A copy of an item or a cfg from an object of another class is the error
+  `none` then. A copy of an item or a cfg from an object of another class is the fatal
   `HEXK_COPY_TYPE` and changes nothing.
 
 Simulators:
@@ -398,7 +407,7 @@ Simulators:
 | `vif` | null | The interface of this agent; mandatory. |
 | `delay_cfg` (`rand`) | uniform 0 to 4 | The delays of the driver; a `hexk_delay_cfg`. |
 | `idle_data_x` | 1 | 1: an initiator drives X on `data` while `valid` is 0. |
-| `has_checks` | 1 | 0: the protocol assertions of the interface are off. |
+| `has_checks` | 1 | 0: the protocol assertions of the interface are off; the monitor then reports `HEXK_VALID_READY_UNKNOWN` itself. |
 | `has_coverage` | 1 | 0: no coverage component. |
 
 | Parameter | Default | Meaning |
@@ -412,7 +421,7 @@ There are no plusargs and no compile-time switches.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 | `HEXK_VALID_READY_CFG` | fatal |  |
 | `HEXK_VALID_READY_DATA_CHANGED` | error |  |
 | `HEXK_VALID_READY_RAND` | fatal |  |

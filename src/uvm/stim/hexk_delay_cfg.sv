@@ -15,7 +15,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    CFG-3
-//! @emits     HEXK_COPY_TYPE:error
+//! @emits     HEXK_COPY_TYPE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_DELAY_CFG_SV
@@ -179,7 +179,7 @@ class hexk_delay_cfg extends uvm_object;
       hexk_delay_cfg other;
       super.do_copy(rhs);
       if (!$cast(other, rhs)) begin
-         `uvm_error("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
                                                 rhs.get_name(), rhs.get_type_name()))
          return;
       end

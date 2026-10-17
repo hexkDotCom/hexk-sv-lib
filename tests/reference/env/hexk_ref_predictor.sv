@@ -36,6 +36,7 @@
 
 class hexk_ref_predictor extends uvm_component implements hexk_objectable;
 
+   // The item of the input agent.
    typedef hexk_valid_ready_item#(32) word_item_t;
 
    // A word that the DUT accepted, and the time in picoseconds of the edge that accepted it.
@@ -56,7 +57,9 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
 
    // Pipeline depth of the DUT: a word accepted at an edge is committed this many edges later.
    localparam int unsigned PIPE_DEPTH = 3;
+   // Taps of the scrambling LFSR of the DUT.
    localparam bit [15:0] LFSR_TAPS = 16'hB400;
+   // Seed of the scrambling LFSR at the start of every packet.
    localparam bit [15:0] LFSR_SEED = 16'hACE1;
 
    // Inputs: the words and edges of the input agent and the accesses of the bus monitor. Each export is the only one
@@ -127,6 +130,7 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
 
    // Triggered at every rising edge: the clock of the commit FIFO.
    event edge_seen;
+   // The commits, held for the pipeline of the DUT until the RAM gets them.
    hexk_delay_analysis_fifo #(hexk_ref_commit_item) commit_fifo;
 
    // IDs of the results.
@@ -179,8 +183,7 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
       super.run_phase(phase);
       forever begin
          commit_fifo.get(item);
-         commit_word(item);
-         commit_ap.write(item);
+         commit_ap.write(commit_word(item));
       end
    endtask : run_phase
 
@@ -353,13 +356,15 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
       end
    endfunction : packet_received
 
-   // A word reaches the RAM: an armed injection changes its code word; the oldest packet is complete when its last
-   // word came and all its words are committed.
-   local function void commit_word(hexk_ref_commit_item commit);
+   // A word reaches the RAM: an armed injection changes its code word, in a copy (guide TLM-6); the oldest packet is
+   // complete when its last word came and all its words are committed. Returns the commit as the RAM got it.
+   local function hexk_ref_commit_item commit_word(hexk_ref_commit_item item);
+      hexk_ref_commit_item       commit = item;
       hexk_core_pkg::hexk_bits_t decoded;
       int unsigned               syndrome;
       apply_writes_before(hexk_wait_util::now_ps());
       if (inj_armed) begin
+         `hexk_cast_or_fatal(commit, item.clone(), "REF_PRED_CLONE")
          commit.code ^= inj_mask;
          inj_armed = 0;
       end
@@ -373,6 +378,7 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
             packet_completed(packets.pop_front());
          end
       end
+      return commit;
    endfunction : commit_word
 
    // The last word of a packet is committed: the result gets the words that the RAM now holds; a heartbeat.

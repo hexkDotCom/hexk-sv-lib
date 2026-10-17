@@ -12,6 +12,7 @@
 // the global timeout. The fatal message holds the reason, the busy objects of the objection
 // aggregator given in the member aggregator, and the last heartbeat of every source.
 // Create one in the base test and set the limits before the run phase starts.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 //
 //! @module    hexk_watchdog
 //! @since     0.7.0

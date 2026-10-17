@@ -31,10 +31,31 @@ module hexk_base_test_unit_test;
    import hexk_uvm_pkg::hexk_report_server;
    `include "uvm_macros.svh"
 
-   // Test that notes the order of its hooks and defines one knob.
+   // Cfg of the block test: three random knobs in the same range.
+   class hexk_ut_block_cfg extends uvm_object;
+      rand int unsigned pinned;
+      rand int unsigned plain;
+      rand int unsigned assigned_after;
+
+      `uvm_object_utils(hexk_ut_block_cfg)
+
+      constraint range_cstr {
+         pinned inside {[10 : 20]};
+         plain inside {[10 : 20]};
+         assigned_after inside {[10 : 20]};
+      }
+
+      function new(string cfg_name = "hexk_ut_block_cfg");
+         super.new(cfg_name);
+      endfunction : new
+   endclass : hexk_ut_block_cfg
+
+   // Test that notes the order of its hooks and defines one knob. Before the randomization of its cfg it pins one
+   // knob and assigns another plainly; after it, it assigns a third one.
    class hexk_ut_block_test extends hexk_base_test;
-      string hook_log;
-      bit    knobs_readable_in_modify_cfg;
+      string            hook_log;
+      bit               knobs_readable_in_modify_cfg;
+      hexk_ut_block_cfg cfg;
 
       function new(string component_name, uvm_component parent);
          super.new(component_name, parent);
@@ -49,14 +70,24 @@ module hexk_base_test_unit_test;
          knobs.add_int("ut_block_items", 5, "items of the block test");
       endfunction : define_knobs
 
-      virtual function void create_cfg();
+      virtual function uvm_object create_cfg();
          hook_log = {hook_log, "create "};
+         cfg      = hexk_ut_block_cfg::type_id::create("cfg");
+         return cfg;
       endfunction : create_cfg
 
       virtual function void modify_cfg();
          hook_log                     = {hook_log, "cfg "};
          knobs_readable_in_modify_cfg = (knobs.get_int("ut_block_items") == 5);
+         cfg.pinned.rand_mode(0);
+         cfg.pinned = 15;
+         cfg.plain  = 99;
       endfunction : modify_cfg
+
+      virtual function void modify_randomized_cfg();
+         hook_log           = {hook_log, "randomized "};
+         cfg.assigned_after = 99;
+      endfunction : modify_randomized_cfg
    endclass : hexk_ut_block_test
 
    // Keeps the text of the latest HEXK_TEST_RESULT message.
@@ -309,8 +340,14 @@ module hexk_base_test_unit_test;
 
    `SVTEST(the_hooks_are_called_in_order_and_modify_cfg_can_read_knobs)
       test.build_phase(null);
-      `FAIL_UNLESS_STR_EQUAL(test.hook_log, "overrides knobs create cfg ")
+      `FAIL_UNLESS_STR_EQUAL(test.hook_log, "overrides knobs create cfg randomized ")
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0d", test.knobs_readable_in_modify_cfg), "1")
+   `SVTEST_END
+
+   `SVTEST(the_cfg_is_randomized_between_modify_cfg_and_modify_randomized_cfg)
+      test.build_phase(null);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0d %0d %0d %0d", test.block_cfg == test.cfg, test.cfg.pinned,
+                                       test.cfg.plain inside {[10 : 20]}, test.cfg.assigned_after), "1 15 1 99")
    `SVTEST_END
 
    `SVTEST(require_checks_set_before_the_build_is_the_default_of_its_knob)

@@ -7,7 +7,8 @@
 // samples ack, at most max_wait_cycles edges. Without an ack it ends the request, sets the status
 // of the item to HEXK_REF_BUS_NO_ACK and reports REF_BUS_NO_ACK, so that a register access never
 // waits for ever (the time limit of hexk_csr_util counts between reads, not inside one). Read data
-// with X or Z bits is the error REF_BUS_UNKNOWN. The driver hands an item back one edge after its
+// with X or Z bits keeps the status, but is_ok() is 0 and the register model gets UVM_HAS_X; the
+// monitor reports it (REF_BUS_UNKNOWN). The driver hands an item back one edge after its
 // ack: by then the monitor has published the access, so a test that looks at the predictor after
 // an access sees that access.
 // Reset: no access starts while the reset is asserted. A reset during an access ends it at the
@@ -64,8 +65,7 @@ class hexk_ref_bus_driver extends uvm_driver #(hexk_ref_bus_item) implements hex
    // One access: request, wait for ack, end the request.
    local task drive(hexk_ref_bus_item item);
       int unsigned waited = 0;
-      wait (vif.rst_n === 1'b1);
-      @(vif.cb);
+      @(vif.cb iff vif.rst_n === 1'b1);
       vif.cb.req   <= 1'b1;
       vif.cb.we    <= item.we;
       vif.cb.addr  <= item.addr;
@@ -85,8 +85,6 @@ class hexk_ref_bus_driver extends uvm_driver #(hexk_ref_bus_item) implements hex
       item.status = (vif.cb.ack === 1'b1) ? HEXK_REF_BUS_OK : HEXK_REF_BUS_NO_ACK;
       if (item.status == HEXK_REF_BUS_NO_ACK) begin
          `uvm_error("REF_BUS_NO_ACK", $sformatf("no ack after %0d cycles: %s", waited, item.convert2string()))
-      end else if (!item.is_ok()) begin
-         `uvm_error("REF_BUS_UNKNOWN", $sformatf("read data with X or Z bits: %s", item.convert2string()))
       end
       // The monitor publishes a read at its ack edge: one more edge, and it has.
       @(vif.cb);

@@ -14,7 +14,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    CFG-1 CFG-3
-//! @emits     HEXK_COPY_TYPE:error
+//! @emits     HEXK_COPY_TYPE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_VALID_READY_AGENT_CFG_SV
@@ -81,7 +81,7 @@ class hexk_valid_ready_agent_cfg #(
       hexk_valid_ready_agent_cfg #(DATA_WIDTH) other;
       super.do_copy(rhs);
       if (!$cast(other, rhs)) begin
-         `uvm_error("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
                                                 rhs.get_name(), rhs.get_type_name()))
          return;
       end
@@ -93,7 +93,7 @@ class hexk_valid_ready_agent_cfg #(
       has_coverage = other.has_coverage;
       delay_cfg    = null;
       if (other.delay_cfg != null) begin
-         void'($cast(delay_cfg, other.delay_cfg.clone()));
+         `hexk_cast_or_fatal(delay_cfg, other.delay_cfg.clone(), "HEXK_COPY_TYPE")
       end
    endfunction : do_copy
 

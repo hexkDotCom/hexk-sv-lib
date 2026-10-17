@@ -20,9 +20,9 @@ class hexk_ref_ecc_test extends hexk_ref_base_test;
    endfunction : new
 
    // The injections.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       return hexk_ref_ecc_vseq::type_id::create("ecc_seq");
-   endfunction : create_traffic
+   endfunction : create_scenario
 
 endclass : hexk_ref_ecc_test
 

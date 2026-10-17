@@ -15,15 +15,19 @@
 class hexk_ref_bus_agent extends uvm_agent;
 
    // The cfg; assigned by the environment before the build phase.
-   hexk_ref_bus_agent_cfg             cfg;
+   hexk_ref_bus_agent_cfg                    cfg;
 
    // Sequencer and driver of an active agent; null in a passive one.
-   uvm_sequencer #(hexk_ref_bus_item) sqr;
-   hexk_ref_bus_driver                drv;
+   uvm_sequencer #(hexk_ref_bus_item)        sqr;
+   hexk_ref_bus_driver                       drv;
 
    // The monitor, and the adapter between bus items and register operations.
-   hexk_ref_bus_monitor               mon;
-   hexk_ref_reg_adapter               adapter;
+   hexk_ref_bus_monitor                      mon;
+   hexk_ref_reg_adapter                      adapter;
+
+   // The ports of the monitor, as handles of the agent (guide CMP-10): completed accesses and committed code words.
+   uvm_analysis_port #(hexk_ref_bus_item)    ap;
+   uvm_analysis_port #(hexk_ref_commit_item) commit_ap;
 
    `uvm_component_utils(hexk_ref_bus_agent)
 
@@ -55,9 +59,11 @@ class hexk_ref_bus_agent extends uvm_agent;
       return cfg.is_active;
    endfunction : get_is_active
 
-   // UVM callback: connects the driver to the sequencer of an active agent.
+   // UVM callback: takes the ports of the monitor and connects the driver to the sequencer of an active agent.
    function void connect_phase(uvm_phase phase);
       super.connect_phase(phase);
+      ap        = mon.ap;
+      commit_ap = mon.commit_ap;
       if (get_is_active() == UVM_ACTIVE) begin
          drv.seq_item_port.connect(sqr.seq_item_export);
       end

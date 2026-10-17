@@ -8,6 +8,89 @@ minor version may change an API; such changes are listed under "Changed".
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-17
+
+The library and its reference testbench follow the style guide v0.4 throughout. A report catcher
+can be scoped to one component, the base test takes over the lifecycle of the cfg of a block and
+starts the stimulus of a test, the agents report unknown values on their own, and copies from a
+wrong class stop the run. Several changes affect code written for 0.9.0; they are listed under
+"Changed". All modules are still `experimental`.
+
+### Added
+
+- `hexk_report_catcher::add_to(component)`: a catcher for the messages of one component, so that
+  an expected error counts only when that component reports it; another component with the same
+  ID neither counts nor is demoted.
+- `hexk_base_test::modify_randomized_cfg()`: a hook for plain changes to the cfg after the base
+  test randomized it. `create_stimulus()` and `stimulus_sequencer()`: the stimulus of a test,
+  which `main_phase` of the base test randomizes and starts under one objection.
+- `hexk_valid_ready_item::status`: `UVM_HAS_X` when the word that a responder took or the monitor
+  saw has an X or Z bit, `UVM_NOT_OK` when a reset ended the item, else `UVM_IS_OK`.
+- `hexk_valid_ready`: with `has_checks` 0 the monitor reports `HEXK_VALID_READY_UNKNOWN` itself,
+  so a valid or ready without a level is never silent; with `has_checks` 1 the assertion of the
+  interface reports it, as before.
+- `hexk_csr_util::read_ok()` and `read_field_ok()`: a read that also says whether the access
+  ended with `UVM_IS_OK`.
+- `hexk_clk_rst`: the monitor reports the error `HEXK_CLK_RST_UNKNOWN` when the reset pin becomes
+  X or Z after it had a level; an X before the first level is still ignored.
+
+### Changed
+
+- `hexk_base_test::create_cfg()` returns the cfg it creates (`uvm_object`, null for none), and the
+  base test randomizes it after `modify_cfg()`, with the fatal `HEXK_TEST_RAND` on a failure. A
+  block base test no longer randomizes its cfg itself; code that overrode `function void
+  create_cfg()` returns the cfg now. A plain assignment to a `rand` knob in `modify_cfg()` is
+  overwritten by that randomization: pin it with `rand_mode(0)`, or assign it in
+  `modify_randomized_cfg()`.
+- `hexk_base_test` checks the expectations of the report catchers in its check phase instead of
+  its report phase, after the check phases of the env.
+- A copy (`copy()`, `clone()`) of a library item, cfg or model from an object of another class is
+  the fatal `HEXK_COPY_TYPE`; it was an error after which the object was left unchanged.
+
+### Fixed
+
+- `hexk_report_server`: `set_cfg()` and `get_cfg()` end with the fatal `HEXK_REPORT_CLONE` when
+  the cfg cannot be cloned as a `hexk_report_cfg`; `set_cfg()` ignored such a cfg without a word,
+  and `get_cfg()` returned null.
+- `hexk_objection_aggregator`: a phase without an implementation is no longer taken for a task
+  phase.
+
+### Reference testbench
+
+- Follows the style guide v0.4: the base test uses `create_cfg()`, `modify_randomized_cfg()` and
+  `create_stimulus()` of `hexk_base_test`; a test picks its scenario with `create_scenario()`
+  (was `create_traffic()`) and sets itself up in `modify_randomized_cfg()` (was
+  `configure_test()`); the stimulus is a `hexk_ref_test_vseq` that runs the scenario and then
+  checks ERR.
+- The bus monitor reports an access or a commit with X or Z bits (`REF_BUS_UNKNOWN`) and does not
+  publish it; the interface asserts that `req`, and the request while `req` is 1, have a level;
+  a read of X or Z gives the register model `UVM_HAS_X`.
+- The bus agent has agent-level ports `ap` and `commit_ap`; the child cfgs of the env cfg are
+  `rand`; the bus item has `do_compare()` and `do_print()`, the commit and the result
+  `do_print()`; a plain bus access is randomized with its fields as constraints.
+- The corrupt test expects its mismatches from the result scoreboard only
+  (`hexk_report_catcher::add_to()`); the register and RAM tests check that their checks ran; the
+  regression line of the hang test names the scoreboard of the timeout.
+- The package declares its time unit; a request no longer starts when a reset asserts in the cycle
+  before it.
+
+### Documentation
+
+- `hexk_base_test`: the verdict counts UVM reports and checks only; a `$error` of non-class code
+  or an error of the simulator needs a check of the log, as `scripts/hexk_check_run.py` does.
+  What a test loses when objections do not propagate is stated.
+- The headers of `hexk_scoreboard` (with `max_wait_ps`), `hexk_watchdog`,
+  `hexk_delay_analysis_fifo` and the drivers and monitors of the agents say that `run_phase`
+  never returns, so an extension replaces it instead of calling `super.run_phase()`.
+- `hexk_scoreboard`: the env calls `on_reset()` at a reset; `transform_expected()` must not change
+  the item it gets. `hexk_csr_util`: a sequence killed during an access calls `clear()`.
+- `hexk_valid_ready_if` states its transfer contract: data valid at the transfer edge, valid and
+  data held until the transfer, behaviour during reset.
+- `` `hexk_randomize_with_or_fatal ``: variables of the calling scope are written with `local::`.
+
+Tested as 0.9.0 was: see "Where it has been tested" in the README for the numbers. Nothing has
+been run on Xcelium.
+
 ## [0.9.0] - 2026-10-16
 
 Safer defaults on the way to 1.0.0, a reference testbench that checks the library from the
@@ -59,10 +142,6 @@ under "Changed". All modules are still `experimental`.
 
 ### Changed
 
-- The equality checks, `hexk_check_mask` and `hexk_check_aligned` fail when the second operand
-  has more bits than a check compares (`exp has 1101 bits ...`), as the first operand does;
-  before, its upper bits were cut and the check could pass. A second operand no wider than the
-  first always fits, also a signed one whose top bit is X or Z.
 - `hexk_clk_rst`: an assert, release or reset item at a rising edge is done when the pin has
   changed, in the same time step; before, the sequence could return just before.
 - `hexk_report_catcher::expect_check()` compares the ID as text, so an ID with characters such
@@ -90,9 +169,10 @@ under "Changed". All modules are still `experimental`.
   and the first error start with `install()`, while the counts of UVM are carried over.
 - The equality checks (`hexk_check_eq`, `_ne`, `_case_eq`), `hexk_check_mask` and
   `hexk_check_aligned` fail when the second operand does not fit the width of the first as an
-  unsigned or a signed number, with a message that says so, instead of cutting it:
-  `` `hexk_check_eq(byte_value, 256, ...) `` no longer passes for 0. -1, `'1` and `8'hFF`
-  against a byte still fit.
+  unsigned or a signed number, or has more bits than a check compares, with a message that
+  says so, instead of cutting it: `` `hexk_check_eq(byte_value, 256, ...) `` no longer passes
+  for 0. -1, `'1` and `8'hFF` against a byte still fit, and so does a second operand no wider
+  than the first, also a signed one whose top bit is X or Z.
 - `hexk_check_obj_eq(act, exp)` calls `exp.compare(act)`, as the scoreboard does, so that the
   expected object decides, for instance with the tolerance of a `hexk_value_wrapper`.
 - `hexk_report_catcher::expect_msg()` without a maximum expects exactly the minimum, one by
@@ -302,7 +382,8 @@ Verilator 5.046) and on Questa 2024.1 and VCS X-2025.06, each with UVM 1.2 and U
 (unit tests, every example, the smoke testbench). See "Where it has been tested" in the
 README for the numbers and the limits on Verilator. Nothing has been run on Xcelium.
 
-[Unreleased]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hexkDotCom/hexk-sv-lib/releases/tag/v0.7.0

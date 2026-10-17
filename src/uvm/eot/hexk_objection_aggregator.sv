@@ -147,9 +147,10 @@ class hexk_objection_aggregator extends uvm_component;
 
    // UVM callback: nothing objects to the end of the phase any more; busy objects hold it back.
    function void phase_ready_to_end(uvm_phase phase);
-      int          index = find_phase(phase);
+      int          index;
       int unsigned serial;
       super.phase_ready_to_end(phase);
+      index = find_phase(phase);
       if (index < 0 || active[index].polling || !is_any_busy()) begin
          return;
       end
@@ -173,8 +174,9 @@ class hexk_objection_aggregator extends uvm_component;
 
    // UVM callback: a task phase has ended, also by a jump, which removes every objection.
    function void phase_ended(uvm_phase phase);
-      int index = find_phase(phase);
+      int index;
       super.phase_ended(phase);
+      index = find_phase(phase);
       if (index < 0) begin
          return;
       end
@@ -259,7 +261,8 @@ class hexk_objection_aggregator extends uvm_component;
    // 1 for run_phase and the phases of the run-time schedule, which consume time and take objections.
    local function bit is_task_phase(uvm_phase phase);
       uvm_task_phase task_imp;
-      return $cast(task_imp, phase.get_imp()) != 0;
+      // A null imp would cast without failing (LNG-21).
+      return phase.get_imp() != null && $cast(task_imp, phase.get_imp()) != 0;
    endfunction : is_task_phase
 
    // A reason with its further lines indented by four spaces.

@@ -106,6 +106,8 @@ class hexk_ref_warm_reset_vseq extends hexk_ref_scenario_vseq;
          cut_seq.start(env.in_agent.sqr, this);
       join_none
       // The last of the words is taken at an edge; a third of a period later, the reset.
+      // SEQ-13 waived: the reset must come at a known time after a known word; the count of the predictor is where the
+      // testbench learns when the DUT took it.
       wait (env.predictor.num_words == words_before + CUT_WORDS);
       hexk_wait_util::wait_ps(env.clk_rst_agent.status.period_ps / 3);
       assert_seq.sync_assert = 0;

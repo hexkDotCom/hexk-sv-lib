@@ -198,7 +198,7 @@ module hexk_valid_ready_unit_test;
       svunit_ut.setup();
       catcher.clear();
       catcher.expect_msg("^HEXK_VALID_READY_CFG$", UVM_FATAL, "", 0, -1, UVM_INFO);
-      catcher.expect_msg("^HEXK_COPY_TYPE$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_COPY_TYPE$", UVM_FATAL, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_VALID_READY_VALID_DROPPED$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_VALID_READY_DATA_CHANGED$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_VALID_READY_UNKNOWN$", UVM_ERROR, "", 0, -1, UVM_INFO);
@@ -547,6 +547,11 @@ module hexk_valid_ready_unit_test;
       return $sformatf("%h %0d %0b", data_seq.req.data, data_seq.req.wait_cycles, data_seq.req.aborted);
    endfunction : last_item
 
+   // The status of the last item of the data sequence.
+   function automatic string last_status();
+      return data_seq.req.status.name();
+   endfunction : last_status
+
    // Builds an agent without a cfg, or with a cfg without an interface: "<fatals> <monitor created>".
    function automatic string build_without(string what);
       hexk_ut_cfg_t   broken = (what == "cfg") ? null : hexk_ut_cfg_t::type_id::create("broken");
@@ -666,6 +671,7 @@ module hexk_valid_ready_unit_test;
       item.delay_cycles = -2;
       item.wait_cycles  = 7;
       item.aborted      = 1;
+      item.status       = UVM_HAS_X;
       void'(item.pack(bits));
       void'(unpacked.unpack(bits));
       return {printed_fields(item), " | ", unpacked.convert2string()};
@@ -717,7 +723,7 @@ module hexk_valid_ready_unit_test;
           (first.delay_cfg == null) ? "null" : "set",
           second.delay_cfg.get_type_name(),
           catcher.get_count(
-              "^HEXK_COPY_TYPE$"
+              "^HEXK_COPY_TYPE$", UVM_FATAL
           ),
           hexk_str::replace(
               first.convert2string(), "UVM_ACTIVE ", ""
@@ -889,7 +895,19 @@ module hexk_valid_ready_unit_test;
       step(10);
       `FAIL_UNLESS_STR_EQUAL(wave, "vvvvTvTvvvT")
       `FAIL_UNLESS_STR_EQUAL(last_item(), "e5 1 0")
+      `FAIL_UNLESS_STR_EQUAL(last_status(), "UVM_IS_OK")
    `SVTEST_END
+
+`ifndef VERILATOR
+   `SVTEST(a_responder_item_that_takes_a_word_with_an_x_bit_has_the_status_has_x)
+      hand_valid(1, 8'hx5);
+      start_responder();
+      step(1);
+      send(responder, "00", 0);
+      step(4);
+      `FAIL_UNLESS_STR_EQUAL(last_status(), "UVM_HAS_X")
+   `SVTEST_END
+`endif
 
    `SVTEST(an_initiator_and_a_responder_with_random_delays_move_every_word)
       set_delay(initiator_cfg, "uniform", 3);
@@ -1142,6 +1160,16 @@ module hexk_valid_ready_unit_test;
       step(2);
       `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 0")
    `SVTEST_END
+
+   `SVTEST(without_has_checks_the_monitor_reports_an_unknown_valid_in_every_clock_cycle)
+      clear_flag(passive_cfg, "has_checks");
+      start_observer();
+      hand_valid(1'bx);
+      step(2);
+      hand_valid(0);
+      step(2);
+      `FAIL_UNLESS_STR_EQUAL(protocol_errors(), "0 0 2")
+   `SVTEST_END
 `endif
 
    `SVTEST(an_agent_without_a_cfg_or_an_interface_is_a_fatal)
@@ -1162,8 +1190,8 @@ module hexk_valid_ready_unit_test;
 
    `SVTEST(an_item_prints_its_fields_and_unpacks_what_it_packed)
       `FAIL_UNLESS_STR_EQUAL(printed_and_unpacked(),
-         {"hexk_valid_ready_item { data: 'h5a  delay_cycles: -2  wait_cycles: 'd7  aborted: 'b1  } | ",
-          "data=0x5a delay_cycles=-2 wait_cycles=7 aborted"})
+         {"hexk_valid_ready_item { data: 'h5a  delay_cycles: -2  wait_cycles: 'd7  aborted: 'b1  ",
+          "status: UVM_HAS_X  } | data=0x5a delay_cycles=-2 wait_cycles=7 aborted UVM_HAS_X"})
    `SVTEST_END
 
    `SVTEST(a_difference_of_two_items_names_the_field_data)

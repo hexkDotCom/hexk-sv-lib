@@ -50,8 +50,9 @@ class hexk_knob;
    // One line that says what the knob does.
    string   help_text;
 
-   // Limits of an integer knob; no limits when hi is below lo.
+   // Lower limit of an integer knob; no limits when hi is below lo.
    longint  lo;
+   // Upper limit of an integer knob.
    longint  hi;
 
    // Legal values of a knob of kind HEXK_KNOB_ENUM_STR.

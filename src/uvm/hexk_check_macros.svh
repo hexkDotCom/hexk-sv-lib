@@ -522,7 +522,8 @@
       end \
    end
 
-// Fatal if OBJ.randomize() with the given constraints fails; CONSTRAINTS is written without braces.
+// Fatal if OBJ.randomize() with the given constraints fails; CONSTRAINTS is written without braces, and every
+// variable of the calling scope in it is written with local:: (guide LNG-15).
 `define hexk_randomize_with_or_fatal(OBJ, ID, CONSTRAINTS) \
    begin \
       if (OBJ.randomize() with {CONSTRAINTS} != 1) begin \

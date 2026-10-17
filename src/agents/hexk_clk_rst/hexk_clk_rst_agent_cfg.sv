@@ -16,7 +16,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    CFG-1 CFG-9 SEQ-13
-//! @emits     HEXK_COPY_TYPE:error
+//! @emits     HEXK_COPY_TYPE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_CLK_RST_AGENT_CFG_SV
@@ -50,10 +50,10 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
    rand int unsigned       duty_percent   = DEFAULT_DUTY_PERCENT;
 
    // Largest distance of a rising edge from its ideal time.
-   rand longint unsigned   jitter_ps      = 0;
+   rand longint unsigned   jitter_ps;
 
    // Time by which the first start of the clock is delayed.
-   rand longint unsigned   phase_ps       = 0;
+   rand longint unsigned   phase_ps;
 
    // 1: the reset is asserted when the pin is 0.
    bit                     rst_active_low = 1;
@@ -65,13 +65,13 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
    bit                     reset_at_start = 1;
 
    // Seed of the jitter; 0 derives one from the name of the agent and the seed of the simulation.
-   int unsigned            jitter_seed    = 0;
+   int unsigned            jitter_seed;
 
    // 1: the monitor checks the time between every two rising edges of the clock against the clock of the status,
    // within twice its jitter (HEXK_CLK_RST_PERIOD); an interval that starts or ends in reset, in which the status
    // changed, or across a stop of the clock is not checked. Set it before the run phase; clearing it during the run
    // ends the check for the rest of the run.
-   bit                     check_period   = 0;
+   bit                     check_period;
 
    `uvm_object_utils(hexk_clk_rst_agent_cfg)
 
@@ -173,7 +173,7 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
       hexk_clk_rst_agent_cfg other;
       super.do_copy(rhs);
       if (!$cast(other, rhs)) begin
-         `uvm_error("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
                                                 rhs.get_name(), rhs.get_type_name()))
          return;
       end

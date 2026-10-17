@@ -97,7 +97,7 @@ virtual function KEY get_key(T item);
 virtual function bit compare_items(T exp, T act, output string diff);
 // Hook of mode HEXK_SB_OUT_OF_ORDER: 1 when the actual item is the partner of the expected item, both with the same key. The scoreboard pairs an item with the oldest waiting item for which it is 1 and then calls compare_items() on the pair. The default is compare_items(): the partner is an equal item, and that pair is not compared again. Override it to pair by an ID, so that a wrong payload is reported as a mismatch.
 virtual function bit is_partner(T exp, T act);
-// Hook: turns an item written to an expected export into the item to wait for; null means nothing is expected.
+// Hook: turns an item written to an expected export into the item to wait for; null means nothing is expected. It must not change item, which the publisher may keep: return a clone to change it (TLM-5).
 virtual function T transform_expected(T item);
 // Hook: the time in picoseconds from which the latency of an expected item counts; the default is the time of the write. An override returns a time in picoseconds, such as hexk_meta_item::timestamp_ps.
 virtual function longint unsigned get_timestamp_ps(T item);
@@ -230,7 +230,7 @@ Hooks, all virtual:
 | `get_key(item)` | the same key for every item | the key for the two keyed modes |
 | `is_partner(exp, act)` | `compare_items()` | in mode `HEXK_SB_OUT_OF_ORDER`, which waiting item is the partner |
 | `compare_items(exp, act, diff)` | `exp.compare(act)`, without messages of the comparer; `diff` is what the comparer noted | what "equal" means; may explain a difference in `diff` |
-| `transform_expected(item)` | the item itself | simple prediction: return another item, or null to expect nothing |
+| `transform_expected(item)` | the item itself | simple prediction: return another item, or null to expect nothing; never change `item` itself, return a clone to change it |
 | `get_timestamp_ps(item)` | the time of the write in picoseconds | where the latency of an expected item starts; an override returns picoseconds, such as `timestamp_ps` of a `hexk_meta_item` |
 | `get_uid(item)` | null | the `hexk_uid` of an item for messages |
 | `item_text(item)` | `item.convert2string()`, or `item.sprint()` when that is empty | how an item is printed |
@@ -338,7 +338,7 @@ can then stay 0 or be the tighter limit for the matched pairs.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 | `HEXK_SB_AGGREGATOR` | warning |  |
 | `HEXK_SB_CLONE` | error |  |
 | `HEXK_SB_FLUSH` | info |  |

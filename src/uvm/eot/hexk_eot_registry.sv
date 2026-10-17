@@ -84,10 +84,11 @@ class hexk_eot_registry extends uvm_component;
 
    // UVM callback: calls eot_check() of every registered object and names those that reported errors.
    function void check_phase(uvm_phase phase);
-      uvm_report_server server = uvm_report_server::get_server();
-      string            complained                               [$];
+      uvm_report_server server;
+      string            complained    [$];
       int               errors_before;
       super.check_phase(phase);
+      server = uvm_report_server::get_server();
       if (checkables.size() == 0) begin
          return;
       end

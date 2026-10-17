@@ -53,6 +53,13 @@ class hexk_ref_commit_item extends uvm_sequence_item;
       return same;
    endfunction : do_compare
 
+   // UVM hook of print() and sprint(): the address and the code word.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_field("addr", uvm_bitstream_t'(addr), $bits(addr), UVM_DEC);
+      printer.print_field("code", uvm_bitstream_t'(code), $bits(code), UVM_HEX);
+   endfunction : do_print
+
 endclass : hexk_ref_commit_item
 
 `endif  // HEXK_REF_COMMIT_ITEM_SV

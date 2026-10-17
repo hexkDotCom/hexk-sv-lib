@@ -5,11 +5,15 @@
 //
 // Report catcher for negative tests: declare which errors, warnings or fatals a test expects,
 // have them demoted to info, and check at the end that they really occurred.
-// Create and register one with hexk_report_catcher::add_global(), then call expect_msg() for
-// every message the test provokes on purpose, or expect_check() for a check that fails on
-// purpose; without a maximum an expectation is exact. check_expectations() checks the counts;
-// hexk_base_test calls check_unchecked() in its report phase, which does that for every
-// global catcher that the test did not check itself. A message matches a rule when it has
+// Create and register one with hexk_report_catcher::add_to(component), for the messages of the
+// component that reports the expected errors (guide MSG-9), or with add_global(), for the
+// messages of every reporter; then call expect_msg() for every message the test provokes on
+// purpose, or expect_check() for a check that fails on purpose; without a maximum an
+// expectation is exact. check_expectations() checks the counts; hexk_base_test calls
+// check_unchecked() in its check phase, which does that for every catcher made by add_to() or
+// add_global() that the test did not check itself. A catcher added to a component sees a
+// message after the global catchers: a global rule that changes its severity hides it from the
+// rules of that catcher, which match the severity the message has then. A message matches a rule when it has
 // the rule's severity, its ID matches the rule's regular expression and, if one is given, its
 // text matches the text expression. The first rule that matches wins. demote() changes the
 // severity of matching messages; its rule counts them for get_count(), but
@@ -39,12 +43,16 @@ class hexk_report_catcher extends uvm_report_catcher;
    // Set by check_expectations() and cleared by clear(): check_unchecked() leaves this catcher alone.
    local bit checked;
 
-   // The catchers created by add_global(), for check_unchecked().
-   local static hexk_report_catcher globals[$];
+   // The catchers created by add_to() and add_global(), for check_unchecked().
+   local static hexk_report_catcher registered[$];
+
+   // Number of catchers that add_to() created: each gets a name of its own, since UVM 1.2 warns about a callback whose
+   // name a component has already, which a global catcher gives it.
+   local static int unsigned num_added_to;
 
    `uvm_object_utils(hexk_report_catcher)
 
-   // Creates a catcher that is not registered anywhere; add_global() is the usual way to get one.
+   // Creates a catcher that is not registered anywhere; add_to() and add_global() are the usual ways to get one.
    function new(string name = "hexk_report_catcher");
       super.new(name);
    endfunction : new
@@ -53,9 +61,20 @@ class hexk_report_catcher extends uvm_report_catcher;
    static function hexk_report_catcher add_global();
       hexk_report_catcher catcher = hexk_report_catcher::type_id::create("catcher");
       uvm_report_cb::add(null, catcher);
-      globals.push_back(catcher);
+      registered.push_back(catcher);
       return catcher;
    endfunction : add_global
+
+   // Creates a catcher and registers it for the messages of one component (or other reporter) only, so that an
+   // expected error counts only when that component reports it. A null client registers for every reporter, as
+   // add_global() does.
+   static function hexk_report_catcher add_to(uvm_report_object client);
+      hexk_report_catcher catcher = hexk_report_catcher::type_id::create($sformatf("catcher_%0d", num_added_to));
+      num_added_to++;
+      uvm_report_cb::add(client, catcher);
+      registered.push_back(catcher);
+      return catcher;
+   endfunction : add_to
 
    // Expects min_count to max_count messages of severity sev, matching the expressions; they become demote_to.
    // max_count is min_count unless given: the shortest call expects exactly one message. NO_LIMIT has no maximum.
@@ -119,12 +138,12 @@ class hexk_report_catcher extends uvm_report_catcher;
       checked = 0;
    endfunction : clear
 
-   // Calls check_expectations() of every catcher created by add_global() whose expectations were not checked since
-   // its last clear(); hexk_base_test calls it in its report phase, so that a test cannot forget it.
+   // Calls check_expectations() of every catcher created by add_to() or add_global() whose expectations were not
+   // checked since its last clear(); hexk_base_test calls it in its check phase, so that a test cannot forget it.
    static function void check_unchecked();
-      foreach (globals[i]) begin
-         if (!globals[i].checked) begin
-            globals[i].check_expectations();
+      foreach (registered[i]) begin
+         if (!registered[i].checked) begin
+            registered[i].check_expectations();
          end
       end
    endfunction : check_unchecked

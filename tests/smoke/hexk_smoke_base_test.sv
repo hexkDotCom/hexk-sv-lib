@@ -78,6 +78,8 @@ class hexk_smoke_base_test extends hexk_base_test;
       traffic_seq = hexk_valid_ready_random_seq#(hexk_smoke_env_cfg::WIDTH)::type_id::create("traffic_seq");
       prepare();
       watchdog.set_inactivity_limit(INACTIVITY_LIMIT_PS);
+      // LNG-15 waived: Verilator 5.046 rejects local:: in randomize() with on a specialized parameterized class; the
+      // sequence has no member num_words, so the name is that of this task.
       `hexk_randomize_with_or_fatal(traffic_seq, "HEXK_SMOKE_RAND", num_items == num_words;)
       traffic_seq.start(env.in_agent.sqr);
       phase.drop_objection(this, "traffic sent");

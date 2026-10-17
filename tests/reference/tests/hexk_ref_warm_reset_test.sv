@@ -25,10 +25,10 @@ class hexk_ref_warm_reset_test extends hexk_ref_base_test;
    endfunction : new
 
    // The resets.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       scenario = hexk_ref_warm_reset_vseq::type_id::create("scenario");
       return scenario;
-   endfunction : create_traffic
+   endfunction : create_scenario
 
    // Every word sent was committed, except those that a reset dropped.
    virtual function int unsigned expected_commits();

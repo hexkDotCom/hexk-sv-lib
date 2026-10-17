@@ -104,6 +104,7 @@ module hexk_clk_rst_unit_test;
       catcher.expect_msg("^HEXK_CLK_RST_STOPPED$", UVM_ERROR, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_CLK_RST_CFG$", UVM_FATAL, "", 0, -1, UVM_INFO);
       catcher.expect_msg("^HEXK_CLK_RST_PERIOD$", UVM_ERROR, "", 0, -1, UVM_INFO);
+      catcher.expect_msg("^HEXK_CLK_RST_UNKNOWN$", UVM_ERROR, "", 0, -1, UVM_INFO);
       cfg            = hexk_clk_rst_agent_cfg::type_id::create("cfg");
       cfg.vif        = clk_if;
       agent          = null;
@@ -731,6 +732,22 @@ module hexk_clk_rst_unit_test;
       end
       result = $sformatf("%0d %0d %0d", passive_if.get_clk_count() - start_count, agent.drv == null, agent.sqr == null);
    endtask : run_dut_clock
+
+   // Takes the reset of the DUT from released to X, asserted, X and released again: "<errors> <items>" with the
+   // number of HEXK_CLK_RST_UNKNOWN errors and the reset items the passive agent published.
+   task automatic run_reset_without_level();
+      int unsigned items_before = seen.used();
+      #10ns;
+      dut_rst_n = 1'bx;
+      #10ns;
+      dut_rst_n = 1'b0;
+      #10ns;
+      dut_rst_n = 1'bz;
+      #10ns;
+      dut_rst_n = 1'b1;
+      #10ns;
+      result = $sformatf("%0d %0d", catcher.get_count("^HEXK_CLK_RST_UNKNOWN$"), seen.used() - items_before);
+   endtask : run_reset_without_level
 `endif
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
@@ -1225,6 +1242,12 @@ module hexk_clk_rst_unit_test;
       run_dut_clock();
       `FAIL_UNLESS_STR_EQUAL(result, "4 1 1")
       `FAIL_UNLESS_STR_EQUAL(seen_items(), "A2 R4 ")
+   `SVTEST_END
+
+   `SVTEST(a_reset_pin_without_a_level_after_a_level_is_an_error)
+      start_passive_agent();
+      run_reset_without_level();
+      `FAIL_UNLESS_STR_EQUAL(result, "2 2")
    `SVTEST_END
 `endif
 

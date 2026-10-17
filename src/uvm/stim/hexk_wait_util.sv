@@ -104,6 +104,8 @@ virtual class hexk_wait_util;
       if (ends_after_last(duration_ps, $time)) begin
          @(never);
       end else begin
+         // FIL-7 waived: duration_ps counts in the time unit of the package (1ps); "* 1ps" would pass through a
+         // real and lose whole picoseconds above 2**53 ps, below LAST_PS.
          #(duration_ps);
       end
    endtask : sleep_ps

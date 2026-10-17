@@ -37,6 +37,8 @@
 
 // Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP;
 // get_index() gives the index.
+// FAC-11 waived: the constructor sets m_if_mask, as the imp macros of UVM do; uvm_port_base has no public way to
+// give an imp its interface mask.
 `define hexk_analysis_imp_indexed_decl(SUFFIX) \
    class hexk_analysis_imp_indexed_``SUFFIX #(type T = int, type IMP = int) \
       extends uvm_pkg::uvm_port_base #(uvm_pkg::uvm_tlm_if_base #(T, T)); \

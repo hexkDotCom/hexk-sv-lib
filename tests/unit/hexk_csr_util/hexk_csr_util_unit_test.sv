@@ -280,6 +280,7 @@ module hexk_csr_util_unit_test;
    hexk_csr_util        csr;
    uvm_reg_data_t       value;
    bit                  seen;
+   bit                  ok;
    string               result;
    process              background;
    process              second_background;
@@ -653,6 +654,18 @@ module hexk_csr_util_unit_test;
       `FAIL_UNLESS_STR_EQUAL(last_message(), "HEXK_CSR_STATUS: read of ut_csr_blk.id: status UVM_HAS_X")
       csr.spinwait(blk.ident, 'h1234, '1, "UT_CSR_ID", seen);
       `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %s", seen, count_of("HEXK_CSR_STATUS")), "0 2")
+   `SVTEST_END
+
+   `SVTEST(read_ok_says_whether_the_access_worked)
+      csr.read_ok(blk.ident, value, ok);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %s", ok, count_of("HEXK_CSR_STATUS")), "1 0")
+      fail_with_x_at('h8);
+      csr.read_ok(blk.ident, value, ok);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %s", ok, count_of("HEXK_CSR_STATUS")), "0 1")
+      csr.read_field_ok(blk.ident.first, value, ok);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b %s", ok, count_of("HEXK_CSR_STATUS")), "0 2")
+      csr.read_ok(null, value, ok);
+      `FAIL_UNLESS_STR_EQUAL($sformatf("%0b", ok), "0")
    `SVTEST_END
 
    `SVTEST(a_null_register_is_an_error)

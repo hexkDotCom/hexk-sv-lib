@@ -9,6 +9,7 @@
 // It is thin: the clock is generated and the pins are driven by the interface, whose tasks
 // the driver calls. It is created by hexk_clk_rst_agent in active mode; a testbench does
 // not use it directly.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 //
 //! @module    hexk_clk_rst
 //! @since     0.7.0

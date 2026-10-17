@@ -33,7 +33,7 @@ From `src/uvm/hexk_util_macros.svh`:
 ```systemverilog
 // Makes TYPE a singleton: declares the static functions get(), which creates the one object, and reset_for_test().
 `define hexk_singleton_decl(TYPE)
-// Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP; get_index() gives the index.
+// Declares class hexk_analysis_imp_indexed_<SUFFIX> #(T, IMP): its write(t) calls write_<SUFFIX>(index, t) of IMP; get_index() gives the index. FAC-11 waived: the constructor sets m_if_mask, as the imp macros of UVM do; uvm_port_base has no public way to give an imp its interface mask.
 `define hexk_analysis_imp_indexed_decl(SUFFIX)
 // Puts virtual interface VIF of interface type TYPE into uvm_config_db under NAME, for the components that match PATH.
 `define hexk_vif_set(TYPE, PATH, NAME, VIF)

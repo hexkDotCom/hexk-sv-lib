@@ -7,13 +7,15 @@
 // For an initiator it is the word to send, for a responder the transfer to accept, which
 // comes back with the word that was received; the monitor writes one per transfer it saw.
 // delay_cycles lets a sequence set the timing of one transfer; below 0, the default, the
-// driver takes the delay from the cfg of the agent.
+// driver takes the delay from the cfg of the agent. status says how the transfer ended: UVM_IS_OK,
+// UVM_NOT_OK when a reset ended it, UVM_HAS_X when the word that a responder or the monitor saw
+// has an X or Z bit (guide TRN-6).
 //
 //! @module    hexk_valid_ready
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    TRN-2 TRN-5 CMP-14
-//! @emits     HEXK_COPY_TYPE:error
+//! @emits     HEXK_COPY_TYPE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_VALID_READY_ITEM_SV
@@ -34,6 +36,8 @@ class hexk_valid_ready_item #(
 
    // Set by a driver: 1 when a reset ended the item before its transfer.
    bit                           aborted;
+   // Set by a driver and by the monitor: how the transfer ended; checked by the starter of the item, not by compare.
+   uvm_status_e                  status;
 
    `uvm_object_param_utils(hexk_valid_ready_item#(DATA_WIDTH))
 
@@ -58,6 +62,9 @@ class hexk_valid_ready_item #(
       if (aborted) begin
          text = {text, " aborted"};
       end
+      if (status != UVM_IS_OK) begin
+         text = {text, " ", status.name()};
+      end
       return text;
    endfunction : convert2string
 
@@ -66,7 +73,7 @@ class hexk_valid_ready_item #(
       hexk_valid_ready_item #(DATA_WIDTH) other;
       super.do_copy(rhs);
       if (!$cast(other, rhs)) begin
-         `uvm_error("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
                                                 rhs.get_name(), rhs.get_type_name()))
          return;
       end
@@ -74,6 +81,7 @@ class hexk_valid_ready_item #(
       delay_cycles = other.delay_cycles;
       wait_cycles  = other.wait_cycles;
       aborted      = other.aborted;
+      status       = other.status;
    endfunction : do_copy
 
    // UVM hook of compare(): the words are equal, X and Z bits included; the timing is not compared.
@@ -86,13 +94,14 @@ class hexk_valid_ready_item #(
       return comparer.compare_field("data", uvm_bitstream_t'(data), uvm_bitstream_t'(other.data), DATA_WIDTH);
    endfunction : do_compare
 
-   // UVM hook of print() and sprint(): the word and the timing.
+   // UVM hook of print() and sprint(): the word, the timing and the status.
    function void do_print(uvm_printer printer);
       super.do_print(printer);
       printer.print_field("data", uvm_bitstream_t'(data), DATA_WIDTH, UVM_HEX);
       printer.print_field_int("delay_cycles", 64'(delay_cycles), 32, UVM_DEC);
       printer.print_field_int("wait_cycles", 64'(wait_cycles), 32, UVM_DEC);
       printer.print_field_int("aborted", 64'(aborted), 1, UVM_BIN);
+      printer.print_string("status", status.name());
    endfunction : do_print
 
    // UVM hook of pack(): every member, in the order of the declarations; X and Z bits of the word become 0.
@@ -102,6 +111,7 @@ class hexk_valid_ready_item #(
       packer.pack_field_int(64'(delay_cycles), 32);
       packer.pack_field_int(64'(wait_cycles), 32);
       packer.pack_field_int(64'(aborted), 1);
+      packer.pack_field_int(64'(status), 2);
    endfunction : do_pack
 
    // UVM hook of unpack(): the members in the order in which do_pack() wrote them.
@@ -111,6 +121,7 @@ class hexk_valid_ready_item #(
       delay_cycles = int'(packer.unpack_field_int(32));
       wait_cycles  = 32'(packer.unpack_field_int(32));
       aborted      = packer.unpack_field_int(1) [0];
+      status       = uvm_status_e'(packer.unpack_field_int(2));
    endfunction : do_unpack
 
 endclass : hexk_valid_ready_item

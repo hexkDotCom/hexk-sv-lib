@@ -81,6 +81,17 @@ class hexk_ref_result extends uvm_sequence_item;
       return same;
    endfunction : do_compare
 
+   // UVM hook of print() and sprint(): number, CRC, cycles and every word.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_field_int("number", 64'(number), $bits(number), UVM_DEC);
+      printer.print_field_int("crc", 64'(crc), $bits(crc), UVM_HEX);
+      printer.print_field_int("cycles", 64'(cycles), $bits(cycles), UVM_DEC);
+      foreach (words[i]) begin
+         printer.print_field_int($sformatf("words[%0d]", i), 64'(words[i]), 32, UVM_HEX);
+      end
+   endfunction : do_print
+
 endclass : hexk_ref_result
 
 // The result as the scoreboard holds it: with its time, ID and source.

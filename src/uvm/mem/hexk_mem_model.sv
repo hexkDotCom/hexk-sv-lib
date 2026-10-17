@@ -17,7 +17,7 @@
 //! @stability experimental
 //! @emits     HEXK_MEM_UNINIT:error HEXK_MEM_RANGE:error HEXK_MEM_FILE:error HEXK_MEM_WIDTH:error
 //! @emits     HEXK_MEM_UNKNOWN:error
-//! @emits     HEXK_MEM_SUMMARY:info HEXK_COPY_TYPE:error
+//! @emits     HEXK_MEM_SUMMARY:info HEXK_COPY_TYPE:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_MEM_MODEL_SV
@@ -44,6 +44,14 @@ class hexk_mem_model #(
 
    // Number of bytes of a word.
    localparam int unsigned WORD_BYTES = DATA_WIDTH / 8;
+
+   // Hash of a never-written address for HEXK_MEM_UNINIT_RANDOM: the address bits are folded into a word of
+   // HASH_WORD_BITS bits, which is rotated by HASH_ROTATE bits and mixed with HASH_MIX after each word.
+   localparam int unsigned HASH_WORD_BITS = 32;
+   // Rotation of the hash word, in bits.
+   localparam int unsigned HASH_ROTATE = 5;
+   // Constant mixed into the hash word.
+   localparam bit [31:0] HASH_MIX = 32'h9E37_79B9;
 
    // Four-state, so that an address or a byte enable with an X or Z bit, as a monitor may see it, is noticed.
    typedef logic [ADDR_WIDTH-1:0] addr_t;
@@ -116,7 +124,7 @@ class hexk_mem_model #(
       hexk_mem_model #(ADDR_WIDTH, DATA_WIDTH) other;
       super.do_copy(rhs);
       if (!$cast(other, rhs)) begin
-         `uvm_error("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
                                                 rhs.get_name(), rhs.get_type_name()))
          return;
       end
@@ -437,12 +445,12 @@ class hexk_mem_model #(
          HEXK_MEM_UNINIT_RANDOM: begin
             // The value depends on the seed and the address only, so every read of an address returns the same.
             for (int unsigned i = 0; i < ADDR_WIDTH; i++) begin
-               folded[i%32] = folded[i%32] ^ addr[i];
-               if (i % 32 == 31) begin
-                  folded = (folded << 5) ^ (folded >> 27) ^ 32'h9E37_79B9;
+               folded[i%HASH_WORD_BITS] = folded[i%HASH_WORD_BITS] ^ addr[i];
+               if (i % HASH_WORD_BITS == HASH_WORD_BITS - 1) begin
+                  folded = (folded << HASH_ROTATE) ^ (folded >> (HASH_WORD_BITS - HASH_ROTATE)) ^ HASH_MIX;
                end
             end
-            folded = (folded << 5) ^ (folded >> 27) ^ 32'h9E37_79B9;
+            folded = (folded << HASH_ROTATE) ^ (folded >> (HASH_WORD_BITS - HASH_ROTATE)) ^ HASH_MIX;
             stream.seed(folded);
             return 8'(stream.next_u32());
          end

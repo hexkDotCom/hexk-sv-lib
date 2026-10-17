@@ -136,7 +136,7 @@ byte enable with an X or Z bit, as a monitor may see it, is noticed instead of b
   settings stay.
 - `copy()` and `clone()` take a snapshot: the bytes, `big_endian`, `uninit_policy`,
   `uninit_pattern`, `seed`, the range and the count of uninitialised reads. The two memories
-  are independent afterwards. A copy from an object of another class is the error
+  are independent afterwards. A copy from an object of another class is the fatal
   `HEXK_COPY_TYPE` and changes nothing.
 - `get_type_name()` is `hexk_mem_model`, without the parameters.
 - `eot_check()` prints `convert2string()` as the info `HEXK_MEM_SUMMARY`. It is there so that
@@ -169,7 +169,7 @@ There are no plusargs.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 | `HEXK_MEM_FILE` | error |  |
 | `HEXK_MEM_RANGE` | error |  |
 | `HEXK_MEM_SUMMARY` | info |  |

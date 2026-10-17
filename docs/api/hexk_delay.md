@@ -160,7 +160,7 @@ section 9.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 | `HEXK_DELAY_CFG` | error |  |
 <!-- HEXK_GEN:END emits -->
 

@@ -407,7 +407,9 @@ The monitor, in both modes:
   it triggers `status.reset_asserted` or `status.reset_released` with the item as data.
 - A reset that is already asserted when the run phase starts is reported as an assertion at
   that time. A pin that is X or Z is neither: nothing is reported until it has a level, and
-  the same level after an X is not a change.
+  the same level after an X is not a change. A pin that becomes X or Z after it had a level
+  is the error `HEXK_CLK_RST_UNKNOWN` (guide rule TRN-6); an X before the first level, as at
+  the start of the simulation, is not.
 - Each change is also the info `HEXK_CLK_RST_RESET` with verbosity `UVM_MEDIUM`.
 - With `cfg.check_period` it also checks the clock: the time between two rising edges must
   be `status.period_ps` within twice `status.jitter_ps` (each of the two edges may move by
@@ -455,7 +457,7 @@ The agent:
   drive. `get_is_active()` returns `cfg.is_active`.
 - A status belongs to its agent and is not meant to be copied. A copy of the cfg shares the
   interface and nothing else. A copy of an item or a cfg from an object of another class is
-  the error `HEXK_COPY_TYPE` and changes nothing.
+  the fatal `HEXK_COPY_TYPE` and changes nothing.
 - `compare()` of two items compares the operation and the members that it uses, each
   through the comparer, so that the default `compare_items()` of `hexk_scoreboard` names the
   members that differ; `clk_count` is not compared. `print()` and `sprint()` show the
@@ -526,7 +528,8 @@ There are no plusargs and no compile-time switches.
 | `HEXK_CLK_RST_RAND` | fatal |  |
 | `HEXK_CLK_RST_RESET` | info |  |
 | `HEXK_CLK_RST_STOPPED` | error |  |
-| `HEXK_COPY_TYPE` | error |  |
+| `HEXK_CLK_RST_UNKNOWN` | error |  |
+| `HEXK_COPY_TYPE` | fatal |  |
 <!-- HEXK_GEN:END emits -->
 
 | ID | Meaning |
@@ -537,6 +540,7 @@ There are no plusargs and no compile-time switches.
 | `HEXK_CLK_RST_PERIOD` | With `cfg.check_period`, the time between two rising edges is not the period of the status within twice its jitter. |
 | `HEXK_CLK_RST_RAND` | A sequence could not randomize its item. |
 | `HEXK_CLK_RST_RESET` | The reset was asserted or released (`UVM_MEDIUM`). |
+| `HEXK_CLK_RST_UNKNOWN` | The reset pin became X or Z after it had a level; the monitor takes the reset as unchanged. |
 | `HEXK_CLK_RST_STOPPED` | A reset item needs clock edges, but the clock is stopped. |
 | `HEXK_COPY_TYPE` | `copy()` of an item or a cfg from an object of another class; nothing is copied. |
 

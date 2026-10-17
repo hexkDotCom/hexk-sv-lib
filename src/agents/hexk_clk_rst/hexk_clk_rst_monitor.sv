@@ -19,12 +19,13 @@
 // does not drive, so a clock stopped outside reset is a long interval there. Clearing
 // cfg.check_period during the run ends the check at the next rising edge, for the rest of the run.
 // num_checked() and num_checked_at() tell how many intervals were checked, in all and at one period.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 //
 //! @module    hexk_clk_rst
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    CMP-5 CMP-12 CHK-6
-//! @emits     HEXK_CLK_RST_RESET:info HEXK_CLK_RST_PERIOD:error
+//! @emits     HEXK_CLK_RST_RESET:info HEXK_CLK_RST_PERIOD:error HEXK_CLK_RST_UNKNOWN:error
 //! @plusargs  (none)
 
 `ifndef HEXK_CLK_RST_MONITOR_SV
@@ -81,14 +82,23 @@ class hexk_clk_rst_monitor extends uvm_monitor;
    endfunction : num_checked_at
 
    // Reports every change of the reset between asserted and released. A reset that is asserted at the start is
-   // reported; a pin without a level is neither and changes nothing.
+   // reported; a pin without a level is neither and changes nothing, and it is an error once the pin had a level.
    local task watch_reset();
       bit was_active = 0;
+      bit had_level = 0;
       bit is_active;
       forever begin
-         if (vif.get_reset(is_active) && is_active != was_active) begin
-            was_active = is_active;
-            publish(is_active);
+         // TRN-6 waived: a pin without a level before it ever had one, as at the start of the simulation, is not
+         // reported.
+         if (vif.get_reset(is_active)) begin
+            had_level = 1;
+            if (is_active != was_active) begin
+               was_active = is_active;
+               publish(is_active);
+            end
+         end else if (had_level) begin
+            `uvm_error("HEXK_CLK_RST_UNKNOWN",
+                       "the reset pin is X or Z after it had a level; the reset is taken as unchanged")
          end
          vif.wait_reset_change();
       end

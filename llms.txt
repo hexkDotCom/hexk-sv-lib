@@ -2,7 +2,7 @@
 
 > Vendor-neutral SystemVerilog/UVM utility library: checks, reporting, end-of-test logic,
 > delays, scoreboard, memory model, register accesses, string helpers, clock/reset. Version
-> 0.9.0, experimental: APIs may still change before 1.0. Only the modules listed below exist.
+> 0.10.0, experimental: APIs may still change before 1.0. Only the modules listed below exist.
 > Every global symbol starts with `hexk_` (defines and message IDs with `HEXK_`, plusargs of
 > the library with `+hexk_`; the optional base test also defines the knobs `+perf_mode` and
 > `+coverage`).

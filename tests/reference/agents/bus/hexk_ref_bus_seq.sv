@@ -37,10 +37,9 @@ class hexk_ref_bus_seq extends uvm_sequence #(hexk_ref_bus_item);
    task body();
       req = hexk_ref_bus_item::type_id::create("req", null, get_sequencer().get_full_name());
       start_item(req);
-      req.we    = we;
-      req.addr  = addr;
-      req.wdata = wdata;
-      req.wstrb = wstrb;
+      `hexk_randomize_with_or_fatal(req, "REF_RAND",
+                                    this.we == local::we; this.addr == local::addr; this.wdata == local::wdata;
+                                    this.wstrb == local::wstrb;)
       finish_item(req);
       rdata = req.rdata;
       ok    = req.is_ok();

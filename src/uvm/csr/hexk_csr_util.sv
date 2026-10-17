@@ -101,6 +101,18 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       read_reg(rg, value, ok, seq);
    endtask : read
 
+   // read() that also says whether the access worked: ok is 1 when its status was UVM_IS_OK, 0 otherwise (UVM_NOT_OK,
+   // UVM_HAS_X, a null register), so that a sequence can tell a value read from one it must not use (guide TRN-6).
+   task read_ok(uvm_reg rg, output uvm_reg_data_t value, output bit ok, input uvm_sequence_base seq = null);
+      ok    = 0;
+      value = 0;
+      if (rg == null) begin
+         report_null("read_ok", "register");
+         return;
+      end
+      read_reg(rg, value, ok, seq);
+   endtask : read_ok
+
    // Writes a field the way UVM writes a field, as part of seq: alone where the map allows it, otherwise read,
    // change, write.
    task write_field(uvm_reg_field field, uvm_reg_data_t value, uvm_sequence_base seq = null);
@@ -127,6 +139,19 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       read_reg(field.get_parent(), value, ok, seq);
       value = field_value(field, value);
    endtask : read_field
+
+   // read_field() that also says whether the access worked, as read_ok() does.
+   task read_field_ok(uvm_reg_field field, output uvm_reg_data_t value, output bit ok,
+                      input uvm_sequence_base seq = null);
+      ok    = 0;
+      value = 0;
+      if (field == null) begin
+         report_null("read_field_ok", "field");
+         return;
+      end
+      read_reg(field.get_parent(), value, ok, seq);
+      value = field_value(field, value);
+   endtask : read_field_ok
 
    // Reads a register, as part of seq, and checks the bits of mask against exp; a difference is an error with the
    // caller's ID. Counted in hexk_check_stats under that ID; a failed access counts as a failed check.
@@ -284,7 +309,8 @@ class hexk_csr_util extends uvm_object implements hexk_objectable;
       return in_flight.size();
    endfunction : outstanding
 
-   // Forgets the accesses in flight, after a reset that killed the sequences that made them.
+   // Forgets the accesses in flight, after a reset that killed the sequences that made them; a sequence that is
+   // killed in the middle of an access calls it from its do_kill() (SEQ-10).
    function void clear();
       in_flight.delete();
    endfunction : clear

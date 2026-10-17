@@ -9,7 +9,10 @@
 // (taken_ps), so that the predictor can tell which words a register write counts for. Every
 // committed code word goes to commit_ap. The register model is predicted from ap (explicit
 // prediction), and the functional predictor learns the configuration from it: what the DUT really
-// got, not what a test meant to write.
+// got, not what a test meant to write. An access with an X or Z bit in a field that is valid in it
+// (we, addr, wstrb, and wdata of a write or rdata of a read), or a commit with one in its address
+// or code word, is the error REF_BUS_UNKNOWN and is not published (guide TRN-6); req and ack
+// themselves are checked by the interface.
 
 `ifndef HEXK_REF_BUS_MONITOR_SV
 `define HEXK_REF_BUS_MONITOR_SV
@@ -58,9 +61,28 @@ class hexk_ref_bus_monitor extends uvm_monitor;
       end
    endtask : run_phase
 
-   // Writes the access on the bus now, taken by the DUT at taken_ps; a read has its data now.
+   // Writes the access on the bus now, taken by the DUT at taken_ps; a read has its data now. An unknown field is an
+   // error, and the access is not written.
    local function void publish_access(longint unsigned taken_ps);
-      hexk_ref_bus_item item = hexk_ref_bus_item::type_id::create("item", this);
+      hexk_ref_bus_item item;
+      string            fields;
+      if ($isunknown(
+              {vif.mon_cb.we, vif.mon_cb.addr, vif.mon_cb.wstrb}
+          ) || $isunknown(
+              vif.mon_cb.we ? vif.mon_cb.wdata : vif.mon_cb.rdata
+          )) begin
+         fields = $sformatf(
+             "we=%b addr=0x%h wstrb=%b wdata=0x%h rdata=0x%h",
+             vif.mon_cb.we,
+             vif.mon_cb.addr,
+             vif.mon_cb.wstrb,
+             vif.mon_cb.wdata,
+             vif.mon_cb.rdata
+         );
+         `uvm_error("REF_BUS_UNKNOWN", {"an access with X or Z bits: ", fields})
+         return;
+      end
+      item          = hexk_ref_bus_item::type_id::create("item", this);
       item.we       = vif.mon_cb.we;
       item.addr     = vif.mon_cb.addr;
       item.wdata    = vif.mon_cb.wdata;
@@ -73,7 +95,13 @@ class hexk_ref_bus_monitor extends uvm_monitor;
 
    // Writes the code word that the DUT commits at this edge.
    local function void publish_commit();
-      hexk_ref_commit_item commit = hexk_ref_commit_item::type_id::create("commit", this);
+      hexk_ref_commit_item commit;
+      if ($isunknown({vif.mon_cb.commit_addr, vif.mon_cb.commit_code})) begin
+         `uvm_error("REF_BUS_UNKNOWN", $sformatf("a commit with X or Z bits: addr=0x%h code=39'h%h",
+                                                 vif.mon_cb.commit_addr, vif.mon_cb.commit_code))
+         return;
+      end
+      commit      = hexk_ref_commit_item::type_id::create("commit", this);
       commit.addr = vif.mon_cb.commit_addr;
       commit.code = vif.mon_cb.commit_code;
       commit_ap.write(commit);

@@ -40,15 +40,25 @@ function void allow_warning(string id_regex);
 virtual function void do_type_overrides();
 // Hook: knobs of the block or of the test; called in build_phase before the knobs are locked.
 virtual function void define_knobs();
-// Hook: creates the cfg of the block, through the factory; called after the factory overrides and the knobs, before modify_cfg(), so that an override of a derived test reaches the cfg.
-virtual function void create_cfg();
-// Hook: changes to the cfg of the block before it is randomized; called last in build_phase, when knobs can be read.
+// Hook: creates the cfg of the block, through the factory, and returns it (null: no cfg); called after the factory overrides and the knobs, so that an override of a derived test reaches the cfg. build_phase randomizes it.
+virtual function uvm_object create_cfg();
+// Hook: changes to the cfg of the block before it is randomized, when knobs can be read. A test pins a rand knob with rand_mode(0) and an assignment, or switches a constraint with constraint_mode(): a plain assignment to a rand knob is overwritten by the randomization (guide CFG-10).
 virtual function void modify_cfg();
+// Hook: changes to the cfg of the block after it was randomized, the last step of build_phase: plain assignments, which no constraint checks, so only for values that no constraint relates to others.
+virtual function void modify_randomized_cfg();
+// Hook: the stimulus of the test, created when main_phase starts (the env exists then); main_phase randomizes it and starts it on stimulus_sequencer() under one objection. null, the default, starts nothing.
+virtual function uvm_sequence_base create_stimulus();
+// Hook: the sequencer that the stimulus starts on; null, the default, for a virtual sequence without a virtual sequencer.
+virtual function uvm_sequencer_base stimulus_sequencer();
 // UVM callback: sets up report server, catcher, warning audit, knobs, aggregator, registry and watchdog, and calls the hooks.
 function void build_phase(uvm_phase phase);
 // UVM callback: stops the objections of the run-time phases from propagating up the hierarchy, unless stop_objection_propagation is 0.
 function void start_of_simulation_phase(uvm_phase phase);
-// UVM callback: checks the expectations of the report catchers that nobody checked, and reports the statistics of the check macros.
+// UVM callback: runs the stimulus of create_stimulus(), randomized, on stimulus_sequencer() under one objection, and returns when it has ended; it returns at once without a stimulus. A derived test with a main_phase of its own calls super.main_phase() first or replaces it (guide CMP-4).
+task main_phase(uvm_phase phase);
+// UVM callback: checks the expectations of the report catchers that nobody checked (guide MSG-9). The phase runs bottom-up, so the check phases of the env, where scoreboards report their leftovers, came first.
+function void check_phase(uvm_phase phase);
+// UVM callback: reports the warnings that the test did not allow and the statistics of the check macros.
 function void report_phase(uvm_phase phase);
 // UVM callback: reports the last line of the test, TEST PASSED or TEST FAILED.
 function void final_phase(uvm_phase phase);
@@ -72,8 +82,8 @@ function automatic bit hexk_tb_install_report_server();
 ```
 <!-- HEXK_GEN:END api -->
 
-`build_phase`, `start_of_simulation_phase`, `report_phase` and `final_phase` are UVM
-callbacks. `hexk_tb_install_report_server` and `hexk_tb_report_server_installed` are
+`build_phase`, `start_of_simulation_phase`, `main_phase`, `check_phase`, `report_phase` and
+`final_phase` are UVM callbacks. `hexk_tb_install_report_server` and `hexk_tb_report_server_installed` are
 declared in the module that includes `hexk_tb_top_inc.svh`; user code does not use them.
 
 ## 4. Behaviour and invariants
@@ -99,18 +109,37 @@ declared in the module that includes `hexk_tb_top_inc.svh`; user code does not u
    take the values of their knobs; `fail_on_warnings` without an installed
    `hexk_report_server` is the error `HEXK_TEST_WARNING`.
 6. `create_cfg()`, the hook in which a block base test creates its cfg with
-   `type_id::create()`. It comes after `do_type_overrides()`, so a factory override of the cfg
-   class, or of an object it creates, set by a derived test reaches the cfg; knobs can be read.
-7. `modify_cfg()`, the hook for changes to the cfg of the block (guide rule CFG-10). The
-   base test has no cfg of its own: a block base test creates its cfg in `create_cfg()`,
-   changes it in `modify_cfg()`, and randomizes it in its `build_phase` after
-   `super.build_phase()`. A cfg created in `new()` would miss the overrides of derived tests.
+   `type_id::create()` and returns it; the base test keeps it in `block_cfg`. It comes after
+   `do_type_overrides()`, so a factory override of the cfg class, or of an object it creates,
+   set by a derived test reaches the cfg; knobs can be read. A cfg created in `new()` would
+   miss the overrides of derived tests.
+7. `modify_cfg()`, the hook for changes to the cfg before it is randomized (guide rule
+   CFG-10). A test pins a `rand` knob with `rand_mode(0)` and an assignment, or switches a
+   constraint with `constraint_mode()`; a plain assignment to a `rand` knob is overwritten by
+   the randomization.
+8. The randomization of `block_cfg`, unless it is null; a failure is the fatal
+   `HEXK_TEST_RAND`.
+9. `modify_randomized_cfg()`, the hook for plain assignments after the randomization. No
+   constraint checks them, so they suit values that no constraint relates to others.
+
+The block base test fetches its interfaces and builds its env in its own `build_phase` after
+`super.build_phase()`, with the randomized cfg.
+
+`main_phase` calls `create_stimulus()`, the hook in which a test returns its stimulus (the env
+exists by then). Without a stimulus (null, the default) it returns at once. Otherwise it raises
+one objection, randomizes the stimulus (a failure is the fatal `HEXK_TEST_RAND`), starts it on
+`stimulus_sequencer()` (null by default: a virtual sequence without a virtual sequencer, guide
+rule SEQ-5), and drops the objection when the stimulus has ended. A derived test with a
+`main_phase` of its own calls `super.main_phase()` first, so that the stimulus runs before its
+own code, or replaces it.
 
 A block base test overrides `build_phase` only to add to it, and calls
 `super.build_phase(phase)` first. The members `knobs`, `objections`, `eot_registry`,
 `watchdog` and `catcher` are set after that call; the limits of the watchdog can be set then.
-A negative test expects its messages with `catcher` (`expect_check()`, `expect_msg()`), and
-`report_phase` checks it.
+A negative test expects the errors of one component with a catcher of
+`hexk_report_catcher::add_to(component)`, and messages whose reporter does not matter with
+`catcher` (`expect_check()`, `expect_msg()`); `check_phase` checks every such catcher that the
+test did not check itself.
 
 Warnings: `allow_warning(id_regex)` allows the warnings whose ID matches the expression
 (`hexk_regex`; `"^ID$"` for one ID); it works from `new()` on. The audit sees what the report
@@ -124,9 +153,13 @@ Later phases:
 - `start_of_simulation_phase` calls `set_propagate_mode(0)` on the objection of `run_phase`
   and of the twelve phases of the UVM run-time schedule (guide rule OBJ-5), unless
   `stop_objection_propagation` is 0. Phases of a user-defined domain are not touched.
-- `report_phase` calls `hexk_report_catcher::check_unchecked()`, which checks the
-  expectations of every global catcher that the test did not check itself, and reports the
-  table of `hexk_check_stats` with `HEXK_TEST_CHECKS`.
+  Without propagation, the `raised`, `dropped` and `all_dropped` callbacks and the objection
+  counts of the components above the one that objects see nothing; a testbench that relies on
+  them sets `stop_objection_propagation` to 0.
+- `check_phase` calls `hexk_report_catcher::check_unchecked()`, which checks the
+  expectations of every catcher of `add_to` or `add_global` that the test did not check
+  itself; the phase runs bottom-up, so the check phases of the env come first.
+- `report_phase` reports the table of `hexk_check_stats` with `HEXK_TEST_CHECKS`.
 - `final_phase` reports the result. When there is no error and no fatal, `require_checks`
   is 1 and no check was counted in `hexk_check_stats`, it first reports the error
   `HEXK_TEST_NO_CHECKS` (guide rule TST-6: no errors alone is not a pass). When there is no
@@ -147,6 +180,10 @@ Later phases:
   verdict and the line at the moment they are called.
 - The counts are those of the whole simulation. Messages that a report catcher demoted are
   not errors. The result line itself is an info, so that it does not change the counts.
+- The verdict counts UVM reports and checks only. A `$error` or `$fatal` of a module, an
+  interface, an assertion or the core package, and an error of the simulator, are not among
+  them, so a regression also checks the log: `scripts/hexk_check_run.py` does
+  ([docs/regression.md](../regression.md), guide rule TST-6).
 
 The banner:
 
@@ -217,11 +254,13 @@ own documents. With `+define+HEXK_NO_CHECK_STATS` the check macros are not count
 | `HEXK_TEST_CHECKS` | info |  |
 | `HEXK_TEST_CHECK_FAILED` | error |  |
 | `HEXK_TEST_NO_CHECKS` | error |  |
+| `HEXK_TEST_RAND` | fatal |  |
 | `HEXK_TEST_RESULT` | info |  |
 | `HEXK_TEST_WARNING` | error |  |
 <!-- HEXK_GEN:END emits -->
 
 `HEXK_TEST_RESULT` has verbosity `UVM_NONE`, `HEXK_TEST_CHECKS` has `UVM_LOW`.
+`HEXK_TEST_RAND`: the cfg of the block or the stimulus of the test could not be randomized.
 
 ## 7. Minimal example
 

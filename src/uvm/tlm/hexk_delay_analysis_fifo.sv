@@ -14,6 +14,7 @@
 // get() or the get/peek exports. It implements hexk_objectable, so that it can be
 // registered with hexk_objection_aggregator and no item is lost at the end of a phase: it is
 // busy while an item waits for the end of its delay or is visible and not yet read.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 //
 //! @module    hexk_delay_analysis_fifo
 //! @since     0.7.0
@@ -35,8 +36,8 @@ class hexk_delay_analysis_fifo #(
    // Number of clock events after which a written item becomes visible; 0 selects latency_ps.
    int unsigned     latency_cycles = 0;
 
-   // An item that is not visible yet: when it was written, and when it becomes visible, at a time in picoseconds
-   // (by_cycles 0) or at a count of clock events (by_cycles 1).
+   // An item that is not visible yet: when it was written ($realtime, in the 1 ps time unit of the package), and
+   // when it becomes visible, at a time in picoseconds (by_cycles 0) or at a count of clock events (by_cycles 1).
    typedef struct {
       T                item;
       realtime         written;

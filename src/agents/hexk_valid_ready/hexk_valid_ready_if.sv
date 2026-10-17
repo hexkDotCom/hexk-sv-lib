@@ -9,7 +9,11 @@
 // valid, ready and data are the channel: connect the inputs of the DUT to them. What the DUT
 // drives is assigned to ext_valid and ext_data, or to ext_ready, and the channel follows
 // these inputs on the side that no agent drives. A transfer happens at every rising edge of
-// clk at which valid and ready are both 1. The agent drives and samples through the tasks
+// clk at which valid and ready are both 1; data is valid at that edge. Once valid is 1, valid
+// and data stay unchanged until the transfer, and valid, ready during valid and data during
+// valid have a level. When the reset is asserted, an agent that drives the channel sets valid
+// (initiator) or ready (responder) to 0 at once and starts nothing until the reset is
+// released; the assertions are off during the reset. The agent drives and samples through the tasks
 // below; testbench code uses the signals and the clocking block mon_cb. The assertions check
 // the protocol whoever drives the channel, the agent or the DUT.
 //
@@ -83,12 +87,14 @@ interface hexk_valid_ready_if #(
    end : reset_counter
    // verilator lint_on BLKSEQ
 
-   // The time of the latest rising edge at which the task of each side ran: a side that is not at an edge
-   // waits for one before it drives.
+   // The time of the latest rising edge at which the task of each side ran, in ns (the time unit of the
+   // interface): a side that is not at an edge waits for one before it drives.
    realtime initiator_edge_time = -1.0;
    realtime responder_edge_time = -1.0;
 
    // The three signals sampled at the rising edge of the clock, for testbench code.
+   // IFC-3 waived: there is no drv_cb and there are no modports; the agent drives and samples through the tasks of
+   // the interface (IFC-8), which keep the timing of the channel in one place.
    clocking mon_cb @(posedge clk);
       input valid, ready, data;
    endclocking : mon_cb
@@ -114,6 +120,16 @@ interface hexk_valid_ready_if #(
    function automatic void set_checks(bit enable);
       checks_enabled = enable;
    endfunction : set_checks
+
+   // 1 while the protocol assertions are on.
+   function automatic bit get_checks();
+      return checks_enabled;
+   endfunction : get_checks
+
+   // 1 when valid or ready has no level now, or a bit of data while valid is 1: what the assertion known_a checks.
+   function automatic bit has_unknown();
+      return $isunknown({valid, ready}) || (valid === 1'b1 && $isunknown(data));
+   endfunction : has_unknown
 
    // 1 while the reset is asserted or has no level.
    function automatic bit in_reset();

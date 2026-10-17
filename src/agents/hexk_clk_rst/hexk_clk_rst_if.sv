@@ -73,6 +73,7 @@ interface hexk_clk_rst_if;
    // Number of starts of the generator, the first one included.
    int unsigned     start_count;
 
+   // Random stream of the jitter of the clock.
    hexk_rand_stream jitter_stream = new("hexk_clk_rst_if");
 
    // The reset sampled at the rising edge of the clock; @(mon_cb) is "the next clock edge" for testbench code.

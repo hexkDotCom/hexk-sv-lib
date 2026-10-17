@@ -78,6 +78,37 @@ class hexk_ref_bus_item extends uvm_sequence_item;
       status   = other.status;
    endfunction : do_copy
 
+   // UVM hook of compare(): the access, through the comparer; taken_ps and status are not compared, and of the data
+   // only that of the direction (wdata of a write, rdata of a read, X and Z bits included).
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_ref_bus_item other;
+      bit               same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = comparer.compare_field_int("we", 64'(we), 64'(other.we), 1);
+      same &= comparer.compare_field_int("addr", 64'(addr), 64'(other.addr), $bits(addr));
+      same &= comparer.compare_field_int("wstrb", 64'(wstrb), 64'(other.wstrb), $bits(wstrb));
+      if (we) begin
+         same &= comparer.compare_field_int("wdata", 64'(wdata), 64'(other.wdata), $bits(wdata));
+      end else begin
+         same &= comparer.compare_field("rdata", uvm_bitstream_t'(rdata), uvm_bitstream_t'(other.rdata), $bits(rdata));
+      end
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_field_int("we", 64'(we), 1, UVM_BIN);
+      printer.print_field_int("addr", 64'(addr), $bits(addr), UVM_HEX);
+      printer.print_field_int("wdata", 64'(wdata), $bits(wdata), UVM_HEX);
+      printer.print_field_int("wstrb", 64'(wstrb), $bits(wstrb), UVM_BIN);
+      printer.print_field("rdata", uvm_bitstream_t'(rdata), $bits(rdata), UVM_HEX);
+      printer.print_field_int("taken_ps", taken_ps, 64, UVM_DEC);
+      printer.print_string("status", status.name());
+   endfunction : do_print
+
 endclass : hexk_ref_bus_item
 
 `endif  // HEXK_REF_BUS_ITEM_SV

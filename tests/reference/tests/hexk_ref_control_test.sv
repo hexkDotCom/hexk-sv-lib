@@ -19,9 +19,9 @@ class hexk_ref_control_test extends hexk_ref_base_test;
    endfunction : new
 
    // The control sequence.
-   virtual function hexk_ref_vseq_base create_traffic();
+   virtual function hexk_ref_vseq_base create_scenario();
       return hexk_ref_control_vseq::type_id::create("control_seq");
-   endfunction : create_traffic
+   endfunction : create_scenario
 
 endclass : hexk_ref_control_test
 

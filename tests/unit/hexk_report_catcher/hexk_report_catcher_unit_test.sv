@@ -129,6 +129,21 @@ module hexk_report_catcher_unit_test;
       emit(UVM_ERROR, "UT.ID[0]");
    endfunction : expected_check_with_operators
 
+   // A catcher of add_to() on one reporter that expects UT_SCOPED once, and the error UT_SCOPED from another reporter
+   // and from that one: "<caught by the catcher of the reporter> <infos warnings errors>". The error of the other
+   // reporter passes through.
+   function automatic string scoped_catcher();
+      uvm_report_object   client = new("ut_client");
+      uvm_report_object   other = new("ut_other");
+      hexk_report_catcher scoped = hexk_report_catcher::add_to(client);
+      scoped.expect_msg("^UT_SCOPED$");
+      // FAC-9 waived: `uvm_error_context of UVM 1.2 does not elaborate cleanly with slang (an int as a condition).
+      other.uvm_report_error("UT_SCOPED", "from another reporter", UVM_NONE);
+      client.uvm_report_error("UT_SCOPED", "from the reporter of the catcher", UVM_NONE);
+      scoped.check_expectations();
+      return $sformatf("%0d %s", scoped.get_count("^UT_SCOPED$"), counted());
+   endfunction : scoped_catcher
+
    // A catcher of its own, created with add_global(), with an expectation that is never met; check_unchecked()
    // checks it once, and a second call leaves it alone.
    function automatic void unchecked_global_catcher();
@@ -271,6 +286,11 @@ module hexk_report_catcher_unit_test;
       catcher.check_expectations();
       `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
       `FAIL_UNLESS_STR_EQUAL(counted(), "2 0 0")
+   `SVTEST_END
+
+   `SVTEST(a_catcher_added_to_a_reporter_counts_only_its_messages)
+      `FAIL_UNLESS_STR_EQUAL(scoped_catcher(), "1 1 0 1")
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
    `SVTEST_END
 
    `SVTEST(check_unchecked_checks_a_global_catcher_once)

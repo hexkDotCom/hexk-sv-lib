@@ -12,9 +12,8 @@
 //   commit and high at the next one, with IRQ_EN set); IRQ_EN masks irq without touching DONE; and
 //   only a write of 1 to IRQ.DONE with its byte enabled clears DONE: a write of 0, and a write of
 //   1 with byte 0 disabled, leave it set.
-// The edges are counted on the clocking block of the bus monitor (env.cfg.bus_cfg.vif.mon_cb).
-// SEQ-13 waived: these are checks of the DUT's timing to the clock edge, which the sequence makes
-// at the edges it counts; the rest of the testbench leaves timing to the monitors.
+// The edges are counted on the clocking blocks of the input channel and of the bus monitor; the
+// rest of the testbench leaves timing to the monitors.
 
 `ifndef HEXK_REF_CONTROL_VSEQ_SV
 `define HEXK_REF_CONTROL_VSEQ_SV
@@ -51,6 +50,8 @@ class hexk_ref_control_vseq extends hexk_ref_vseq_base;
       fork
          send_words(words);
       join_none
+      // SEQ-13 waived: counts at the edges of the input channel whether a word was offered, which is what CTRL.EN
+      // must not stop.
       repeat (GATE_EDGES) begin
          @(env.cfg.in_cfg.vif.mon_cb);
          offered += (env.cfg.in_cfg.vif.mon_cb.valid === 1'b1);
@@ -102,6 +103,7 @@ class hexk_ref_control_vseq extends hexk_ref_vseq_base;
          send_words(words);
       join_none
       // The edge of the commit, then DONE at the next edge: seen on irq one edge later still.
+      // SEQ-13 waived: finds the edge of the last commit, from which the timing of DONE is checked.
       do begin
          @(env.cfg.bus_cfg.vif.mon_cb);
       end while (env.cfg.bus_cfg.vif.mon_cb.commit !== 1'b1);
@@ -127,6 +129,7 @@ class hexk_ref_control_vseq extends hexk_ref_vseq_base;
 
    // At the next edge, irq is value.
    task expect_irq(bit value, string when);
+      // SEQ-13 waived: checks the DUT's timing of irq to the clock edge.
       @(env.cfg.bus_cfg.vif.mon_cb);
       `hexk_check_eq(env.cfg.bus_cfg.vif.mon_cb.irq, value, "REF_IRQ", {"irq ", when})
    endtask : expect_irq

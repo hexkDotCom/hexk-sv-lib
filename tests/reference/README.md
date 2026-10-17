@@ -44,7 +44,7 @@ map with the reset values.
 | `agents/bus/` | the agent of the register bus and of the commit port: interface, cfg, item, driver, monitor, sequence, register adapter |
 | `env/` | register model, predictor, models of the DUT, cfg and environment |
 | `sequences/` | the virtual sequences: one packet from programming to collecting its result, a burst of packets without gaps, the shared steps of a scenario, and the scenario of every test (random traffic, vectors, registers, RAM, resets, ECC, faults, ...) |
-| `tests/` | the base test and the tests; a test configures the environment, picks its scenario with `create_traffic()` and says how the run must end |
+| `tests/` | the base test and the tests; a test configures the environment, picks its scenario with `create_scenario()` and says how the run must end |
 | `tb/` | the top module and the throttle of the input's ready |
 | `vectors/` | the fixed vectors (`hexk_ref_vectors.svh`) and the script that computes them (`hexk_ref_vectors.py`) |
 | `hexk_ref.f` | filelist; compile it after UVM and `src/hexk_all.f`; the top module is `hexk_ref_tb` |
@@ -55,7 +55,7 @@ map with the reset values.
 
 | Module | Where | What to look at |
 |---|---|---|
-| [`hexk_base_test`](../../docs/api/hexk_base_test.md) | `tests/hexk_ref_base_test.sv`, `tb/hexk_ref_tb.sv` | the hooks `define_knobs()` and `create_cfg()`, `fail_on_warnings`, the catcher of a negative test, the `TEST PASSED`/`TEST FAILED` line and the banner, the top include |
+| [`hexk_base_test`](../../docs/api/hexk_base_test.md) | `tests/hexk_ref_base_test.sv`, `tb/hexk_ref_tb.sv` | the hooks `define_knobs()`, `create_cfg()` (the cfg it randomizes), `modify_randomized_cfg()` and `create_stimulus()` (started in the main phase), `fail_on_warnings`, the catcher of a negative test, the `TEST PASSED`/`TEST FAILED` line and the banner, the top include |
 | [`hexk_knobs`](../../docs/api/hexk_knobs.md), [`hexk_enum_knob`](../../docs/api/hexk_knobs.md) | `tests/hexk_ref_base_test.sv` | `define_knobs()`: `ref_packets`, `ref_mode` (an enum), `ref_irq` |
 | [`hexk_clk_rst`](../../docs/api/hexk_clk_rst.md) | `tests/hexk_ref_base_test.sv`, `sequences/hexk_ref_warm_reset_vseq.sv`, `env/hexk_ref_env.sv` | the reset in `reset_phase`; a warm reset with the clock stopped and changed; the reset events on which the env flushes the predictor and the scoreboards; the check of the clock period by its monitor (`check_period`) |
 | [`hexk_valid_ready`](../../docs/api/hexk_valid_ready.md) | `env/hexk_ref_env.sv`, `sequences/hexk_ref_vseq_base.sv` | the input agent, its data sequence, its word and edge ports (`ap`, `cycle_ap`) |
@@ -68,7 +68,7 @@ map with the reset values.
 | [`hexk_csr_util`](../../docs/api/hexk_csr_util.md) | `sequences/hexk_ref_vseq_base.sv`, `sequences/hexk_ref_regs_vseq.sv`, `tests/hexk_ref_regs_test.sv` | every register access, `read_check()`, `spinwait()`, `check_reset_values()`, `bit_bash()`, `exclude()` |
 | [`hexk_hdl_macros`](../../docs/api/hexk_hdl_macros.md) | `sequences/hexk_ref_scenario_vseq.sv`, `sequences/hexk_ref_ecc_vseq.sv` | fault injection into the RAM by HDL path |
 | [`hexk_check_macros`](../../docs/api/hexk_check_macros.md) | everywhere | `` `hexk_check_eq ``, `` `hexk_check_ne `` and the other checks |
-| [`hexk_report_catcher`](../../docs/api/hexk_report_catcher.md) | `tests/hexk_ref_corrupt_test.sv` | `expect_check()`: a negative test that expects its mismatches |
+| [`hexk_report_catcher`](../../docs/api/hexk_report_catcher.md) | `tests/hexk_ref_corrupt_test.sv` | `add_to()` and `expect_check()`: a negative test that expects its mismatches from one scoreboard |
 | [`hexk_watchdog`](../../docs/api/hexk_watchdog.md) | `tests/hexk_ref_base_test.sv`, `env/hexk_ref_predictor.sv` | limits of the test; heartbeats per packet; the fatal of `hexk_ref_stall_test` |
 | [`hexk_objection_aggregator`](../../docs/api/hexk_objection_aggregator.md) | `env/hexk_ref_env.sv` | what keeps the test running until nothing is in flight (see below); `hexk_busy_group` for the waits until the env is drained or quiet |
 | [`hexk_eot_registry`](../../docs/api/hexk_eot_registry.md) | `env/hexk_ref_env.sv` | the end-of-test check of the RAM model, an object and not a component |
@@ -241,18 +241,24 @@ bigger testbench can start as well.
    sequence keeps in members (see `hexk_ref_warm_reset_vseq`).
 2. Write `tests/hexk_ref_<name>_test.sv`: a class that extends `hexk_ref_base_test`, registered
    with `` `uvm_component_utils ``, with a header that says what the test shows and how it must
-   end. Override `create_traffic()` to return the sequence, with its members set; the base test
-   gives it the environment and the settings of the knobs (`prepare()`) and starts it.
-3. To change the configuration, override `configure_test()` and change `env_cfg` there: it is
-   called in the build phase after the cfg is randomized and the knobs are applied, before the
-   environment is built (see `hexk_ref_back_to_back_test`); the expectations of the catcher and
-   exclusions of registers go there too (`hexk_ref_corrupt_test`, `hexk_ref_regs_test`). A test
-   does not override `build_phase()`. A setting of a component of the environment goes into
-   `end_of_elaboration_phase()`, when the environment is built. For a different cfg class,
-   override `create_cfg()`.
+   end. Override `create_scenario()` to return the sequence, with its members set; the base test
+   gives it the environment and the settings of the knobs (`prepare()`) and wraps it in a
+   `hexk_ref_test_vseq`, the stimulus that `hexk_base_test` randomizes and starts in the main
+   phase, which then compares ERR with the predictor.
+3. To change the configuration, override `modify_randomized_cfg()`, call
+   `super.modify_randomized_cfg()` first and change `env_cfg` there: `hexk_base_test` calls it in
+   the build phase after it randomized the cfg, and the base test applies the knobs in it, before
+   the environment is built (see `hexk_ref_back_to_back_test`); exclusions of registers go there
+   too (`hexk_ref_regs_test`). A
+   `rand` member that must keep a value through the randomization is pinned in `modify_cfg()`
+   with `rand_mode(0)`. A test does not override `build_phase()`. A setting of a component of the
+   environment goes into `end_of_elaboration_phase()`, when the environment is built. For a
+   different cfg class, override `create_cfg()`.
 4. When the test makes results fail on purpose, override `expected_matches()`, and declare the
-   failed checks it expects with `catcher.expect_check(id, count)` (see
-   `hexk_ref_corrupt_test`).
+   failed checks it expects with a catcher of the component that reports them, in
+   `connect_phase()`, when the environment exists: `hexk_report_catcher::add_to(env.result_sb)`
+   and `expect_check(id, count)` (see `hexk_ref_corrupt_test`). A mismatch of another
+   scoreboard then does not count as an expected one (guide rule MSG-9).
 5. A warning that the test provokes on purpose must be allowed twice: in the test, with
    `allow_warning("^ID$")` (otherwise `hexk_base_test` reports `HEXK_TEST_WARNING`), and in the
    regression line, as `ID:W:<count>` (otherwise the run checker rejects it). A message that a
