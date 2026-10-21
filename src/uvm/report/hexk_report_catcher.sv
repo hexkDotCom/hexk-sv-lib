@@ -11,7 +11,8 @@
 // purpose, or expect_check() for a check that fails on purpose; without a maximum an
 // expectation is exact. check_expectations() checks the counts; hexk_base_test calls
 // check_unchecked() in its check phase, which does that for every catcher made by add_to() or
-// add_global() that the test did not check itself. A catcher added to a component sees a
+// add_global() that the test did not check itself. Once checked, a catcher reports an
+// expectation that goes over its maximum at the message that does so. A catcher added to a component sees a
 // message after the global catchers: a global rule that changes its severity hides it from the
 // rules of that catcher, which match the severity the message has then. A message matches a rule when it has
 // the rule's severity, its ID matches the rule's regular expression and, if one is given, its
@@ -25,7 +26,7 @@
 //! @since     0.7.0
 //! @stability experimental
 //! @serves    MSG-9
-//! @emits     HEXK_CATCHER_MISSING:error HEXK_CATCHER_EXCESS:error
+//! @emits     HEXK_CATCHER_MISSING:error HEXK_CATCHER_EXCESS:error HEXK_CATCHER_CLIENT:fatal
 //! @plusargs  (none)
 
 `ifndef HEXK_REPORT_CATCHER_SV
@@ -40,7 +41,7 @@ class hexk_report_catcher extends uvm_report_catcher;
 
    local hexk_report_catcher_rule rules[$];
 
-   // Set by check_expectations() and cleared by clear(): check_unchecked() leaves this catcher alone.
+   // Set by check_expectations() and cleared by clear() and expect_msg(): check_unchecked() leaves this catcher alone.
    local bit checked;
 
    // The catchers created by add_to() and add_global(), for check_unchecked().
@@ -66,10 +67,15 @@ class hexk_report_catcher extends uvm_report_catcher;
    endfunction : add_global
 
    // Creates a catcher and registers it for the messages of one component (or other reporter) only, so that an
-   // expected error counts only when that component reports it. A null client registers for every reporter, as
-   // add_global() does.
+   // expected error counts only when that component reports it. A null client is the fatal HEXK_CATCHER_CLIENT, and
+   // add_to() then returns null: a catcher for every reporter is made with add_global().
    static function hexk_report_catcher add_to(uvm_report_object client);
-      hexk_report_catcher catcher = hexk_report_catcher::type_id::create($sformatf("catcher_%0d", num_added_to));
+      hexk_report_catcher catcher;
+      if (client == null) begin
+         `hexk_static_fatal("HEXK_CATCHER_CLIENT", "add_to() needs a component; use add_global() for every reporter")
+         return null;
+      end
+      catcher = hexk_report_catcher::type_id::create($sformatf("catcher_%0d", num_added_to));
       num_added_to++;
       uvm_report_cb::add(client, catcher);
       registered.push_back(catcher);
@@ -82,6 +88,8 @@ class hexk_report_catcher extends uvm_report_catcher;
                             int unsigned min_count = 1, int max_count = SAME_AS_MIN, uvm_severity demote_to = UVM_INFO);
       hexk_report_catcher_rule rule = add_rule(id_regex, msg_regex, sev, demote_to);
       rule.is_expectation = 1;
+      // A new expectation has not been checked, whatever was checked before it.
+      checked             = 0;
       rule.min_count      = min_count;
       rule.max_count      = (max_count == SAME_AS_MIN) ? int'(min_count) : max_count;
    endfunction : expect_msg
@@ -164,6 +172,13 @@ class hexk_report_catcher extends uvm_report_catcher;
             continue;
          end
          rules[i].hits++;
+         // After the check, a message over the maximum would otherwise be demoted with no verdict at all.
+         if (checked && rules[i].is_expectation && rules[i].max_count != NO_LIMIT && rules[i].hits > $unsigned(
+                 rules[i].max_count
+             )) begin
+            `hexk_static_error("HEXK_CATCHER_EXCESS", $sformatf("expected at most %0d of %s, saw %0d after the check",
+                                                                rules[i].max_count, describe(rules[i]), rules[i].hits))
+         end
          set_severity(rules[i].to_severity);
          // The actions were chosen for the old severity; an error demoted to info must not count as one.
          if (client != null) begin

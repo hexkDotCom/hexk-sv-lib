@@ -35,6 +35,10 @@ function string get_type_name();
 function new(string name = "hexk_mem_model");
 // UVM hook of copy() and clone(): a snapshot of the bytes, the settings, the range and the counter of reads of bytes that were never written; afterwards the two memories are independent.
 function void do_copy(uvm_object rhs);
+// UVM hook of compare(): compares the settings, the range, the counters and every stored byte (with !==, so X counts).
+function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+// UVM hook of print() and sprint(): the settings, the range, the counters and the number of stored bytes, not the bytes.
+function void do_print(uvm_printer printer);
 // Limits the legal addresses to lo..hi; an access outside is an error and is not carried out.
 function void set_range(addr_t lo, addr_t hi);
 // Writes the bytes of a word whose byte enable is set; addr is the address of the first byte of the word.

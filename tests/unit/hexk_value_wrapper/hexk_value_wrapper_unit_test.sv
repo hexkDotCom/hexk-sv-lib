@@ -139,7 +139,9 @@ module hexk_value_wrapper_unit_test;
       hexk_value_wrapper #(hexk_ut_header_t) wrapper = hexk_value_wrapper#(hexk_ut_header_t)::wrap(header, 3);
       hexk_value_wrapper #(hexk_ut_header_t) cloned;
       uvm_object                             copied = wrapper.clone();
-      void'($cast(cloned, copied));
+      if (!$cast(cloned, copied) || cloned == null) begin
+         return "not a clone";
+      end
       wrapper.value.payload = 8'h00;
       return $sformatf("%s %s tolerance=%0d", wrapper.convert2string(), cloned.convert2string(), cloned.tolerance);
    endfunction : struct_texts

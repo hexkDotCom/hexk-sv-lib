@@ -22,17 +22,17 @@ class hexk_ref_back_to_back_test extends hexk_ref_base_test;
       super.new(name, parent);
    endfunction : new
 
-   // The input sends without delays, so that the packets of a burst follow each other closely.
-   virtual function void modify_randomized_cfg();
-      super.modify_randomized_cfg();
-      env_cfg.in_cfg.delay_cfg.mode = HEXK_DELAY_NONE;
-   endfunction : modify_randomized_cfg
-
    // UVM callback: the predictor publishes no results, which nobody could collect.
    function void end_of_elaboration_phase(uvm_phase phase);
       super.end_of_elaboration_phase(phase);
       env.predictor.publish_results = 0;
    endfunction : end_of_elaboration_phase
+
+   // The input sends without delays, so that the packets of a burst follow each other closely.
+   virtual function void modify_randomized_cfg();
+      super.modify_randomized_cfg();
+      env_cfg.in_cfg.delay_cfg.mode = HEXK_DELAY_NONE;
+   endfunction : modify_randomized_cfg
 
    // The bursts.
    virtual function hexk_ref_vseq_base create_scenario();

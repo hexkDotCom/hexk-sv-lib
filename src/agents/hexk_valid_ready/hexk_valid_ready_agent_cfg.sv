@@ -97,6 +97,39 @@ class hexk_valid_ready_agent_cfg #(
       end
    endfunction : do_copy
 
+   // UVM hook of compare(): compares every member, the delay_cfg by its members; the interfaces must be the same.
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_valid_ready_agent_cfg #(DATA_WIDTH) other;
+      bit same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_field_int("is_active", 64'(is_active), 64'(other.is_active), $bits(is_active));
+      same &= comparer.compare_field_int("role", 64'(role), 64'(other.role), $bits(role));
+      if (vif != other.vif) begin
+         comparer.print_msg("vif: the two refer to different interfaces");
+         same = 0;
+      end
+      same &= comparer.compare_object("delay_cfg", delay_cfg, other.delay_cfg);
+      same &= comparer.compare_field_int("idle_data_x", 64'(idle_data_x), 64'(other.idle_data_x), 1);
+      same &= comparer.compare_field_int("has_checks", 64'(has_checks), 64'(other.has_checks), 1);
+      same &= comparer.compare_field_int("has_coverage", 64'(has_coverage), 64'(other.has_coverage), 1);
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member; the interface as set or null.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_string("is_active", is_active.name());
+      printer.print_string("role", role.name());
+      printer.print_string("vif", (vif == null) ? "null" : "set");
+      printer.print_object("delay_cfg", delay_cfg);
+      printer.print_field_int("idle_data_x", 64'(idle_data_x), 1, UVM_BIN);
+      printer.print_field_int("has_checks", 64'(has_checks), 1, UVM_BIN);
+      printer.print_field_int("has_coverage", 64'(has_coverage), 1, UVM_BIN);
+   endfunction : do_print
+
 endclass : hexk_valid_ready_agent_cfg
 
 `endif  // HEXK_VALID_READY_AGENT_CFG_SV

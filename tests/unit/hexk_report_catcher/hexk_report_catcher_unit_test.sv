@@ -154,6 +154,14 @@ module hexk_report_catcher_unit_test;
       own.clear();
    endfunction : unchecked_global_catcher
 
+   // add_to() without a component, with its fatal expected by the catcher of the suite: "<returned null> <caught>".
+   function automatic string catcher_without_a_client();
+      hexk_report_catcher none;
+      catcher.expect_msg("^HEXK_CATCHER_CLIENT$", UVM_FATAL);
+      none = hexk_report_catcher::add_to(null);
+      return $sformatf("%0d %0d", none == null, catcher.get_count("^HEXK_CATCHER_CLIENT$", UVM_FATAL));
+   endfunction : catcher_without_a_client
+
    // Decimal text of a count kept by the catcher.
    function automatic string caught(string id_regex, uvm_severity severity = UVM_ERROR);
       return $sformatf("%0d", catcher.get_count(id_regex, severity));
@@ -303,8 +311,24 @@ module hexk_report_catcher_unit_test;
       catcher.check_expectations();
       `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
       emit(UVM_WARNING, "UT_FORBIDDEN");
-      catcher.check_expectations();
       `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 1")
+      catcher.check_expectations();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 2")
+   `SVTEST_END
+
+   `SVTEST(an_excess_after_the_check_is_reported_at_once)
+      catcher.expect_msg("^UT_LATE$");
+      emit(UVM_ERROR, "UT_LATE");
+      catcher.check_expectations();
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 0")
+      emit(UVM_ERROR, "UT_LATE");
+      `FAIL_UNLESS_STR_EQUAL(verdicts(), "0 1")
+      `FAIL_UNLESS_STR_EQUAL(counted(), "2 0 1")
+   `SVTEST_END
+
+   `SVTEST(add_to_needs_a_component)
+      `FAIL_UNLESS_STR_EQUAL(catcher_without_a_client(), "1 1")
+      `FAIL_UNLESS_STR_EQUAL(counted(), "1 0 0")
    `SVTEST_END
 
    `SVTEST(the_verdict_of_the_catcher_cannot_be_caught_by_its_own_rules)

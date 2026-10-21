@@ -101,13 +101,13 @@ Then pick a module in [docs/api/](docs/api/) and start from its minimal example 
 
 The library comes with its own tests: unit tests per module, every example, and a smoke
 testbench (a small UVM testbench that uses the library the way a project does). Results for
-version 0.10.0:
+version 0.11.0:
 
 | Simulator | UVM | Unit tests | Examples | Smoke testbench |
 |---|---|---|---|---|
-| Verilator 5.046 | none (core) and 2020.3.1 | 768 of 768 | elaborated with slang | elaborated with slang |
-| Questa 2024.1 | 1.2 and 2020.3.1 | 832 of 832 with each | 36 of 36 run with each | 3 of 3 tests with each |
-| VCS X-2025.06 | 1.2 and 2020.3.1 | 832 of 832 with each | 36 of 36 run with each | 3 of 3 tests with each |
+| Verilator 5.046 | none (core) and 2020.3.1 | 776 of 776 | elaborated with slang | elaborated with slang |
+| Questa 2024.1 | 1.2 and 2020.3.1 | 840 of 840 with each | 36 of 36 run with each | 3 of 3 tests with each |
+| VCS X-2025.06 | 1.2 and 2020.3.1 | 840 of 840 with each | 36 of 36 run with each | 3 of 3 tests with each |
 | Xcelium | | not run | not run | not run |
 
 Everything is written to lint, compile and simulate on Verilator. Where Verilator 5.046
@@ -123,7 +123,7 @@ welcome.
 A reference testbench ([tests/reference](tests/reference/README.md)) checks the library from the
 outside: a complete UVM testbench of a small DUT, built from the library the way a project
 builds one, whose results are compared with the library models and with fixed vectors computed
-without the library. It runs on Questa and VCS: 16 of 16 runs end as expected with each UVM
+without the library. It runs on Questa and VCS: 17 of 17 runs end as expected with each UVM
 version.
 
 To run the tests yourself, see [tests/README.md](tests/README.md). Running the unit tests of the

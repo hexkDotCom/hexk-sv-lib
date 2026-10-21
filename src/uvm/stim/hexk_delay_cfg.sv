@@ -197,6 +197,57 @@ class hexk_delay_cfg extends uvm_object;
       honor_perf_knob = other.honor_perf_knob;
    endfunction : do_copy
 
+   // UVM hook of compare(): compares every member.
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_delay_cfg other;
+      bit same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_field_int("mode", 64'(mode), 64'(other.mode), $bits(mode));
+      same &= comparer.compare_field_int("fixed_value", 64'(fixed_value), 64'(other.fixed_value), 32);
+      same &= comparer.compare_field_int("lo", 64'(lo), 64'(other.lo), 32);
+      same &= comparer.compare_field_int("hi", 64'(hi), 64'(other.hi), 32);
+      same &= comparer.compare_field_int("mean", 64'(mean), 64'(other.mean), 32);
+      same &= comparer.compare_field_int("std_dev", 64'(std_dev), 64'(other.std_dev), 32);
+      same &= comparer.compare_field_int("burst_on_min", 64'(burst_on_min), 64'(other.burst_on_min), 32);
+      same &= comparer.compare_field_int("burst_on_max", 64'(burst_on_max), 64'(other.burst_on_max), 32);
+      same &= comparer.compare_field_int("burst_off_min", 64'(burst_off_min), 64'(other.burst_off_min), 32);
+      same &= comparer.compare_field_int("burst_off_max", 64'(burst_off_max), 64'(other.burst_off_max), 32);
+      same &= comparer.compare_field_int("weights.num()", 64'(weights.num()), 64'(other.weights.num()), 32);
+      foreach (weights[value]) begin
+         if (!other.weights.exists(value)) begin
+            comparer.print_msg($sformatf("weights[%0d]: only in %s", value, get_name()));
+            same = 0;
+         end else begin
+            same &= comparer.compare_field_int($sformatf("weights[%0d]", value), 64'(weights[value]),
+                                               64'(other.weights[value]), 32);
+         end
+      end
+      same &= comparer.compare_field_int("honor_perf_knob", 64'(honor_perf_knob), 64'(other.honor_perf_knob), 1);
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_string("mode", mode.name());
+      printer.print_field_int("fixed_value", 64'(fixed_value), 32, UVM_DEC);
+      printer.print_field_int("lo", 64'(lo), 32, UVM_DEC);
+      printer.print_field_int("hi", 64'(hi), 32, UVM_DEC);
+      printer.print_field_int("mean", 64'(mean), 32, UVM_DEC);
+      printer.print_field_int("std_dev", 64'(std_dev), 32, UVM_DEC);
+      printer.print_field_int("burst_on_min", 64'(burst_on_min), 32, UVM_DEC);
+      printer.print_field_int("burst_on_max", 64'(burst_on_max), 32, UVM_DEC);
+      printer.print_field_int("burst_off_min", 64'(burst_off_min), 32, UVM_DEC);
+      printer.print_field_int("burst_off_max", 64'(burst_off_max), 32, UVM_DEC);
+      foreach (weights[value]) begin
+         printer.print_field_int($sformatf("weights[%0d]", value), 64'(weights[value]), 32, UVM_DEC);
+      end
+      printer.print_field_int("honor_perf_knob", 64'(honor_perf_knob), 1, UVM_BIN);
+   endfunction : do_print
+
 endclass : hexk_delay_cfg
 
 `endif  // HEXK_DELAY_CFG_SV

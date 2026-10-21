@@ -32,7 +32,7 @@ From `src/uvm/report/hexk_report_catcher.sv`:
 function new(string name = "hexk_report_catcher");
 // Creates a catcher and registers it for the messages of every reporter.
 static function hexk_report_catcher add_global();
-// Creates a catcher and registers it for the messages of one component (or other reporter) only, so that an expected error counts only when that component reports it. A null client registers for every reporter, as add_global() does.
+// Creates a catcher and registers it for the messages of one component (or other reporter) only, so that an expected error counts only when that component reports it. A null client is the fatal HEXK_CATCHER_CLIENT, and add_to() then returns null: a catcher for every reporter is made with add_global().
 static function hexk_report_catcher add_to(uvm_report_object client);
 // Expects min_count to max_count messages of severity sev, matching the expressions; they become demote_to. max_count is min_count unless given: the shortest call expects exactly one message. NO_LIMIT has no maximum.
 function void expect_msg(string id_regex, uvm_severity sev = UVM_ERROR, string msg_regex = "", int unsigned min_count = 1, int max_count = SAME_AS_MIN, uvm_severity demote_to = UVM_INFO);
@@ -81,12 +81,17 @@ function action_e catch();
 - `demote` rules also count their matches (`get_count`), but are never checked.
 - `check_expectations` can be called more than once; it reports the state at each call and
   does not reset the counts. `clear` removes all rules and counts.
+- Once a catcher has been checked, a message that takes an expectation over its `max_count`
+  is reported as `HEXK_CATCHER_EXCESS` at once, as well as demoted: an expected error that
+  comes after the check (for example in the check phase of a derived test, after `super`)
+  cannot pass unnoticed. A later `check_expectations` reports the excess again.
 - `hexk_report_catcher::check_unchecked()` calls `check_expectations` of every catcher created
   by `add_to` or `add_global` that was not checked since it was created or last cleared.
   `hexk_base_test` calls it in its check phase, after the check phases of the env, so in a
   test derived from it the expectations are checked even when the test does not call
   `check_expectations` itself; a test that calls it earlier in its check phase is not checked
-  twice. A message that the test expects in a later phase is checked by the test itself.
+  twice. An expectation added after a check makes the catcher unchecked again. A message that
+  the test expects in a later phase is checked by the test itself.
 - The verdicts of `check_expectations` are errors of the root reporter of UVM, whatever
   reported the last message before the check. No `hexk_report_catcher` applies a rule to a
   message with the ID `HEXK_CATCHER_MISSING` or `HEXK_CATCHER_EXCESS`, so no rule, however
@@ -95,7 +100,8 @@ function action_e catch();
 - The catcher always passes the message on (`THROW`); it never swallows one.
 - `add_to(client)` registers the catcher for the messages of that component (or other
   reporter) only: an error with the same ID from another component neither counts nor is
-  demoted by it (guide rule MSG-9). A null client is the same as `add_global`.
+  demoted by it (guide rule MSG-9). A null client is the fatal `HEXK_CATCHER_CLIENT`, after
+  which `add_to` returns null; a catcher for every reporter comes from `add_global`.
 - `add_global` registers the catcher for every reporter. Each call creates another catcher.
   UVM consults the global catchers first, in the order they were added, then those of the
   component. A rule matches the severity that the message has when it reaches the catcher,
@@ -111,6 +117,7 @@ None. No plusargs.
 <!-- HEXK_GEN:BEGIN emits -->
 | ID | Severity | Meaning |
 |---|---|---|
+| `HEXK_CATCHER_CLIENT` | fatal |  |
 | `HEXK_CATCHER_EXCESS` | error |  |
 | `HEXK_CATCHER_MISSING` | error |  |
 <!-- HEXK_GEN:END emits -->
@@ -118,7 +125,8 @@ None. No plusargs.
 | ID | Meaning |
 |---|---|
 | `HEXK_CATCHER_MISSING` | an expectation saw fewer messages than its `min_count` |
-| `HEXK_CATCHER_EXCESS` | an expectation saw more messages than its `max_count` |
+| `HEXK_CATCHER_EXCESS` | an expectation saw more messages than its `max_count`, at its check or, after the check, at the message that went over |
+| `HEXK_CATCHER_CLIENT` | `add_to` was given a null client |
 
 ## 7. Minimal example
 
@@ -135,7 +143,7 @@ None. No plusargs.
 // purpose, so exactly two errors with that ID are expected: a count without a maximum is
 // exact. They are demoted to info, and check_expectations() reports an error if there were
 // fewer or more. In a real testbench expect_msg() is called by the test before the stimulus
-// starts; a test derived from hexk_base_test has the expectations checked in its report
+// starts; a test derived from hexk_base_test has the expectations checked in its check
 // phase, any other test calls check_expectations() in its check_phase. A check that fails on
 // purpose is declared with expect_check(id, count). Needs UVM and src/uvm/hexk_uvm.f.
 

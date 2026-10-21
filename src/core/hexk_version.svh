@@ -23,13 +23,13 @@
 `define HEXK_VERSION_MAJOR 0
 
 // Minor version number (SemVer): added functionality; may break APIs before 1.0.0.
-`define HEXK_VERSION_MINOR 10
+`define HEXK_VERSION_MINOR 11
 
 // Patch version number (SemVer): fixes only.
 `define HEXK_VERSION_PATCH 0
 
 // Full version as a string literal, for banners and log files.
-`define HEXK_VERSION_STR "0.10.0"
+`define HEXK_VERSION_STR "0.11.0"
 
 // Defined when hexk_base_test is part of this release.
 `define HEXK_HAS_BASE_TEST

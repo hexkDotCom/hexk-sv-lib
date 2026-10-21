@@ -37,6 +37,38 @@ class hexk_eot_registry extends uvm_component;
       super.new(name, parent);
    endfunction : new
 
+   // UVM callback: calls eot_check() of every registered object and names those that reported errors.
+   function void check_phase(uvm_phase phase);
+      uvm_report_server server;
+      string            complained    [$];
+      int               errors_before;
+      super.check_phase(phase);
+      server = uvm_report_server::get_server();
+      if (checkables.size() == 0) begin
+         return;
+      end
+      foreach (checkables[i]) begin
+         errors_before = server.get_severity_count(UVM_ERROR) + server.get_severity_count(UVM_FATAL);
+         checkables[i].eot_check();
+         if (server.get_severity_count(UVM_ERROR) + server.get_severity_count(UVM_FATAL) != errors_before) begin
+            complained.push_back(labels[i]);
+         end
+      end
+      if (complained.size() == 0) begin
+         `uvm_info("HEXK_EOT_CHECK", $sformatf("%0d objects checked, none reported an error", checkables.size()),
+                   UVM_MEDIUM)
+      end else begin
+         `uvm_info("HEXK_EOT_CHECK", $sformatf(
+                   "%0d objects checked, %0d reported errors: %s",
+                   checkables.size(),
+                   complained.size(),
+                   hexk_str::join_str(
+                       complained, ", "
+                   )
+                   ), UVM_MEDIUM)
+      end
+   endfunction : check_phase
+
    // The one registry of the simulation; the first call creates it and must come before the end of build_phase.
    static function hexk_eot_registry get();
       if (eot_registry == null) begin
@@ -81,38 +113,6 @@ class hexk_eot_registry extends uvm_component;
          eot_registry.labels.delete();
       end
    endfunction : reset_for_test
-
-   // UVM callback: calls eot_check() of every registered object and names those that reported errors.
-   function void check_phase(uvm_phase phase);
-      uvm_report_server server;
-      string            complained    [$];
-      int               errors_before;
-      super.check_phase(phase);
-      server = uvm_report_server::get_server();
-      if (checkables.size() == 0) begin
-         return;
-      end
-      foreach (checkables[i]) begin
-         errors_before = server.get_severity_count(UVM_ERROR) + server.get_severity_count(UVM_FATAL);
-         checkables[i].eot_check();
-         if (server.get_severity_count(UVM_ERROR) + server.get_severity_count(UVM_FATAL) != errors_before) begin
-            complained.push_back(labels[i]);
-         end
-      end
-      if (complained.size() == 0) begin
-         `uvm_info("HEXK_EOT_CHECK", $sformatf("%0d objects checked, none reported an error", checkables.size()),
-                   UVM_MEDIUM)
-      end else begin
-         `uvm_info("HEXK_EOT_CHECK", $sformatf(
-                   "%0d objects checked, %0d reported errors: %s",
-                   checkables.size(),
-                   complained.size(),
-                   hexk_str::join_str(
-                       complained, ", "
-                   )
-                   ), UVM_MEDIUM)
-      end
-   endfunction : check_phase
 
 endclass : hexk_eot_registry
 

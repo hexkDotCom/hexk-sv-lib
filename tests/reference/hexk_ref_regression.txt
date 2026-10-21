@@ -21,6 +21,7 @@ hexk_ref_back_to_back_test | 13 |                                    | PASSED |
 hexk_ref_control_test      | 14 |                                    | PASSED |
 hexk_ref_control_test      | 15 | +ref_irq=0                         | PASSED |
 hexk_ref_mem_test          | 16 |                                    | PASSED |
+hexk_ref_shared_bus_test   | 17 |                                    | PASSED |
 # A DUT that never finishes a packet: the wait for DONE and the scoreboard's time limit report it.
 hexk_ref_hang_test         | 11 |                                    | FAILED | REF_DONE:E:1 HEXK_SB_TIMEOUT:E:1 REF_MATCHED:E:1 match=HEXK_SB_TIMEOUT\s+env\.result_sb\s
 # A DUT that never takes a packet: only the watchdog can end the test, for inactivity, naming the input agent.

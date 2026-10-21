@@ -19,6 +19,7 @@ module hexk_delay_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
    import hexk_uvm_pkg::hexk_delay;
+   import hexk_core_pkg::hexk_str;
    import hexk_uvm_pkg::hexk_delay_cfg;
    import hexk_uvm_pkg::hexk_delay_mode_e;
    import hexk_uvm_pkg::HEXK_DELAY_NONE;
@@ -348,7 +349,9 @@ module hexk_delay_unit_test;
       cfg.weights[7]      = 1;
       cfg.honor_perf_knob = 0;
       copied              = cfg.clone();
-      void'($cast(clone, copied));
+      if (!$cast(clone, copied) || clone == null) begin
+         return "not a clone";
+      end
       // The clone must not follow later changes of the original.
       cfg.weights[9] = 3;
       cfg.lo         = 99;
@@ -371,6 +374,23 @@ module hexk_delay_unit_test;
           clone.honor_perf_knob
       );
    endfunction : clone_text
+
+   // compare() of a clone, and of the clone after a change, and whether print() names weights:
+   // "<equal> <equal after the change> <named>".
+   function automatic string compared_cfg();
+      hexk_delay_cfg original = hexk_delay_cfg::type_id::create("ut_compared");
+      hexk_delay_cfg copy;
+      bit equal_before;
+      original.weights[2] = 1;
+      if (!$cast(copy, original.clone()) || copy == null) begin
+         return "not a clone";
+      end
+      equal_before = original.compare(copy);
+      copy.weights[5] = 4;
+      return $sformatf(
+          "%0b %0b %0b", equal_before, original.compare(copy), hexk_str::contains(original.sprint(), "weights")
+      );
+   endfunction : compared_cfg
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -681,6 +701,10 @@ module hexk_delay_unit_test;
       `FAIL_UNLESS_STR_EQUAL(randomized(1), "1 HEXK_DELAY_CONSTANT 9")
    `SVTEST_END
 `endif
+
+   `SVTEST(compare_and_print_cover_every_member)
+      `FAIL_UNLESS_STR_EQUAL(compared_cfg(), "1 0 1")
+   `SVTEST_END
 
    `SVUNIT_TESTS_END
    // verilog_format: on

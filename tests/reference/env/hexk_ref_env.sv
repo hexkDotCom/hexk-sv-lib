@@ -10,6 +10,13 @@
 // the test collects, commit_sb every code word at the edge at which the DUT commits it. At every
 // reset the predictor and both scoreboards forget what was in flight (guide rule CHK-6). The
 // monitor of the clock and reset agent checks the period of the clock (check_period of its cfg).
+// Reuse (guide CFG-8, REU-2): every stream of an agent reaches its consumers through an export of
+// the environment (word_export, cycle_export, bus_export, commit_export). A parent that has an
+// agent of its own on the input channel or the bus sets has_in_agent or has_bus_agent of the cfg
+// to 0 and connects its agent to these exports; for the bus it also gives the register map its
+// sequencer (regs.default_map.set_sequencer()) and registers its driver with quiet and with the
+// objection aggregator, and for the input it registers its agent with drained. The virtual
+// sequences of this testbench start on the agents of the environment, so they need both.
 
 `ifndef HEXK_REF_ENV_SV
 `define HEXK_REF_ENV_SV
@@ -18,38 +25,50 @@
 class hexk_ref_env extends uvm_env;
 
    // Configuration; assigned by the test before the build phase.
-   hexk_ref_env_cfg                        cfg;
+   hexk_ref_env_cfg                                   cfg;
 
    // From the test (hexk_base_test): the objection aggregator and the watchdog.
-   hexk_objection_aggregator               aggregator;
-   hexk_watchdog                           watchdog;
+   hexk_objection_aggregator                          aggregator;
+   hexk_watchdog                                      watchdog;
 
-   // The agents: clock and reset, the input channel of the DUT, the register bus.
-   hexk_clk_rst_agent                      clk_rst_agent;
-   hexk_valid_ready_agent #(32)            in_agent;
-   hexk_ref_bus_agent                      bus_agent;
+   // The agents: clock and reset, the input channel of the DUT, the register bus; in_agent and bus_agent are null
+   // when the cfg turns them off.
+   hexk_clk_rst_agent                                 clk_rst_agent;
+   hexk_valid_ready_agent #(32)                       in_agent;
+   hexk_ref_bus_agent                                 bus_agent;
+
+   // The streams of the environment: the words of the input channel and the edges at which they were accepted, the
+   // completed accesses of the bus and the committed code words. The agents of the environment, or those of a
+   // parent, are connected to them; the consumers are connected behind them.
+   uvm_analysis_export #(hexk_valid_ready_item #(32)) word_export;
+   uvm_analysis_export #(hexk_handshake_cycle_t)      cycle_export;
+   uvm_analysis_export #(hexk_ref_bus_item)           bus_export;
+   uvm_analysis_export #(hexk_ref_commit_item)        commit_export;
+
+   // The adapter between bus items and register operations: that of bus_agent, or one of the environment without it.
+   hexk_ref_reg_adapter                               adapter;
 
    // The register model, kept up to date from the bus monitor by reg_predictor (the predictor of UVM's
    // register layer), and csr, through which the tests and sequences access the registers.
-   hexk_ref_regs                           regs;
-   uvm_reg_predictor #(hexk_ref_bus_item)  reg_predictor;
-   hexk_csr_util                           csr;
+   hexk_ref_regs                                      regs;
+   uvm_reg_predictor #(hexk_ref_bus_item)             reg_predictor;
+   hexk_csr_util                                      csr;
 
    // The reference model of the DUT, and the scoreboards that compare the DUT with it: packet results, and
    // the code words that the DUT commits to its RAM.
-   hexk_ref_predictor                      predictor;
-   hexk_ref_result_sb                      result_sb;
-   hexk_scoreboard #(hexk_ref_commit_item) commit_sb;
+   hexk_ref_predictor                                 predictor;
+   hexk_ref_result_sb                                 result_sb;
+   hexk_scoreboard #(hexk_ref_commit_item)            commit_sb;
 
    // What can be busy, in two groups: drained, the input agent and the predictor (every word sent is accepted and
    // committed); quiet, those and the register accesses (nothing is in flight, so a reset loses nothing). A result
    // that the test has not collected yet is left out on purpose.
-   hexk_busy_group                         drained;
-   hexk_busy_group                         quiet;
+   hexk_busy_group                                    drained;
+   hexk_busy_group                                    quiet;
 
    // Packets and words that the sequences sent; the tests compare them with what the scoreboards matched.
-   int unsigned                            packets_sent;
-   int unsigned                            words_sent;
+   int unsigned                                       packets_sent;
+   int unsigned                                       words_sent;
 
    `uvm_component_utils(hexk_ref_env)
 
@@ -65,12 +84,23 @@ class hexk_ref_env extends uvm_env;
          `uvm_fatal("REF_ENV_CFG", "cfg is null; the test assigns it before the build phase")
          return;
       end
+      // CFG-8 waived: the clock and reset agent is always built; the environment takes the resets from its status.
       clk_rst_agent     = hexk_clk_rst_agent::type_id::create("clk_rst_agent", this);
       clk_rst_agent.cfg = cfg.clk_rst_cfg;
-      in_agent          = hexk_valid_ready_agent#(32)::type_id::create("in_agent", this);
-      in_agent.cfg      = cfg.in_cfg;
-      bus_agent         = hexk_ref_bus_agent::type_id::create("bus_agent", this);
-      bus_agent.cfg     = cfg.bus_cfg;
+      if (cfg.has_in_agent) begin
+         in_agent     = hexk_valid_ready_agent#(32)::type_id::create("in_agent", this);
+         in_agent.cfg = cfg.in_cfg;
+      end
+      if (cfg.has_bus_agent) begin
+         bus_agent     = hexk_ref_bus_agent::type_id::create("bus_agent", this);
+         bus_agent.cfg = cfg.bus_cfg;
+      end else begin
+         adapter = hexk_ref_reg_adapter::type_id::create("adapter", this);
+      end
+      word_export   = new("word_export", this);
+      cycle_export  = new("cycle_export", this);
+      bus_export    = new("bus_export", this);
+      commit_export = new("commit_export", this);
       // A parent that has a register model of its own assigns it before the build phase (guide rule REG-2).
       if (regs == null) begin
          regs = hexk_ref_regs::type_id::create("regs", this);
@@ -97,31 +127,44 @@ class hexk_ref_env extends uvm_env;
    // registers what can keep the test busy.
    function void connect_phase(uvm_phase phase);
       super.connect_phase(phase);
-      if (bus_agent.get_is_active() == UVM_ACTIVE) begin
-         regs.default_map.set_sequencer(bus_agent.sqr, bus_agent.adapter);
+      if (bus_agent != null) begin
+         adapter = bus_agent.adapter;
+         if (bus_agent.get_is_active() == UVM_ACTIVE) begin
+            regs.default_map.set_sequencer(bus_agent.sqr, adapter);
+         end
+         bus_agent.ap.connect(bus_export);
+         bus_agent.commit_ap.connect(commit_export);
+      end
+      if (in_agent != null) begin
+         in_agent.ap.connect(word_export);
+         in_agent.cycle_ap.connect(cycle_export);
       end
       regs.default_map.set_auto_predict(0);
       reg_predictor.map     = regs.default_map;
-      reg_predictor.adapter = bus_agent.adapter;
-      bus_agent.ap.connect(reg_predictor.bus_in);
-      bus_agent.ap.connect(predictor.bus_export);
-      in_agent.ap.connect(predictor.word_export);
-      in_agent.cycle_ap.connect(predictor.cycle_export);
+      reg_predictor.adapter = adapter;
+      bus_export.connect(reg_predictor.bus_in);
+      bus_export.connect(predictor.bus_export);
+      word_export.connect(predictor.word_export);
+      cycle_export.connect(predictor.cycle_export);
+      commit_export.connect(commit_sb.actual_export);
       predictor.result_ap.connect(result_sb.expected_export);
       predictor.commit_ap.connect(commit_sb.expected_export);
-      bus_agent.commit_ap.connect(commit_sb.actual_export);
       hexk_eot_registry::get().register(predictor.mem, "the RAM model of the predictor");
-      drained.register(in_agent, in_agent.get_full_name());
+      if (in_agent != null) begin
+         drained.register(in_agent, in_agent.get_full_name());
+      end
       drained.register(predictor, predictor.get_full_name());
       quiet.register(drained, "words in flight");
       quiet.register(csr, "register accesses");
-      if (bus_agent.drv != null) begin
+      if (bus_agent != null && bus_agent.drv != null) begin
          quiet.register(bus_agent.drv, bus_agent.drv.get_full_name());
       end
       if (aggregator != null) begin
-         aggregator.register(in_agent, in_agent.get_full_name());
+         if (in_agent != null) begin
+            aggregator.register(in_agent, in_agent.get_full_name());
+         end
          aggregator.register(csr, "register accesses");
-         if (bus_agent.drv != null) begin
+         if (bus_agent != null && bus_agent.drv != null) begin
             aggregator.register(bus_agent.drv, bus_agent.drv.get_full_name());
          end
          aggregator.register(predictor, predictor.get_full_name());
@@ -135,20 +178,6 @@ class hexk_ref_env extends uvm_env;
                 "results: ", result_sb.cfg.convert2string(), "\ncommits: ", commit_sb.cfg.convert2string()}, UVM_MEDIUM)
    endfunction : end_of_elaboration_phase
 
-   // ERR counts every correction the DUT made and every word it could not correct: it must be what the predictor
-   // expects, so that an error that a read corrected unnoticed does not pass. The base test checks it after the
-   // traffic of every test. A sequence that calls it gives itself as seq, the parent of the read.
-   task check_error_counters(uvm_sequence_base seq = null);
-      csr.read_check(regs.err, {16'd0, 8'(predictor.uncorrectable), 8'(predictor.corrected)}, "REF_ERR_COUNTS", '1,
-                     seq);
-   endtask : check_error_counters
-
-   // UVM callback: a clock that was never checked is an error.
-   function void check_phase(uvm_phase phase);
-      super.check_phase(phase);
-      `hexk_check_ne(clk_rst_agent.mon.num_checked(), 0, "REF_CLOCK_CHECKED", "intervals of the clock checked")
-   endfunction : check_phase
-
    // UVM callback: at every reset the predictor, both scoreboards and the register model forget what
    // was in flight; the RAM keeps its content, so the RAM model keeps its too.
    task run_phase(uvm_phase phase);
@@ -161,6 +190,20 @@ class hexk_ref_env extends uvm_env;
          regs.reset();
       end
    endtask : run_phase
+
+   // UVM callback: a clock that was never checked is an error.
+   function void check_phase(uvm_phase phase);
+      super.check_phase(phase);
+      `hexk_check_ne(clk_rst_agent.mon.num_checked(), 0, "REF_CLOCK_CHECKED", "intervals of the clock checked")
+   endfunction : check_phase
+
+   // ERR counts every correction the DUT made and every word it could not correct: it must be what the predictor
+   // expects, so that an error that a read corrected unnoticed does not pass. The base test checks it after the
+   // traffic of every test. A sequence that calls it gives itself as seq, the parent of the read.
+   task check_error_counters(uvm_sequence_base seq = null);
+      csr.read_check(regs.err, {16'd0, 8'(predictor.uncorrectable), 8'(predictor.corrected)}, "REF_ERR_COUNTS", '1,
+                     seq);
+   endtask : check_error_counters
 
 endclass : hexk_ref_env
 

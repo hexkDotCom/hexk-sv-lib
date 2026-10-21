@@ -13,6 +13,7 @@
 // (we, addr, wstrb, and wdata of a write or rdata of a read), or a commit with one in its address
 // or code word, is the error REF_BUS_UNKNOWN and is not published (guide TRN-6); req and ack
 // themselves are checked by the interface.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 
 `ifndef HEXK_REF_BUS_MONITOR_SV
 `define HEXK_REF_BUS_MONITOR_SV

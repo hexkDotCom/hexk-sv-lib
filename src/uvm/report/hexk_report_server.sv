@@ -127,6 +127,11 @@ class hexk_report_server extends uvm_default_report_server;
          return;
       end
       `hexk_cast_or_fatal(taken, cfg.clone(), "HEXK_REPORT_CLONE")
+      if (taken == null) begin
+         `uvm_fatal("HEXK_REPORT_CLONE", $sformatf("clone() of the %s %s returned null", cfg.get_type_name(),
+                                                   cfg.get_name()))
+         return;
+      end
       unit = hexk_report_cfg::time_unit_text(taken.time_unit);
       // More digits would be below 1 fs, and the number of the time column would not fit 64 bits.
       max_precision = $unsigned(hexk_report_cfg::unit_exponent(taken.time_unit) - FS_EXPONENT);
@@ -147,6 +152,10 @@ class hexk_report_server extends uvm_default_report_server;
    function hexk_report_cfg get_cfg();
       hexk_report_cfg duplicate;
       `hexk_cast_or_fatal(duplicate, active_cfg.clone(), "HEXK_REPORT_CLONE")
+      if (duplicate == null) begin
+         `uvm_fatal("HEXK_REPORT_CLONE", $sformatf("clone() of the %s in use returned null",
+                                                   active_cfg.get_type_name()))
+      end
       return duplicate;
    endfunction : get_cfg
 

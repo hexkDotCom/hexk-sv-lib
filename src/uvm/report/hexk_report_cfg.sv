@@ -215,6 +215,91 @@ class hexk_report_cfg extends uvm_object;
       marker_triggers            = other.marker_triggers;
    endfunction : do_copy
 
+   // UVM hook of compare(): compares every member.
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_report_cfg other;
+      bit same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_field_int("style", 64'(style), 64'(other.style), $bits(style));
+      same &= comparer.compare_field_int("fields.size()", 64'(fields.size()), 64'(other.fields.size()), 32);
+      if (fields.size() == other.fields.size()) begin
+         foreach (fields[i]) begin
+            same &= comparer.compare_field_int($sformatf("fields[%0d]", i), 64'(fields[i]), 64'(other.fields[i]),
+                                               $bits(fields[i]));
+         end
+      end
+      same &= comparer.compare_field_int("file_line_width", 64'(file_line_width), 64'(other.file_line_width), 32);
+      same &= comparer.compare_field_int("id_width", 64'(id_width), 64'(other.id_width), 32);
+      same &= comparer.compare_field_int("context_width", 64'(context_width), 64'(other.context_width), 32);
+      same &= comparer.compare_field_int("time_unit", 64'(time_unit), 64'(other.time_unit), $bits(time_unit));
+      same &= comparer.compare_field_int("time_precision", 64'(time_precision), 64'(other.time_precision), 32);
+      same &= comparer.compare_field_int("severity_letter", 64'(severity_letter), 64'(other.severity_letter), 1);
+      same &= comparer.compare_field_int("numbered", 64'(numbered), 64'(other.numbered), 1);
+      same &= comparer.compare_field_int("strip_test_top", 64'(strip_test_top), 64'(other.strip_test_top), 1);
+      same &= comparer.compare_field_int("color", 64'(color), 64'(other.color), 1);
+      same &= comparer.compare_field_int(
+          "stacktrace_on_fatal", 64'(stacktrace_on_fatal), 64'(other.stacktrace_on_fatal), 1
+      );
+      same &= comparer.compare_field_int(
+          "stacktrace_on_error", 64'(stacktrace_on_error), 64'(other.stacktrace_on_error), 1
+      );
+      same &= comparer.compare_field_int(
+          "stacktrace_on_uvm_internal", 64'(stacktrace_on_uvm_internal), 64'(other.stacktrace_on_uvm_internal), 1
+      );
+      same &= comparer.compare_field_int(
+          "stacktrace_triggers.size()", 64'(stacktrace_triggers.size()), 64'(other.stacktrace_triggers.size()), 32
+      );
+      if (stacktrace_triggers.size() == other.stacktrace_triggers.size()) begin
+         foreach (stacktrace_triggers[i]) begin
+            same &= comparer.compare_string($sformatf("stacktrace_triggers[%0d]", i), stacktrace_triggers[i],
+                                            other.stacktrace_triggers[i]);
+         end
+      end
+      same &= comparer.compare_field_int(
+          "marker_triggers.size()", 64'(marker_triggers.size()), 64'(other.marker_triggers.size()), 32
+      );
+      if (marker_triggers.size() == other.marker_triggers.size()) begin
+         foreach (marker_triggers[i]) begin
+            same &= comparer.compare_string($sformatf("marker_triggers[%0d]", i), marker_triggers[i],
+                                            other.marker_triggers[i]);
+         end
+      end
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_string("style", style.name());
+      printer.print_field_int("fields.size()", 64'(fields.size()), 32, UVM_DEC);
+      foreach (fields[i]) begin
+         printer.print_string($sformatf("fields[%0d]", i), fields[i].name());
+      end
+      printer.print_field_int("file_line_width", 64'(file_line_width), 32, UVM_DEC);
+      printer.print_field_int("id_width", 64'(id_width), 32, UVM_DEC);
+      printer.print_field_int("context_width", 64'(context_width), 32, UVM_DEC);
+      printer.print_string("time_unit", time_unit.name());
+      printer.print_field_int("time_precision", 64'(time_precision), 32, UVM_DEC);
+      printer.print_field_int("severity_letter", 64'(severity_letter), 1, UVM_BIN);
+      printer.print_field_int("numbered", 64'(numbered), 1, UVM_BIN);
+      printer.print_field_int("strip_test_top", 64'(strip_test_top), 1, UVM_BIN);
+      printer.print_field_int("color", 64'(color), 1, UVM_BIN);
+      printer.print_field_int("stacktrace_on_fatal", 64'(stacktrace_on_fatal), 1, UVM_BIN);
+      printer.print_field_int("stacktrace_on_error", 64'(stacktrace_on_error), 1, UVM_BIN);
+      printer.print_field_int("stacktrace_on_uvm_internal", 64'(stacktrace_on_uvm_internal), 1, UVM_BIN);
+      printer.print_field_int("stacktrace_triggers.size()", 64'(stacktrace_triggers.size()), 32, UVM_DEC);
+      foreach (stacktrace_triggers[i]) begin
+         printer.print_string($sformatf("stacktrace_triggers[%0d]", i), stacktrace_triggers[i]);
+      end
+      printer.print_field_int("marker_triggers.size()", 64'(marker_triggers.size()), 32, UVM_DEC);
+      foreach (marker_triggers[i]) begin
+         printer.print_string($sformatf("marker_triggers[%0d]", i), marker_triggers[i]);
+      end
+   endfunction : do_print
+
    // Sets style from its short name (uvm, compact, custom); another text, also an empty one, is a warning.
    local function void apply_style(string text);
       hexk_report_style_e names[string];

@@ -69,6 +69,26 @@ class hexk_value_wrapper #(
       return same;
    endfunction : do_compare
 
+   // UVM hook of print() and sprint(): value in hexadecimal and tolerance.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_field("value", uvm_bitstream_t'(value), $bits(T), UVM_HEX);
+      printer.print_field_int("tolerance", tolerance, 64, UVM_DEC);
+   endfunction : do_print
+
+   // UVM hook of copy() and clone(): copies value and tolerance.
+   function void do_copy(uvm_object rhs);
+      hexk_value_wrapper #(T) other;
+      super.do_copy(rhs);
+      if (!$cast(other, rhs)) begin
+         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+                                                rhs.get_name(), rhs.get_type_name()))
+         return;
+      end
+      value     = other.value;
+      tolerance = other.tolerance;
+   endfunction : do_copy
+
    // 1 when the value of rhs is that of this object within its tolerance.
    local function bit compare_value(uvm_object rhs);
       hexk_value_wrapper #(T) other;
@@ -109,26 +129,6 @@ class hexk_value_wrapper #(
       end
       return difference <= hexk_check_num_t'(tolerance);
    endfunction : compare_value
-
-   // UVM hook of print() and sprint(): value in hexadecimal and tolerance.
-   function void do_print(uvm_printer printer);
-      super.do_print(printer);
-      printer.print_field("value", uvm_bitstream_t'(value), $bits(T), UVM_HEX);
-      printer.print_field_int("tolerance", tolerance, 64, UVM_DEC);
-   endfunction : do_print
-
-   // UVM hook of copy() and clone(): copies value and tolerance.
-   function void do_copy(uvm_object rhs);
-      hexk_value_wrapper #(T) other;
-      super.do_copy(rhs);
-      if (!$cast(other, rhs)) begin
-         `uvm_fatal("HEXK_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
-                                                rhs.get_name(), rhs.get_type_name()))
-         return;
-      end
-      value     = other.value;
-      tolerance = other.tolerance;
-   endfunction : do_copy
 
 endclass : hexk_value_wrapper
 

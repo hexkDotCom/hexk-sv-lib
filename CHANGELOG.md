@@ -8,6 +8,63 @@ minor version may change an API; such changes are listed under "Changed".
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-21
+
+Fixes and clearer contracts. A checked report catcher reports an expectation that goes over
+its maximum at once, the cfgs and the memory model compare and print every member, every
+example is checked for the messages it reports, and the reference testbench can share its bus
+agent with a parent environment. One change affects code written for 0.10.0; it is listed
+under "Changed". All modules are still `experimental`.
+
+### Added
+
+- `compare()` and `print()` of `hexk_scoreboard_cfg`, `hexk_delay_cfg`, `hexk_report_cfg`,
+  `hexk_valid_ready_agent_cfg`, `hexk_clk_rst_agent_cfg` and `hexk_mem_model` cover every member;
+  before, only `copy()` did. Two agent cfgs compare equal only when they refer to the same
+  interface.
+- `make examples` checks the messages of every example against
+  `examples/hexk_examples_expected.txt` with the new `scripts/hexk_check_example.py`: an example
+  must report exactly the warnings, errors and fatals it provokes on purpose, and no error of the
+  simulator outside UVM.
+- Reference testbench: the environment carries `has_in_agent` and `has_bus_agent` in its cfg and
+  routes every stream of an agent through an export of its own (`word_export`, `cycle_export`,
+  `bus_export`, `commit_export`), so that a parent with an agent of its own can turn the
+  environment's off and connect its own. The new `hexk_ref_shared_bus_test` runs it that way.
+
+### Changed
+
+- `hexk_report_catcher::add_to(null)` is the fatal `HEXK_CATCHER_CLIENT` and returns null; it
+  registered a catcher for every reporter before. Use `add_global()` for that.
+
+### Fixed
+
+- `hexk_report_catcher`: once checked, a catcher reports `HEXK_CATCHER_EXCESS` at the message
+  that takes an expectation over its maximum. Before, an expected error that came after the check
+  (for example in the check phase of a derived test, after `super.check_phase()`) was demoted
+  without any verdict. An expectation added after a check makes the catcher unchecked again.
+- `hexk_report_server::set_cfg()` and `get_cfg()` stop with `HEXK_REPORT_CLONE` when `clone()` of
+  the cfg returns null, instead of failing on the null handle. The contract of
+  `` `hexk_cast_or_fatal `` says that a null source passes the cast.
+- `hexk_valid_ready_data_seq` states that it assigns `data` and `delay_cycles` after the
+  randomization of a derived item, so that a constraint of the derived item on them is not kept.
+- The header of `hexk_valid_ready_if` states what its assertion checks: out of reset, `valid`
+  and `ready` always have a level.
+- The base test states that its `main_phase` returns when the stimulus has ended and that a test
+  that extends it calls `super.main_phase()` first.
+- Examples: the base-test example returns its stimulus from `create_stimulus()`; the
+  valid/ready example has a global timeout; the report-catcher example says that the base test
+  checks the expectations in its check phase.
+- The methods of several classes (the scoreboard, the watchdog, the objection aggregator, the
+  end-of-test registry, the delay FIFO, the value wrapper, the enum knob, the random stream, the
+  base test) are in the order of the style guide: phase methods before the other public ones.
+  Behaviour is unchanged.
+- Reference testbench: the predictor does not model a word whose status is not `UVM_IS_OK`;
+  the headers of the bus driver and monitor say that their run phase never returns; the order of
+  class members, the imports of its package and two waivers follow the style guide.
+
+Tested as 0.10.0 was: see "Where it has been tested" in the README for the numbers. Nothing
+has been run on Xcelium.
+
 ## [0.10.0] - 2026-10-17
 
 The library and its reference testbench follow the style guide v0.4 throughout. A report catcher
@@ -382,7 +439,8 @@ Verilator 5.046) and on Questa 2024.1 and VCS X-2025.06, each with UVM 1.2 and U
 (unit tests, every example, the smoke testbench). See "Where it has been tested" in the
 README for the numbers and the limits on Verilator. Nothing has been run on Xcelium.
 
-[Unreleased]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/hexkDotCom/hexk-sv-lib/compare/v0.7.0...v0.8.0

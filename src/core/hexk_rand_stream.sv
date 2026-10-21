@@ -80,13 +80,6 @@ class hexk_rand_stream;
       return lo + longint'(draw);
    endfunction : uniform
 
-   // Two values of next_u32() as one 64-bit value, the first one high. The two draws are separate
-   // statements: the order in which the operands of a concatenation are evaluated is not defined.
-   local function longint unsigned next_u64();
-      longint unsigned high = longint'(next_u32());
-      return (high << 32) | longint'(next_u32());
-   endfunction : next_u64
-
    // Normally distributed value with the given mean and standard deviation ($dist_normal).
    function int normal(int mean, int std_dev);
       if (std_dev < 0) begin
@@ -143,6 +136,13 @@ class hexk_rand_stream;
       end
       return 0;
    endfunction : pick_weighted
+
+   // Two values of next_u32() as one 64-bit value, the first one high. The two draws are separate
+   // statements: the order in which the operands of a concatenation are evaluated is not defined.
+   local function longint unsigned next_u64();
+      longint unsigned high = longint'(next_u32());
+      return (high << 32) | longint'(next_u32());
+   endfunction : next_u64
 
 endclass : hexk_rand_stream
 

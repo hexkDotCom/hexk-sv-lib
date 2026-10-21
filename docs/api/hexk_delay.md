@@ -56,6 +56,10 @@ function longint unsigned total_weight();
 function string convert2string();
 // UVM hook of copy() and clone(): copies every member.
 function void do_copy(uvm_object rhs);
+// UVM hook of compare(): compares every member.
+function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+// UVM hook of print() and sprint(): every member.
+function void do_print(uvm_printer printer);
 ```
 <!-- HEXK_GEN:END api -->
 

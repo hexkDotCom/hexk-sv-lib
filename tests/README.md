@@ -66,10 +66,15 @@ Gate 2 needs SVUnit, the UVM sources from `make uvm_fetch` and a simulator on th
 ```bash
 make test     SIM=questa UVM=1.2      # unit tests; SIM=questa|vcs, UVM=1.2|2020
 make test     SIM=vcs UVM=2020 TEST=hexk_scoreboard   # the unit tests of one module
-make examples SIM=questa UVM=1.2      # compiles and runs every example
+make examples SIM=questa UVM=1.2      # compiles and runs every example, and checks its messages
 make smoke    SIM=questa UVM=1.2      # the smoke testbench, three tests
 make reference SIM=questa UVM=1.2     # the reference testbench, every run of its list
 ```
+
+`make examples` checks each run with `scripts/hexk_check_example.py` against
+`examples/hexk_examples_expected.txt`, the list of the warnings, errors and fatals that the
+examples report on purpose: a run must report exactly those, and an example that is not listed
+must report none, nor an error of the simulator outside UVM.
 
 VCS runs on Linux with its license set up. Questa has been run on Windows only, from Git Bash
 with a native GNU make and MinGW-w64 GCC (for the DPI code of UVM); see

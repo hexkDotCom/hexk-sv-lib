@@ -68,6 +68,8 @@ From `src/uvm/eot/hexk_objection_aggregator.sv`:
 ```systemverilog
 // Creates the aggregator; it does nothing until objects are registered.
 function new(string name, uvm_component parent);
+// UVM callback: reports objects whose raise() calls were never matched by drop().
+function void check_phase(uvm_phase phase);
 // Registers an object under a name for reports; from then on its is_busy() is asked at the end of phases.
 function void register(hexk_objectable obj, string name);
 // Says that a registered object has work outstanding; the phases stay alive until the matching drop().
@@ -82,8 +84,6 @@ function void phase_started(uvm_phase phase);
 function void phase_ready_to_end(uvm_phase phase);
 // UVM callback: a task phase has ended, also by a jump, which removes every objection.
 function void phase_ended(uvm_phase phase);
-// UVM callback: reports objects whose raise() calls were never matched by drop().
-function void check_phase(uvm_phase phase);
 ```
 <!-- HEXK_GEN:END api -->
 

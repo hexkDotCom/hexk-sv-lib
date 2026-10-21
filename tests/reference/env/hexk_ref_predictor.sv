@@ -29,6 +29,7 @@
 // The analysis imps of the three inputs of the predictor; the macro declares a class for each, so this file holds more
 // than the class it is named after.
 // verilator lint_off DECLFILENAME
+// TLM-4 waived: the indexed imps of the library, as hexk_scoreboard has them; each input has one, so the index is 0.
 `hexk_analysis_imp_indexed_decl(ref_word)
 `hexk_analysis_imp_indexed_decl(ref_cycle)
 `hexk_analysis_imp_indexed_decl(ref_bus)
@@ -88,6 +89,9 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
    // Number of words the DUT accepted since the start.
    int unsigned num_words;
 
+   // Number of words that came with a status other than UVM_IS_OK (an unknown value) and were not modelled.
+   int unsigned num_unknown_words;
+
    // Number of packets completed since the start.
    int unsigned num_packets;
 
@@ -129,9 +133,9 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
    local packet_t packets[$];
 
    // Triggered at every rising edge: the clock of the commit FIFO.
-   event edge_seen;
+   local event edge_seen;
    // The commits, held for the pipeline of the DUT until the RAM gets them.
-   hexk_delay_analysis_fifo #(hexk_ref_commit_item) commit_fifo;
+   local hexk_delay_analysis_fifo #(hexk_ref_commit_item) commit_fifo;
 
    // IDs of the results.
    local hexk_uid uids;
@@ -140,6 +144,10 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
    local int unsigned cov_len;
    local bit cov_scramble;
    local bit cov_irq;
+
+   `uvm_component_utils(hexk_ref_predictor)
+
+   // What one packet covered, sampled when the packet completes.
    covergroup packet_cg;
       len_cp: coverpoint cov_len {
          bins one = {1}; bins short_lens = {[2 : 8]}; bins long_lens = {[9 : 15]}; bins full = {16};
@@ -148,8 +156,6 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
       irq_cp: coverpoint cov_irq;
       len_x_scramble: cross len_cp, scramble_cp;
    endgroup : packet_cg
-
-   `uvm_component_utils(hexk_ref_predictor)
 
    // Creates the predictor, its models and ports.
    function new(string name, uvm_component parent);
@@ -196,6 +202,12 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
 
    // Input agent: a word was accepted at this edge; it is handled at the next one.
    function void write_ref_word(int index, word_item_t item);
+      // A word with an unknown value has no 2-state value to model (guide TRN-6): the monitor or the interface has
+      // reported it, and it is counted and left out.
+      if (item.status != UVM_IS_OK) begin
+         num_unknown_words++;
+         return;
+      end
       accepted_words.push_back('{data: item.data, at_ps: hexk_wait_util::now_ps()});
       num_words++;
    endfunction : write_ref_word
@@ -246,13 +258,6 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
       return commit_fifo.busy_reason();
    endfunction : busy_reason
 
-   // The decoder of the library gives known data for a known code word. The prediction keeps two-state values, in
-   // which an X would pass as 0, so it is checked here.
-   local function void check_decoded(bit [38:0] code, hexk_core_pkg::hexk_bits_t decoded);
-      `hexk_check(!$isunknown(decoded[31:0]), "REF_PRED_DECODE", $sformatf(
-                  "hexk_ecc decoded the code word 39'h%010h to data with X or Z bits", code))
-   endfunction : check_decoded
-
    // An error that the test put into the RAM by itself (by HDL access): the code word of a word changes.
    function void inject(int unsigned word, bit [38:0] mask);
       hexk_core_pkg::hexk_bits_t decoded;
@@ -277,6 +282,13 @@ class hexk_ref_predictor extends uvm_component implements hexk_objectable;
    function bit [31:0] expected_word(int unsigned word);
       return 32'(mem.read(8'(4 * (word % hexk_ref_regs::MEM_WORDS))));
    endfunction : expected_word
+
+   // The decoder of the library gives known data for a known code word. The prediction keeps two-state values, in
+   // which an X would pass as 0, so it is checked here.
+   local function void check_decoded(bit [38:0] code, hexk_core_pkg::hexk_bits_t decoded);
+      `hexk_check(!$isunknown(decoded[31:0]), "REF_PRED_DECODE", $sformatf(
+                  "hexk_ecc decoded the code word 39'h%010h to data with X or Z bits", code))
+   endfunction : check_decoded
 
    // Forgets the configuration and everything in flight, as a reset of the DUT does; the RAM stays.
    local function void reset_state();

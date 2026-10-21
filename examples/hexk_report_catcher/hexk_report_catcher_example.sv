@@ -7,7 +7,7 @@
 // purpose, so exactly two errors with that ID are expected: a count without a maximum is
 // exact. They are demoted to info, and check_expectations() reports an error if there were
 // fewer or more. In a real testbench expect_msg() is called by the test before the stimulus
-// starts; a test derived from hexk_base_test has the expectations checked in its report
+// starts; a test derived from hexk_base_test has the expectations checked in its check
 // phase, any other test calls check_expectations() in its check_phase. A check that fails on
 // purpose is declared with expect_check(id, count). Needs UVM and src/uvm/hexk_uvm.f.
 

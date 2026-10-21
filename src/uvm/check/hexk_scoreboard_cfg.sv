@@ -123,6 +123,46 @@ class hexk_scoreboard_cfg extends uvm_object;
       clone_expected       = other.clone_expected;
    endfunction : do_copy
 
+   // UVM hook of compare(): compares every member.
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_scoreboard_cfg other;
+      bit same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_field_int("mode", 64'(mode), 64'(other.mode), $bits(mode));
+      same &= comparer.compare_field_int("num_streams", 64'(num_streams), 64'(other.num_streams), 32);
+      same &= comparer.compare_field_int("max_errors", 64'(max_errors), 64'(other.max_errors), 32);
+      same &= comparer.compare_field_int("max_outstanding", 64'(max_outstanding), 64'(other.max_outstanding), 32);
+      same &= comparer.compare_field_int("max_latency_ps", max_latency_ps, other.max_latency_ps, 64);
+      same &= comparer.compare_field_int("max_wait_ps", max_wait_ps, other.max_wait_ps, 64);
+      same &= comparer.compare_field_int("allow_unexpected", 64'(allow_unexpected), 64'(other.allow_unexpected), 1);
+      same &= comparer.compare_field_int("hold_objection", 64'(hold_objection), 64'(other.hold_objection), 1);
+      same &= comparer.compare_field_int("flush_on_reset", 64'(flush_on_reset), 64'(other.flush_on_reset), 1);
+      same &= comparer.compare_field_int(
+          "leftover_print_limit", 64'(leftover_print_limit), 64'(other.leftover_print_limit), 32
+      );
+      same &= comparer.compare_field_int("clone_expected", 64'(clone_expected), 64'(other.clone_expected), 1);
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_string("mode", mode.name());
+      printer.print_field_int("num_streams", 64'(num_streams), 32, UVM_DEC);
+      printer.print_field_int("max_errors", 64'(max_errors), 32, UVM_DEC);
+      printer.print_field_int("max_outstanding", 64'(max_outstanding), 32, UVM_DEC);
+      printer.print_field_int("max_latency_ps", max_latency_ps, 64, UVM_DEC);
+      printer.print_field_int("max_wait_ps", max_wait_ps, 64, UVM_DEC);
+      printer.print_field_int("allow_unexpected", 64'(allow_unexpected), 1, UVM_BIN);
+      printer.print_field_int("hold_objection", 64'(hold_objection), 1, UVM_BIN);
+      printer.print_field_int("flush_on_reset", 64'(flush_on_reset), 1, UVM_BIN);
+      printer.print_field_int("leftover_print_limit", 64'(leftover_print_limit), 32, UVM_DEC);
+      printer.print_field_int("clone_expected", 64'(clone_expected), 1, UVM_BIN);
+   endfunction : do_print
+
 endclass : hexk_scoreboard_cfg
 
 `endif  // HEXK_SCOREBOARD_CFG_SV

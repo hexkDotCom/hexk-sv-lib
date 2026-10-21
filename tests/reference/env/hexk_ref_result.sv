@@ -31,6 +31,7 @@ class hexk_ref_result extends uvm_sequence_item;
 
    // Number, CRC and cycles on one line, then the words as a hex dump (hexk_str).
    // TRN-5 waived: a mismatch of the result scoreboard prints this text, and the words are what it compares.
+   // MSG-7 waived: for the same reason the dump is here and not only in do_print().
    function string convert2string();
       byte unsigned bytes[$];
       foreach (words[i]) begin

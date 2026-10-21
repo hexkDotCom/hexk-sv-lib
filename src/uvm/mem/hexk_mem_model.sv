@@ -140,6 +140,65 @@ class hexk_mem_model #(
       unusable       = other.unusable;
    endfunction : do_copy
 
+   // UVM hook of compare(): compares the settings, the range, the counters and every stored byte (with !==, so X
+   // counts).
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_mem_model #(ADDR_WIDTH, DATA_WIDTH) other;
+      bit same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_field_int(
+          "uninit_policy", 64'(uninit_policy), 64'(other.uninit_policy), $bits(uninit_policy)
+      );
+      same &= comparer.compare_field(
+          "uninit_pattern", uvm_bitstream_t'(uninit_pattern), uvm_bitstream_t'(other.uninit_pattern), 8
+      );
+      same &= comparer.compare_field_int("big_endian", 64'(big_endian), 64'(other.big_endian), 1);
+      same &= comparer.compare_field_int("seed", 64'(seed), 64'(other.seed), 32);
+      same &= comparer.compare_field_int("has_range", 64'(has_range), 64'(other.has_range), 1);
+      if (has_range && other.has_range) begin
+         same &= comparer.compare_field(
+             "range_lo", uvm_bitstream_t'(range_lo), uvm_bitstream_t'(other.range_lo), ADDR_WIDTH
+         );
+         same &= comparer.compare_field(
+             "range_hi", uvm_bitstream_t'(range_hi), uvm_bitstream_t'(other.range_hi), ADDR_WIDTH
+         );
+      end
+      same &= comparer.compare_field_int("uninit_reads", 64'(uninit_reads), 64'(other.uninit_reads), 32);
+      same &= comparer.compare_field_int("unusable", 64'(unusable), 64'(other.unusable), 1);
+      same &= comparer.compare_field_int("bytes stored", 64'(bytes.num()), 64'(other.bytes.num()), 32);
+      foreach (bytes[index]) begin
+         if (!other.bytes.exists(index)) begin
+            comparer.print_msg($sformatf("byte at %0h: only in %s", index, get_name()));
+            same = 0;
+         end else begin
+            same &= comparer.compare_field($sformatf("byte at %0h", index), uvm_bitstream_t'(bytes[index]),
+                                           uvm_bitstream_t'(other.bytes[index]), 8);
+         end
+      end
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): the settings, the range, the counters and the number of stored bytes, not the
+   // bytes.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_string("uninit_policy", uninit_policy.name());
+      printer.print_field("uninit_pattern", uvm_bitstream_t'(uninit_pattern), 8, UVM_HEX);
+      printer.print_field_int("big_endian", 64'(big_endian), 1, UVM_BIN);
+      printer.print_field_int("seed", 64'(seed), 32, UVM_DEC);
+      printer.print_field_int("has_range", 64'(has_range), 1, UVM_BIN);
+      if (has_range) begin
+         printer.print_field("range_lo", uvm_bitstream_t'(range_lo), ADDR_WIDTH, UVM_HEX);
+         printer.print_field("range_hi", uvm_bitstream_t'(range_hi), ADDR_WIDTH, UVM_HEX);
+      end
+      printer.print_field_int("uninit_reads", 64'(uninit_reads), 32, UVM_DEC);
+      printer.print_field_int("unusable", 64'(unusable), 1, UVM_BIN);
+      printer.print_field_int("bytes stored", 64'(bytes.num()), 32, UVM_DEC);
+   endfunction : do_print
+
    // Limits the legal addresses to lo..hi; an access outside is an error and is not carried out.
    function void set_range(addr_t lo, addr_t hi);
       if (!is_known(lo, "set_range") || !is_known(hi, "set_range")) begin

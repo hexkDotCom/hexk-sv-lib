@@ -82,6 +82,10 @@ function string illegal_reason();
 function string convert2string();
 // UVM hook of copy() and clone(): copies every member; the copy shares the interface.
 function void do_copy(uvm_object rhs);
+// UVM hook of compare(): compares every member; the interfaces must be the same.
+function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+// UVM hook of print() and sprint(): every member; the interface as set or null.
+function void do_print(uvm_printer printer);
 ```
 
 From `src/agents/hexk_clk_rst/hexk_clk_rst_driver.sv`:

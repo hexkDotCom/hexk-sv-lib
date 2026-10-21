@@ -469,7 +469,9 @@ module hexk_report_server_unit_test;
       hexk_report_cfg copy;
       cfg.time_unit = HEXK_TIME_PS;
       cfg.marker_triggers.push_back("X");
-      $cast(copy, cfg.clone());
+      if (!$cast(copy, cfg.clone()) || copy == null) begin
+         return "the clone is not a hexk_report_cfg";
+      end
       return copy.convert2string();
    endfunction : cloned_cfg
 
@@ -547,6 +549,23 @@ module hexk_report_server_unit_test;
           ) >= 0
       );
    endfunction : counts_from_before_install
+
+   // compare() of a clone, and of the clone after a change, and whether print() names marker_triggers:
+   // "<equal> <equal after the change> <named>".
+   function automatic string compared_cfg();
+      hexk_report_cfg original = hexk_report_cfg::type_id::create("ut_compared");
+      hexk_report_cfg copy;
+      bit equal_before;
+      original.marker_triggers.push_back("X");
+      if (!$cast(copy, original.clone()) || copy == null) begin
+         return "not a clone";
+      end
+      equal_before = original.compare(copy);
+      copy.marker_triggers[0] = "Y";
+      return $sformatf(
+          "%0b %0b %0b", equal_before, original.compare(copy), hexk_str::contains(original.sprint(), "marker_triggers")
+      );
+   endfunction : compared_cfg
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -761,6 +780,10 @@ module hexk_report_server_unit_test;
 
    `SVTEST(the_warning_audit_counts_the_warnings_that_are_not_allowed_and_keeps_the_first_twenty)
       `FAIL_UNLESS_STR_EQUAL(audit_of_warnings(), "22 21 UT_W0: unexpected / and 2 more 0")
+   `SVTEST_END
+
+   `SVTEST(compare_and_print_cover_every_member)
+      `FAIL_UNLESS_STR_EQUAL(compared_cfg(), "1 0 1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

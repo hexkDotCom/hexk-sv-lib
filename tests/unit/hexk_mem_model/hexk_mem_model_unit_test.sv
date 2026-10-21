@@ -16,6 +16,7 @@ module hexk_mem_model_unit_test;
    import svunit_pkg::svunit_testcase;
    import uvm_pkg::*;
    import hexk_uvm_pkg::hexk_mem_model;
+   import hexk_core_pkg::hexk_str;
    import hexk_uvm_pkg::hexk_mem_uninit_e;
    import hexk_uvm_pkg::HEXK_MEM_UNINIT_ERROR;
    import hexk_uvm_pkg::HEXK_MEM_UNINIT_RANDOM;
@@ -398,6 +399,23 @@ module hexk_mem_model_unit_test;
       return $sformatf("%0d %0d", catcher.get_count("^HEXK_MEM_WIDTH$"), odd.num_written());
    endfunction : odd_width_errors
 
+   // compare() of a clone, and of the clone after a change, and whether print() names bytes stored:
+   // "<equal> <equal after the change> <named>".
+   function automatic string compared_memory();
+      hexk_ut_mem_t original = hexk_ut_mem_t::type_id::create("ut_compared");
+      hexk_ut_mem_t copy;
+      bit equal_before;
+      original.write(16'h0100, 32'h0000_0001);
+      if (!$cast(copy, original.clone()) || copy == null) begin
+         return "not a clone";
+      end
+      equal_before = original.compare(copy);
+      copy.write(16'h0100, 32'h0000_0002);
+      return $sformatf(
+          "%0b %0b %0b", equal_before, original.compare(copy), hexk_str::contains(original.sprint(), "bytes stored")
+      );
+   endfunction : compared_memory
+
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
    // verilog_format: off
@@ -706,6 +724,10 @@ module hexk_mem_model_unit_test;
 
    `SVTEST(a_word_width_that_is_not_a_multiple_of_8_is_an_error)
       `FAIL_UNLESS_STR_EQUAL(odd_width_errors(), "1 0")
+   `SVTEST_END
+
+   `SVTEST(compare_and_print_cover_every_member)
+      `FAIL_UNLESS_STR_EQUAL(compared_memory(), "1 0 1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

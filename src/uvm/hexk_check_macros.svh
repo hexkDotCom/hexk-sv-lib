@@ -547,7 +547,7 @@
       end \
    end
 
-// Fatal if SRC cannot be cast to DST.
+// Fatal if SRC cannot be cast to DST. A null SRC casts and leaves DST null: check DST when null is an error.
 `define hexk_cast_or_fatal(DST, SRC, ID) \
    begin \
       if ($cast(DST, SRC) == 0) begin \

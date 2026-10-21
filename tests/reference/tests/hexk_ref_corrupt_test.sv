@@ -33,6 +33,14 @@ class hexk_ref_corrupt_test extends hexk_ref_base_test;
       result_catcher.expect_check("HEXK_SB_MISMATCH", NUM_PACKETS);
    endfunction : connect_phase
 
+   // The packets were compared, each as a mismatch.
+   function void check_phase(uvm_phase phase);
+      hexk_sb_stats results;
+      super.check_phase(phase);
+      results = env.result_sb.get_stats();
+      `hexk_check_eq(results.mismatched, NUM_PACKETS, "REF_CORRUPT_MISMATCHED", "packets reported as mismatches")
+   endfunction : check_phase
+
    // The packets with corrupted reads.
    virtual function hexk_ref_vseq_base create_scenario();
       hexk_ref_corrupt_vseq corrupt_seq = hexk_ref_corrupt_vseq::type_id::create("corrupt_seq");
@@ -44,14 +52,6 @@ class hexk_ref_corrupt_test extends hexk_ref_base_test;
    virtual function int unsigned expected_matches();
       return 0;
    endfunction : expected_matches
-
-   // The packets were compared, each as a mismatch.
-   function void check_phase(uvm_phase phase);
-      hexk_sb_stats results;
-      super.check_phase(phase);
-      results = env.result_sb.get_stats();
-      `hexk_check_eq(results.mismatched, NUM_PACKETS, "REF_CORRUPT_MISMATCHED", "packets reported as mismatches")
-   endfunction : check_phase
 
 endclass : hexk_ref_corrupt_test
 

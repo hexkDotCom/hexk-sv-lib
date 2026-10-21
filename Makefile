@@ -118,6 +118,8 @@ UNIT_TIMEOUT     ?= 1800
 # Where 'make examples' builds, and how long an example may simulate before it is stopped.
 EXAMPLES_OUT      ?= $(abspath $(BUILD_DIR))/examples_$(SIM)
 EXAMPLES_RUN_TIME ?= 10 ms
+# The warnings, errors and fatals that the examples report on purpose; every run is checked against it.
+EXAMPLES_EXPECTED := examples/hexk_examples_expected.txt
 # The smoke testbench: its filelist, where 'make smoke' builds, and how long a test may simulate.
 SMOKE_FILELIST    := tests/smoke/hexk_smoke.f
 # The reference testbench: its filelist, its list of runs, where 'make reference' builds (one directory per
@@ -469,9 +471,11 @@ endef
 # Examples on a simulator ----------------------------------------------------------------
 # 'make examples SIM=questa' (Gate 2) compiles and runs every example. The unit tests pass
 # plain variables to the library; the examples use it the way a testbench does, which is
-# how the first Questa-only compile error was found. An example passes when it compiles and
-# its simulation ends by itself: several examples provoke errors or a fatal on purpose, so
-# messages are not counted. An example that is still running after EXAMPLES_RUN_TIME fails
+# how the first Questa-only compile error was found. An example passes when it compiles, its
+# simulation ends by itself, and it reports exactly the warnings, errors and fatals that
+# EXAMPLES_EXPECTED lists for it (scripts/hexk_check_example.py): several examples provoke
+# errors or a fatal on purpose, every other one must report none, and an error of the simulator
+# outside UVM fails too. An example that is still running after EXAMPLES_RUN_TIME fails
 # (scripts/hexk_example_run.do), and so does one that calls run_test() and never gets to the
 # report summary of UVM: both are stuck. Plusargs of an example are in <example>.plusargs
 # next to it. The examples in HDL_ACCESS_EXAMPLES run with read and write access to the
@@ -504,7 +508,7 @@ define run_questa_examples
 	      ! grep -q 'UVM Report Summary' $$out/run.log; then \
 	      echo "examples: $$name: the UVM test did not end, FAILED (log: $$out/run.log)"; exit 1; \
 	   fi; \
-	   echo "examples: $(SIM): $$name ran"; \
+	   messages=$$($(PYTHON) $(HEXK_SV_LIB_HOME)/scripts/hexk_check_example.py $(HEXK_SV_LIB_HOME)/$(EXAMPLES_EXPECTED) 	      $(SIM) $$name $$out/run.log) || 	      { echo "$$messages"; echo "examples: $$name: the messages differ from $(EXAMPLES_EXPECTED), FAILED"; exit 1; }; 	   echo "examples: $(SIM): $$name ran"; \
 	done
 endef
 
@@ -533,12 +537,13 @@ define run_vcs_examples
 	      ! grep -q 'UVM Report Summary' $$out/run.log; then \
 	      echo "examples: $$name: the UVM test did not end, FAILED (log: $$out/run.log)"; exit 1; \
 	   fi; \
-	   echo "examples: $(SIM): $$name ran"; \
+	   messages=$$($(PYTHON) $(HEXK_SV_LIB_HOME)/scripts/hexk_check_example.py $(HEXK_SV_LIB_HOME)/$(EXAMPLES_EXPECTED) 	      $(SIM) $$name $$out/run.log) || 	      { echo "$$messages"; echo "examples: $$name: the messages differ from $(EXAMPLES_EXPECTED), FAILED"; exit 1; }; 	   echo "examples: $(SIM): $$name ran"; \
 	done
 endef
 
 examples:
 	@echo "== examples SIM=$(SIM)"
+	@$(PYTHON) $(HEXK_SV_LIB_HOME)/scripts/hexk_check_example.py --check-list $(HEXK_SV_LIB_HOME)/$(EXAMPLES_EXPECTED)
 ifeq ($(SIM),questa)
 	@command -v $(QUESTA_VSIM) > /dev/null || { echo "examples: $(QUESTA_VSIM) (Questa) is not on PATH"; exit 1; }
 	@test -f $(UVM_HOME)/src/uvm_pkg.sv || \

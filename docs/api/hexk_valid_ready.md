@@ -68,6 +68,10 @@ function new(string name = "hexk_valid_ready_agent_cfg");
 function string convert2string();
 // UVM hook of copy() and clone(): copies every member; the copy shares the interface and has a delay_cfg of its own, a clone of that of the original with its class, or none when the original has none.
 function void do_copy(uvm_object rhs);
+// UVM hook of compare(): compares every member, the delay_cfg by its members; the interfaces must be the same.
+function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+// UVM hook of print() and sprint(): every member; the interface as set or null.
+function void do_print(uvm_printer printer);
 ```
 
 From `src/agents/hexk_valid_ready/hexk_valid_ready_driver.sv`:
@@ -370,6 +374,10 @@ The agent:
   asks the factory once when it starts, for `<sequencer path>.req`, as `create()` does, and
   makes every item of that start of the class it gave; an override set while it runs counts
   from its next start. A failed cast of such an item is the fatal `HEXK_VALID_READY_RAND`.
+  The sequence assigns `data` and `delay_cycles` after the randomization, so a constraint of a
+  derived item on either of them, or one that ties another field to them (a parity bit of
+  `data`), is not kept: such an item needs a sequence of its own that randomizes with the
+  values as constraints.
 - The sequences create their items as `<sequencer path>.req`, and the monitor as
   `<monitor path>.item`, so that a factory instance override can change the items of one
   agent: `item_t::type_id::set_inst_override(my_item_t::get_type(), "*.in_agent.sqr.req")`.
@@ -540,6 +548,8 @@ module hexk_valid_ready_example;
 
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
+         // A run that hangs ends with a fatal of UVM after 100 us (guide OBJ-7); the words take far less.
+         uvm_root::get().set_timeout(100us, 0);
          in_cfg  = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("in_cfg");
          out_cfg = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("out_cfg");
          `hexk_vif_get_or_fatal(hexk_valid_ready_if#(WIDTH), "in_vif", in_cfg.vif)

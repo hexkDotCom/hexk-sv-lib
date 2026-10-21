@@ -45,6 +45,45 @@ class hexk_ref_base_test extends hexk_base_test;
       fail_on_warnings = 1;
    endfunction : new
 
+   // UVM callback: the interfaces of the agents that the environment builds, and the environment, with the randomized
+   // cfg.
+   function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      `hexk_vif_get_or_fatal(hexk_clk_rst_if, "clk_rst_vif", env_cfg.clk_rst_cfg.vif)
+      if (env_cfg.has_in_agent) begin
+         `hexk_vif_get_or_fatal(hexk_valid_ready_if#(32), "in_vif", env_cfg.in_cfg.vif)
+      end
+      if (env_cfg.has_bus_agent) begin
+         `hexk_vif_get_or_fatal(hexk_ref_bus_if, "bus_vif", env_cfg.bus_cfg.vif)
+      end
+      `hexk_vif_get_or_fatal(hexk_pins_if#(hexk_ref_env_cfg::NUM_STRAPS), "strap_vif", env_cfg.strap_vif)
+      watchdog.global_timeout_ps = GLOBAL_TIMEOUT_PS;
+      env                        = hexk_ref_env::type_id::create("env", this);
+      env.cfg                    = env_cfg;
+      env.aggregator             = objections;
+      env.watchdog               = watchdog;
+   endfunction : build_phase
+
+   // UVM callback: puts the straps to 0 through pulls and resets the DUT.
+   task reset_phase(uvm_phase phase);
+      hexk_clk_rst_reset_seq reset_seq = hexk_clk_rst_reset_seq::type_id::create("reset_seq");
+      super.reset_phase(phase);
+      phase.raise_objection(this, "reset");
+      env_cfg.strap_vif.pull_down();
+      `hexk_randomize_or_fatal(reset_seq, "REF_RAND")
+      reset_seq.start(env.clk_rst_agent.sqr);
+      phase.drop_objection(this, "reset done");
+   endtask : reset_phase
+
+   // UVM callback: every packet and every word that was sent must have been matched.
+   function void check_phase(uvm_phase phase);
+      hexk_sb_stats results = env.result_sb.get_stats();
+      hexk_sb_stats commits = env.commit_sb.get_stats();
+      super.check_phase(phase);
+      `hexk_check_eq(results.matched, expected_matches(), "REF_MATCHED", "packet results matched")
+      `hexk_check_eq(commits.matched, expected_commits(), "REF_COMMITTED", "commits matched")
+   endfunction : check_phase
+
    // Hook of hexk_base_test: the knobs of the testbench.
    virtual function void define_knobs();
       knobs.add_int("ref_packets", 10, "packets a test sends", 1, 200);
@@ -68,20 +107,6 @@ class hexk_ref_base_test extends hexk_base_test;
       configure_scoreboards();
    endfunction : modify_randomized_cfg
 
-   // UVM callback: the interfaces and the environment, with the randomized cfg.
-   function void build_phase(uvm_phase phase);
-      super.build_phase(phase);
-      `hexk_vif_get_or_fatal(hexk_clk_rst_if, "clk_rst_vif", env_cfg.clk_rst_cfg.vif)
-      `hexk_vif_get_or_fatal(hexk_valid_ready_if#(32), "in_vif", env_cfg.in_cfg.vif)
-      `hexk_vif_get_or_fatal(hexk_ref_bus_if, "bus_vif", env_cfg.bus_cfg.vif)
-      `hexk_vif_get_or_fatal(hexk_pins_if#(hexk_ref_env_cfg::NUM_STRAPS), "strap_vif", env_cfg.strap_vif)
-      watchdog.global_timeout_ps = GLOBAL_TIMEOUT_PS;
-      env                        = hexk_ref_env::type_id::create("env", this);
-      env.cfg                    = env_cfg;
-      env.aggregator             = objections;
-      env.watchdog               = watchdog;
-   endfunction : build_phase
-
    // The scoreboards. Results: keyed by packet number, waiting at most 50 us. Commits: in order; the actual
    // and the expected commit of an edge arrive at that edge in an order the simulator chooses, so an actual one
    // may come first and wait (allow_unexpected), but at most 1 ns, less than any clock period here: a commit
@@ -95,17 +120,6 @@ class hexk_ref_base_test extends hexk_base_test;
       env_cfg.commit_sb_cfg.max_wait_ps      = 1_000;
       env_cfg.commit_sb_cfg.flush_on_reset   = 1;
    endfunction : configure_scoreboards
-
-   // UVM callback: puts the straps to 0 through pulls and resets the DUT.
-   task reset_phase(uvm_phase phase);
-      hexk_clk_rst_reset_seq reset_seq = hexk_clk_rst_reset_seq::type_id::create("reset_seq");
-      super.reset_phase(phase);
-      phase.raise_objection(this, "reset");
-      env_cfg.strap_vif.pull_down();
-      `hexk_randomize_or_fatal(reset_seq, "REF_RAND")
-      reset_seq.start(env.clk_rst_agent.sqr);
-      phase.drop_objection(this, "reset done");
-   endtask : reset_phase
 
    // Hook of hexk_base_test, called when the main phase starts: a hexk_ref_test_vseq with the scenario of the test,
    // both prepared; hexk_base_test randomizes and starts it. The watchdog counts from here.
@@ -141,15 +155,6 @@ class hexk_ref_base_test extends hexk_base_test;
    virtual function int unsigned expected_commits();
       return env.words_sent;
    endfunction : expected_commits
-
-   // UVM callback: every packet and every word that was sent must have been matched.
-   function void check_phase(uvm_phase phase);
-      hexk_sb_stats results = env.result_sb.get_stats();
-      hexk_sb_stats commits = env.commit_sb.get_stats();
-      super.check_phase(phase);
-      `hexk_check_eq(results.matched, expected_matches(), "REF_MATCHED", "packet results matched")
-      `hexk_check_eq(commits.matched, expected_commits(), "REF_COMMITTED", "commits matched")
-   endfunction : check_phase
 
 endclass : hexk_ref_base_test
 

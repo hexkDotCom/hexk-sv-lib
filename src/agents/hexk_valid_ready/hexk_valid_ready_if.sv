@@ -10,8 +10,8 @@
 // drives is assigned to ext_valid and ext_data, or to ext_ready, and the channel follows
 // these inputs on the side that no agent drives. A transfer happens at every rising edge of
 // clk at which valid and ready are both 1; data is valid at that edge. Once valid is 1, valid
-// and data stay unchanged until the transfer, and valid, ready during valid and data during
-// valid have a level. When the reset is asserted, an agent that drives the channel sets valid
+// and data stay unchanged until the transfer. Out of reset, valid and ready always have a level,
+// and data has one while valid is 1. When the reset is asserted, an agent that drives the channel sets valid
 // (initiator) or ready (responder) to 0 at once and starts nothing until the reset is
 // released; the assertions are off during the reset. The agent drives and samples through the tasks
 // below; testbench code uses the signals and the clocking block mon_cb. The assertions check

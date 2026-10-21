@@ -38,14 +38,14 @@ From `src/uvm/eot/hexk_eot_registry.sv`:
 ```systemverilog
 // Creates a registry; use get(), which creates the one registry of the simulation.
 function new(string name, uvm_component parent);
+// UVM callback: calls eot_check() of every registered object and names those that reported errors.
+function void check_phase(uvm_phase phase);
 // The one registry of the simulation; the first call creates it and must come before the end of build_phase.
 static function hexk_eot_registry get();
 // Registers an object under a name for reports; its eot_check() is called in check_phase.
 function void register(hexk_checkable obj, string name);
 // Forgets every registered object; for unit tests, which run many tests in one simulation.
 static function void reset_for_test();
-// UVM callback: calls eot_check() of every registered object and names those that reported errors.
-function void check_phase(uvm_phase phase);
 ```
 <!-- HEXK_GEN:END api -->
 

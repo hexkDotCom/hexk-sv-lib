@@ -91,6 +91,14 @@ From `src/uvm/check/hexk_scoreboard.sv`:
 function string get_type_name();
 // Creates the scoreboard; streams and exports are created in build_phase.
 function new(string name, uvm_component parent);
+// UVM callback: takes the cfg that was assigned, else the one in uvm_config_db under "cfg", else one with the defaults; then creates the streams and their exports.
+function void build_phase(uvm_phase phase);
+// UVM callback: registers with the aggregator when cfg.hold_objection is set.
+function void end_of_elaboration_phase(uvm_phase phase);
+// UVM callback: with cfg.max_wait_ps, drops every item when it has waited that long for its partner, with an error. It sleeps until the oldest waiting item reaches the limit, or until an item starts to wait.
+task run_phase(uvm_phase phase);
+// UVM callback: reports the items that were left over on either side, and the summary.
+function void check_phase(uvm_phase phase);
 // Hook: the key of an item for the modes that match by key; the default gives every item the same key.
 virtual function KEY get_key(T item);
 // Hook: 1 when the actual item is what the expected item asks for; diff may explain a difference. The default gives in diff what the comparer noted: the fields that differ, for an item whose do_compare() uses it.
@@ -117,14 +125,6 @@ function hexk_sb_stats get_stats(int stream = -1);
 virtual function bit is_busy();
 // hexk_objectable: per stream, how many items are waiting and since when.
 virtual function string busy_reason();
-// UVM callback: takes the cfg that was assigned, else the one in uvm_config_db under "cfg", else one with the defaults; then creates the streams and their exports.
-function void build_phase(uvm_phase phase);
-// UVM callback: registers with the aggregator when cfg.hold_objection is set.
-function void end_of_elaboration_phase(uvm_phase phase);
-// UVM callback: with cfg.max_wait_ps, drops every item when it has waited that long for its partner, with an error. It sleeps until the oldest waiting item reaches the limit, or until an item starts to wait.
-task run_phase(uvm_phase phase);
-// UVM callback: reports the items that were left over on either side, and the summary.
-function void check_phase(uvm_phase phase);
 ```
 
 From `src/uvm/check/hexk_scoreboard_cfg.sv`:
@@ -138,6 +138,10 @@ function new(string name = "hexk_scoreboard_cfg");
 function string convert2string();
 // UVM hook of copy() and clone(): copies every member.
 function void do_copy(uvm_object rhs);
+// UVM hook of compare(): compares every member.
+function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+// UVM hook of print() and sprint(): every member.
+function void do_print(uvm_printer printer);
 ```
 <!-- HEXK_GEN:END api -->
 

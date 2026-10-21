@@ -57,6 +57,17 @@ class hexk_objection_aggregator extends uvm_component;
       super.new(name, parent);
    endfunction : new
 
+   // UVM callback: reports objects whose raise() calls were never matched by drop().
+   function void check_phase(uvm_phase phase);
+      super.check_phase(phase);
+      foreach (members[i]) begin
+         if (members[i].raise_count != 0) begin
+            `uvm_error("HEXK_OBJECTION_IMBALANCE", $sformatf("%s: %0d raise() without a drop() at the end of the test",
+                                                             members[i].label, members[i].raise_count))
+         end
+      end
+   endfunction : check_phase
+
    // Registers an object under a name for reports; from then on its is_busy() is asked at the end of phases.
    function void register(hexk_objectable obj, string name);
       hexk_objection_member member;
@@ -182,17 +193,6 @@ class hexk_objection_aggregator extends uvm_component;
       end
       active.delete(index);
    endfunction : phase_ended
-
-   // UVM callback: reports objects whose raise() calls were never matched by drop().
-   function void check_phase(uvm_phase phase);
-      super.check_phase(phase);
-      foreach (members[i]) begin
-         if (members[i].raise_count != 0) begin
-            `uvm_error("HEXK_OBJECTION_IMBALANCE", $sformatf("%s: %0d raise() without a drop() at the end of the test",
-                                                             members[i].label, members[i].raise_count))
-         end
-      end
-   endfunction : check_phase
 
    // Looks at the busy objects every poll_interval_ps and lets the phase go when none is left.
    local task hold_until_idle(uvm_phase phase, int unsigned serial);

@@ -21,6 +21,8 @@ package hexk_ref_pkg;
    import hexk_core_pkg::hexk_lfsr;
    import hexk_core_pkg::hexk_ecc;
    import hexk_core_pkg::hexk_str;
+   // FIL-5 waived: the testbench uses most of the library and of both agent packages; these three imports are the
+   // only wildcard imports of user packages.
    import hexk_uvm_pkg::*;
    import hexk_clk_rst_pkg::*;
    import hexk_valid_ready_pkg::*;
@@ -70,6 +72,7 @@ package hexk_ref_pkg;
    `include "hexk_ref_back_to_back_test.sv"
    `include "hexk_ref_control_test.sv"
    `include "hexk_ref_mem_test.sv"
+   `include "hexk_ref_shared_bus_test.sv"
    `include "hexk_ref_hang_test.sv"
    `include "hexk_ref_stall_test.sv"
 endpackage : hexk_ref_pkg

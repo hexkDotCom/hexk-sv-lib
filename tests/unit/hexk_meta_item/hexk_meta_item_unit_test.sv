@@ -173,7 +173,9 @@ module hexk_meta_item_unit_test;
       hexk_ut_meta_t meta = hexk_ut_meta_t::wrap(packet_of(3), "src", pool.new_uid("pkt"));
       hexk_ut_meta_t cloned;
       uvm_object     copied = meta.clone();
-      void'($cast(cloned, copied));
+      if (!$cast(cloned, copied) || cloned == null) begin
+         return "not a clone";
+      end
       if (cloned.item == meta.item && cloned.uid == meta.uid && cloned.timestamp_ps == meta.timestamp_ps &&
           cloned.source == "src") begin
          return "same";

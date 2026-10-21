@@ -24,6 +24,15 @@ class hexk_ref_warm_reset_test extends hexk_ref_base_test;
       super.new(name, parent);
    endfunction : new
 
+   // The clock was checked at the old period and at the new one.
+   function void check_phase(uvm_phase phase);
+      super.check_phase(phase);
+      `hexk_check_ne(env.clk_rst_agent.mon.num_checked_at(scenario.old_period_ps), 0, "REF_CLOCK_CHECKED",
+                     "intervals checked before the warm reset")
+      `hexk_check_ne(env.clk_rst_agent.mon.num_checked_at(hexk_ref_warm_reset_vseq::NEW_PERIOD_PS), 0,
+                     "REF_CLOCK_CHECKED", "intervals checked after the warm reset")
+   endfunction : check_phase
+
    // The resets.
    virtual function hexk_ref_vseq_base create_scenario();
       scenario = hexk_ref_warm_reset_vseq::type_id::create("scenario");
@@ -34,15 +43,6 @@ class hexk_ref_warm_reset_test extends hexk_ref_base_test;
    virtual function int unsigned expected_commits();
       return env.words_sent - scenario.dropped_words;
    endfunction : expected_commits
-
-   // The clock was checked at the old period and at the new one.
-   function void check_phase(uvm_phase phase);
-      super.check_phase(phase);
-      `hexk_check_ne(env.clk_rst_agent.mon.num_checked_at(scenario.old_period_ps), 0, "REF_CLOCK_CHECKED",
-                     "intervals checked before the warm reset")
-      `hexk_check_ne(env.clk_rst_agent.mon.num_checked_at(hexk_ref_warm_reset_vseq::NEW_PERIOD_PS), 0,
-                     "REF_CLOCK_CHECKED", "intervals checked after the warm reset")
-   endfunction : check_phase
 
 endclass : hexk_ref_warm_reset_test
 

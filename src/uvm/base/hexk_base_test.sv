@@ -31,7 +31,8 @@
 // create_cfg(), which returns the cfg of the block; build_phase randomizes that cfg between the
 // hooks modify_cfg() and modify_randomized_cfg() (guide CFG-10, TST-2). The block base test builds
 // its env in its own build_phase after super.build_phase(). A test gives its stimulus in
-// create_stimulus(), which main_phase randomizes and starts under one objection.
+// create_stimulus(), which main_phase randomizes and starts under one objection; main_phase returns
+// when the stimulus has ended, and a derived test that extends it calls super.main_phase() first.
 //
 //! @module    hexk_base_test
 //! @since     0.7.0
@@ -106,48 +107,6 @@ class hexk_base_test extends uvm_test;
       super.new(name, parent);
       warnings = new();
    endfunction : new
-
-   // Allows the warnings whose ID matches id_regex (as hexk_regex takes it; "^ID$" for one ID) with fail_on_warnings.
-   function void allow_warning(string id_regex);
-      warnings.allow(id_regex);
-   endfunction : allow_warning
-
-   // Hook: factory overrides of the test; called first in build_phase, before anything is created.
-   virtual function void do_type_overrides();
-   endfunction : do_type_overrides
-
-   // Hook: knobs of the block or of the test; called in build_phase before the knobs are locked.
-   virtual function void define_knobs();
-   endfunction : define_knobs
-
-   // Hook: creates the cfg of the block, through the factory, and returns it (null: no cfg); called after the factory
-   // overrides and the knobs, so that an override of a derived test reaches the cfg. build_phase randomizes it.
-   virtual function uvm_object create_cfg();
-      return null;
-   endfunction : create_cfg
-
-   // Hook: changes to the cfg of the block before it is randomized, when knobs can be read. A test pins a rand knob
-   // with rand_mode(0) and an assignment, or switches a constraint with constraint_mode(): a plain assignment to a
-   // rand knob is overwritten by the randomization (guide CFG-10).
-   virtual function void modify_cfg();
-   endfunction : modify_cfg
-
-   // Hook: changes to the cfg of the block after it was randomized, the last step of build_phase: plain assignments,
-   // which no constraint checks, so only for values that no constraint relates to others.
-   virtual function void modify_randomized_cfg();
-   endfunction : modify_randomized_cfg
-
-   // Hook: the stimulus of the test, created when main_phase starts (the env exists then); main_phase randomizes it
-   // and starts it on stimulus_sequencer() under one objection. null, the default, starts nothing.
-   virtual function uvm_sequence_base create_stimulus();
-      return null;
-   endfunction : create_stimulus
-
-   // Hook: the sequencer that the stimulus starts on; null, the default, for a virtual sequence without a virtual
-   // sequencer.
-   virtual function uvm_sequencer_base stimulus_sequencer();
-      return null;
-   endfunction : stimulus_sequencer
 
    // UVM callback: sets up report server, catcher, warning audit, knobs, aggregator, registry and watchdog, and calls
    // the hooks.
@@ -224,8 +183,8 @@ class hexk_base_test extends uvm_test;
    endfunction : start_of_simulation_phase
 
    // UVM callback: runs the stimulus of create_stimulus(), randomized, on stimulus_sequencer() under one objection, and
-   // returns when it has ended; it returns at once without a stimulus. A derived test with a main_phase of its own
-   // calls super.main_phase() first or replaces it (guide CMP-4).
+   // returns when it has ended; it returns at once without a stimulus. It is meant to be extended: a derived test with
+   // a main_phase of its own calls super.main_phase() first, so that its own code runs after the stimulus (CMP-4).
    task main_phase(uvm_phase phase);
       uvm_sequence_base stimulus;
       super.main_phase(phase);
@@ -277,6 +236,48 @@ class hexk_base_test extends uvm_test;
          final_phase_reached = 1;
       end
    endfunction : final_phase
+
+   // Allows the warnings whose ID matches id_regex (as hexk_regex takes it; "^ID$" for one ID) with fail_on_warnings.
+   function void allow_warning(string id_regex);
+      warnings.allow(id_regex);
+   endfunction : allow_warning
+
+   // Hook: factory overrides of the test; called first in build_phase, before anything is created.
+   virtual function void do_type_overrides();
+   endfunction : do_type_overrides
+
+   // Hook: knobs of the block or of the test; called in build_phase before the knobs are locked.
+   virtual function void define_knobs();
+   endfunction : define_knobs
+
+   // Hook: creates the cfg of the block, through the factory, and returns it (null: no cfg); called after the factory
+   // overrides and the knobs, so that an override of a derived test reaches the cfg. build_phase randomizes it.
+   virtual function uvm_object create_cfg();
+      return null;
+   endfunction : create_cfg
+
+   // Hook: changes to the cfg of the block before it is randomized, when knobs can be read. A test pins a rand knob
+   // with rand_mode(0) and an assignment, or switches a constraint with constraint_mode(): a plain assignment to a
+   // rand knob is overwritten by the randomization (guide CFG-10).
+   virtual function void modify_cfg();
+   endfunction : modify_cfg
+
+   // Hook: changes to the cfg of the block after it was randomized, the last step of build_phase: plain assignments,
+   // which no constraint checks, so only for values that no constraint relates to others.
+   virtual function void modify_randomized_cfg();
+   endfunction : modify_randomized_cfg
+
+   // Hook: the stimulus of the test, created when main_phase starts (the env exists then); main_phase randomizes it
+   // and starts it on stimulus_sequencer() under one objection. null, the default, starts nothing.
+   virtual function uvm_sequence_base create_stimulus();
+      return null;
+   endfunction : create_stimulus
+
+   // Hook: the sequencer that the stimulus starts on; null, the default, for a virtual sequence without a virtual
+   // sequencer.
+   virtual function uvm_sequencer_base stimulus_sequencer();
+      return null;
+   endfunction : stimulus_sequencer
 
    // 1 when there was no error or fatal so far, no failed check beyond the expected ones and, if require_checks is
    // set, at least one check was executed.

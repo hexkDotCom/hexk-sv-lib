@@ -12,7 +12,9 @@
 // class derived from hexk_valid_ready_item, whose own random fields then get values; a plain
 // item is not, since every random field of it is assigned (a randomization costs several
 // times the rest of the item). The factory is asked once per start of the sequence, and every
-// item of that start is made of the class it gave.
+// item of that start is made of the class it gave. The sequence assigns data and delay_cycles
+// after the randomization: a constraint of a derived class on either of them, or one that ties
+// another field to them, is not kept; such a class needs a sequence of its own.
 //
 //! @module    hexk_valid_ready
 //! @since     0.7.0

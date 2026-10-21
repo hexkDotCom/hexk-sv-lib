@@ -85,7 +85,10 @@ module hexk_scoreboard_unit_test;
       function void do_copy(uvm_object rhs);
          hexk_ut_packet other;
          super.do_copy(rhs);
-         void'($cast(other, rhs));
+         if (!$cast(other, rhs)) begin
+            `uvm_fatal("UT_COPY_TYPE", $sformatf("cannot copy from a %s", rhs.get_type_name()))
+            return;
+         end
          id         = other.id;
          data       = other.data;
          uid        = other.uid;
@@ -603,7 +606,9 @@ module hexk_scoreboard_unit_test;
       cfg.leftover_print_limit = 8;
       cfg.clone_expected       = 1;
       copied                   = cfg.clone();
-      void'($cast(cloned, copied));
+      if (!$cast(cloned, copied) || cloned == null) begin
+         return "not a clone";
+      end
       cfg.num_streams = 7;
       cfg.max_errors  = 9;
       return {fresh.convert2string(), " / ", cloned.convert2string()};
@@ -692,6 +697,29 @@ module hexk_scoreboard_unit_test;
       changed.matched        = 100;
       return $sformatf("%s | %s | %s", counts(kept_stream), counts(kept_all), counts(scoreboard.get_stats(0)));
    endfunction : stats_snapshots
+
+   // compare() of a clone, and of the clone after a change, and whether print() names leftover_print_limit:
+   // "<equal> <equal after the change> <named>".
+   function automatic string compared_cfg();
+      hexk_scoreboard_cfg original = hexk_scoreboard_cfg::type_id::create("ut_compared");
+      hexk_scoreboard_cfg copy;
+      bit equal_before;
+      if (!$cast(copy, original.clone()) || copy == null) begin
+         return "not a clone";
+      end
+      equal_before = original.compare(copy);
+      copy.leftover_print_limit = 3;
+      return $sformatf(
+          "%0b %0b %0b",
+          equal_before,
+          original.compare(
+              copy
+          ),
+          hexk_str::contains(
+              original.sprint(), "leftover_print_limit"
+          )
+      );
+   endfunction : compared_cfg
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -1470,6 +1498,10 @@ module hexk_scoreboard_unit_test;
       `FAIL_UNLESS_STR_EQUAL(timeouts(), "0")
       advance(20ns);
       `FAIL_UNLESS_STR_EQUAL(timeouts(), "1")
+   `SVTEST_END
+
+   `SVTEST(compare_and_print_cover_every_member)
+      `FAIL_UNLESS_STR_EQUAL(compared_cfg(), "1 0 1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

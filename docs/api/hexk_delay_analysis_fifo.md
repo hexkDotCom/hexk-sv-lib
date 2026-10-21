@@ -30,6 +30,8 @@ From `src/uvm/tlm/hexk_delay_analysis_fifo.sv`:
 function string get_type_name();
 // Creates the FIFO; without a latency it behaves like uvm_tlm_analysis_fifo.
 function new(string name, uvm_component parent = null);
+// UVM callback: counts the clock events and moves the items into the FIFO when their delay is over.
+task run_phase(uvm_phase phase);
 // Gives the event whose triggers count as cycles for latency_cycles.
 function void set_clock(event clock_event);
 // Number of items that were written and are not visible yet.
@@ -44,8 +46,6 @@ function void flush();
 virtual function bit is_busy();
 // hexk_objectable: how many items are waiting and how many are visible and not yet read.
 virtual function string busy_reason();
-// UVM callback: counts the clock events and moves the items into the FIFO when their delay is over.
-task run_phase(uvm_phase phase);
 ```
 <!-- HEXK_GEN:END api -->
 

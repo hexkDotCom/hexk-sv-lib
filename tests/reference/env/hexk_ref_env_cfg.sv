@@ -4,10 +4,11 @@
 // hexk_ref_env_cfg.sv
 //
 // Configuration of the reference environment: the cfgs of the agents and scoreboards, the bus,
-// and what the test sends. It is randomized once, in the build phase of the test; a second
-// randomization would change values that the environment has already used, which the
-// hexk_rand_once guard reports. Members that a test wants different are assigned after the
-// randomization, not given as inline constraints, which Verilator does not apply over soft ones.
+// which agents the environment builds, and what the test sends. It is randomized once, in the
+// build phase of the test; a second randomization would change values that the environment has
+// already used, which the hexk_rand_once guard reports. Members that a test wants different are
+// assigned after the randomization, not given as inline constraints, which Verilator does not
+// apply over soft ones.
 
 `ifndef HEXK_REF_ENV_CFG_SV
 `define HEXK_REF_ENV_CFG_SV
@@ -28,6 +29,12 @@ class hexk_ref_env_cfg extends uvm_object;
    // The cfg of the bus agent, with the register bus.
    rand hexk_ref_bus_agent_cfg              bus_cfg;
 
+   // Which agents the environment builds, and whose interfaces the test fetches (guide CFG-8). A parent that has an
+   // agent of its own on that interface sets the flag to 0 and connects that agent to the exports of the environment.
+   // The clock and reset agent is always built: the environment takes the resets from it.
+   bit                                      has_in_agent   = 1;
+   bit                                      has_bus_agent  = 1;
+
    // The strap pins of the testbench (hexk_pins_if): pin STALL_PIN holds the input's ready at 0.
    localparam int unsigned NUM_STRAPS = 1;
    localparam int unsigned STALL_PIN = 0;
@@ -44,7 +51,8 @@ class hexk_ref_env_cfg extends uvm_object;
    rand int unsigned                  min_len;
    rand int unsigned                  max_len;
 
-   // The guard against a second randomization: the member rand_once and its pre_ and post_randomize().
+   // The guard against a second randomization: the member rand_once and its pre_ and post_randomize(). A copy has a
+   // guard of its own.
    `hexk_rand_once_guard_decl
 
    `uvm_object_utils(hexk_ref_env_cfg)
@@ -73,6 +81,90 @@ class hexk_ref_env_cfg extends uvm_object;
       commit_sb_cfg            = hexk_scoreboard_cfg::type_id::create("commit_sb_cfg");
       bus_cfg                  = hexk_ref_bus_agent_cfg::type_id::create("bus_cfg");
    endfunction : new
+
+   // UVM hook of copy() and clone(): copies every member; the copy has cfgs of its own for the children and shares
+   // the interface of the straps.
+   function void do_copy(uvm_object rhs);
+      hexk_ref_env_cfg other;
+      super.do_copy(rhs);
+      if (!$cast(other, rhs)) begin
+         `uvm_fatal("REF_COPY_TYPE", $sformatf("%s cannot copy from %s, which is a %s", get_type_name(),
+                                               rhs.get_name(), rhs.get_type_name()))
+         return;
+      end
+      clk_rst_cfg   = null;
+      in_cfg        = null;
+      result_sb_cfg = null;
+      commit_sb_cfg = null;
+      bus_cfg       = null;
+      if (other.clk_rst_cfg != null) begin
+         `hexk_cast_or_fatal(clk_rst_cfg, other.clk_rst_cfg.clone(), "REF_COPY_TYPE")
+      end
+      if (other.in_cfg != null) begin
+         `hexk_cast_or_fatal(in_cfg, other.in_cfg.clone(), "REF_COPY_TYPE")
+      end
+      if (other.result_sb_cfg != null) begin
+         `hexk_cast_or_fatal(result_sb_cfg, other.result_sb_cfg.clone(), "REF_COPY_TYPE")
+      end
+      if (other.commit_sb_cfg != null) begin
+         `hexk_cast_or_fatal(commit_sb_cfg, other.commit_sb_cfg.clone(), "REF_COPY_TYPE")
+      end
+      if (other.bus_cfg != null) begin
+         `hexk_cast_or_fatal(bus_cfg, other.bus_cfg.clone(), "REF_COPY_TYPE")
+      end
+      has_in_agent    = other.has_in_agent;
+      has_bus_agent   = other.has_bus_agent;
+      strap_vif       = other.strap_vif;
+      num_packets     = other.num_packets;
+      done_timeout_ps = other.done_timeout_ps;
+      min_len         = other.min_len;
+      max_len         = other.max_len;
+   endfunction : do_copy
+
+   // UVM hook of compare(): compares every member, the cfgs of the children by their members; the interfaces of the
+   // straps must be the same.
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_ref_env_cfg other;
+      bit              same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_object("clk_rst_cfg", clk_rst_cfg, other.clk_rst_cfg);
+      same &= comparer.compare_object("in_cfg", in_cfg, other.in_cfg);
+      same &= comparer.compare_object("result_sb_cfg", result_sb_cfg, other.result_sb_cfg);
+      same &= comparer.compare_object("commit_sb_cfg", commit_sb_cfg, other.commit_sb_cfg);
+      same &= comparer.compare_object("bus_cfg", bus_cfg, other.bus_cfg);
+      same &= comparer.compare_field_int("has_in_agent", 64'(has_in_agent), 64'(other.has_in_agent), 1);
+      same &= comparer.compare_field_int("has_bus_agent", 64'(has_bus_agent), 64'(other.has_bus_agent), 1);
+      if (strap_vif != other.strap_vif) begin
+         comparer.print_msg("strap_vif: the two refer to different interfaces");
+         same = 0;
+      end
+      same &= comparer.compare_field_int("num_packets", 64'(num_packets), 64'(other.num_packets), 32);
+      same &= comparer.compare_field_int("done_timeout_ps", done_timeout_ps, other.done_timeout_ps, 64);
+      same &= comparer.compare_field_int("min_len", 64'(min_len), 64'(other.min_len), 32);
+      same &= comparer.compare_field_int("max_len", 64'(max_len), 64'(other.max_len), 32);
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member, the cfgs of the children with theirs; the interface as set or
+   // null.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_object("clk_rst_cfg", clk_rst_cfg);
+      printer.print_object("in_cfg", in_cfg);
+      printer.print_object("result_sb_cfg", result_sb_cfg);
+      printer.print_object("commit_sb_cfg", commit_sb_cfg);
+      printer.print_object("bus_cfg", bus_cfg);
+      printer.print_field_int("has_in_agent", 64'(has_in_agent), 1, UVM_BIN);
+      printer.print_field_int("has_bus_agent", 64'(has_bus_agent), 1, UVM_BIN);
+      printer.print_string("strap_vif", (strap_vif == null) ? "null" : "set");
+      printer.print_field_int("num_packets", 64'(num_packets), 32, UVM_DEC);
+      printer.print_field_int("done_timeout_ps", done_timeout_ps, 64, UVM_DEC);
+      printer.print_field_int("min_len", 64'(min_len), 32, UVM_DEC);
+      printer.print_field_int("max_len", 64'(max_len), 32, UVM_DEC);
+   endfunction : do_print
 
 endclass : hexk_ref_env_cfg
 

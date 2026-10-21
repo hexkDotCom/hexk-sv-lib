@@ -635,7 +635,9 @@ module hexk_valid_ready_unit_test;
       item.wait_cycles  = 2;
       item.aborted      = 1;
       texts.push_back(item.convert2string());
-      void'($cast(copy, item.clone()));
+      if (!$cast(copy, item.clone()) || copy == null) begin
+         return "not a clone";
+      end
       texts.push_back(copy.convert2string());
       copy.wait_cycles = 9;
       texts.push_back($sformatf("%0b", item.compare(copy)));
@@ -730,6 +732,22 @@ module hexk_valid_ready_unit_test;
           )
       );
    endfunction : nested_copies
+
+   // compare() of a clone, and of the clone after a change, and whether print() names delay_cfg:
+   // "<equal> <equal after the change> <named>".
+   function automatic string compared_cfg();
+      hexk_ut_cfg_t original = hexk_ut_cfg_t::type_id::create("ut_compared");
+      hexk_ut_cfg_t copy;
+      bit equal_before;
+      if (!$cast(copy, original.clone()) || copy == null) begin
+         return "not a clone";
+      end
+      equal_before = original.compare(copy);
+      copy.delay_cfg.hi = 9;
+      return $sformatf(
+          "%0b %0b %0b", equal_before, original.compare(copy), hexk_str::contains(original.sprint(), "delay_cfg")
+      );
+   endfunction : compared_cfg
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -1217,6 +1235,10 @@ module hexk_valid_ready_unit_test;
 
    `SVTEST(the_members_of_a_created_sequence_have_their_defaults)
       `FAIL_UNLESS_STR_EQUAL(created_sequence_members(), "1 -1")
+   `SVTEST_END
+
+   `SVTEST(compare_and_print_cover_every_member)
+      `FAIL_UNLESS_STR_EQUAL(compared_cfg(), "1 0 1")
    `SVTEST_END
 
    `SVUNIT_TESTS_END

@@ -86,6 +86,14 @@ virtual class hexk_enum_knob #(
       return values[text];
    endfunction : get
 
+   // Text of a member on the command line: its name in lower case without the common prefix; "" for no member.
+   static function string text_of(E value);
+      string full_name = hexk_enum_util#(E)::name(value);
+      string prefix = hexk_enum_util#(E)::common_prefix();
+      string short_name = full_name.substr(prefix.len(), full_name.len() - 1);
+      return short_name.tolower();
+   endfunction : text_of
+
    // 1 when the knob does not exist (get_str and set_str report that) or add() of this E defined it; otherwise
    // 0 and the error HEXK_KNOBS_TYPE, because another enumeration with the same texts would read it silently.
    local static function bit is_own_knob(hexk_knobs knobs, string name, string action);
@@ -103,14 +111,6 @@ virtual class hexk_enum_knob #(
                          ))
       return 0;
    endfunction : is_own_knob
-
-   // Text of a member on the command line: its name in lower case without the common prefix; "" for no member.
-   static function string text_of(E value);
-      string full_name = hexk_enum_util#(E)::name(value);
-      string prefix = hexk_enum_util#(E)::common_prefix();
-      string short_name = full_name.substr(prefix.len(), full_name.len() - 1);
-      return short_name.tolower();
-   endfunction : text_of
 
 endclass : hexk_enum_knob
 

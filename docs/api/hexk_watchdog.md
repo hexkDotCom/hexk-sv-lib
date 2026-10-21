@@ -30,14 +30,14 @@ From `src/uvm/eot/hexk_watchdog.sv`:
 ```systemverilog
 // Creates the watchdog; the limits are read when the run phase starts.
 function new(string name, uvm_component parent);
+// UVM callback: reads +hexk_timeout and watches both limits until the run phase ends.
+task run_phase(uvm_phase phase);
 // Says that the source made progress; any component may call it, as often as it likes.
 function void heartbeat(string source);
 // Sets the longest time in picoseconds without a heartbeat, counted from now; 0 switches the limit off.
 function void set_inactivity_limit(longint unsigned limit_ps);
 // Converts a text such as "500us" or "1.5ms" to whole picoseconds, rounded; returns 0 when the text is not <number><unit>, when the time is 2**63 ps or more, and when a time above 0 rounds to 0 ps.
 static function bit parse_timeout(string text, output longint unsigned timeout_ps);
-// UVM callback: reads +hexk_timeout and watches both limits until the run phase ends.
-task run_phase(uvm_phase phase);
 ```
 <!-- HEXK_GEN:END api -->
 

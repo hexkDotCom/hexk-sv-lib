@@ -34,6 +34,18 @@ From `src/uvm/base/hexk_base_test.sv`:
 ```systemverilog
 // Creates the test and its warning audit, so that allow_warning() works from the constructor on; everything else happens in build_phase.
 function new(string name, uvm_component parent);
+// UVM callback: sets up report server, catcher, warning audit, knobs, aggregator, registry and watchdog, and calls the hooks.
+function void build_phase(uvm_phase phase);
+// UVM callback: stops the objections of the run-time phases from propagating up the hierarchy, unless stop_objection_propagation is 0.
+function void start_of_simulation_phase(uvm_phase phase);
+// UVM callback: runs the stimulus of create_stimulus(), randomized, on stimulus_sequencer() under one objection, and returns when it has ended; it returns at once without a stimulus. It is meant to be extended: a derived test with a main_phase of its own calls super.main_phase() first, so that its own code runs after the stimulus (CMP-4).
+task main_phase(uvm_phase phase);
+// UVM callback: checks the expectations of the report catchers that nobody checked (guide MSG-9). The phase runs bottom-up, so the check phases of the env, where scoreboards report their leftovers, came first.
+function void check_phase(uvm_phase phase);
+// UVM callback: reports the warnings that the test did not allow and the statistics of the check macros.
+function void report_phase(uvm_phase phase);
+// UVM callback: reports the last line of the test, TEST PASSED or TEST FAILED.
+function void final_phase(uvm_phase phase);
 // Allows the warnings whose ID matches id_regex (as hexk_regex takes it; "^ID$" for one ID) with fail_on_warnings.
 function void allow_warning(string id_regex);
 // Hook: factory overrides of the test; called first in build_phase, before anything is created.
@@ -50,18 +62,6 @@ virtual function void modify_randomized_cfg();
 virtual function uvm_sequence_base create_stimulus();
 // Hook: the sequencer that the stimulus starts on; null, the default, for a virtual sequence without a virtual sequencer.
 virtual function uvm_sequencer_base stimulus_sequencer();
-// UVM callback: sets up report server, catcher, warning audit, knobs, aggregator, registry and watchdog, and calls the hooks.
-function void build_phase(uvm_phase phase);
-// UVM callback: stops the objections of the run-time phases from propagating up the hierarchy, unless stop_objection_propagation is 0.
-function void start_of_simulation_phase(uvm_phase phase);
-// UVM callback: runs the stimulus of create_stimulus(), randomized, on stimulus_sequencer() under one objection, and returns when it has ended; it returns at once without a stimulus. A derived test with a main_phase of its own calls super.main_phase() first or replaces it (guide CMP-4).
-task main_phase(uvm_phase phase);
-// UVM callback: checks the expectations of the report catchers that nobody checked (guide MSG-9). The phase runs bottom-up, so the check phases of the env, where scoreboards report their leftovers, came first.
-function void check_phase(uvm_phase phase);
-// UVM callback: reports the warnings that the test did not allow and the statistics of the check macros.
-function void report_phase(uvm_phase phase);
-// UVM callback: reports the last line of the test, TEST PASSED or TEST FAILED.
-function void final_phase(uvm_phase phase);
 // 1 when there was no error or fatal so far, no failed check beyond the expected ones and, if require_checks is set, at least one check was executed.
 function bit has_passed();
 // The last line of the test: "TEST PASSED" or "TEST FAILED" with the counts behind the verdict.
@@ -131,7 +131,7 @@ one objection, randomizes the stimulus (a failure is the fatal `HEXK_TEST_RAND`)
 `stimulus_sequencer()` (null by default: a virtual sequence without a virtual sequencer, guide
 rule SEQ-5), and drops the objection when the stimulus has ended. A derived test with a
 `main_phase` of its own calls `super.main_phase()` first, so that the stimulus runs before its
-own code, or replaces it.
+own code (guide rule CMP-4: the phase returns and is meant to be extended).
 
 A block base test overrides `build_phase` only to add to it, and calls
 `super.build_phase(phase)` first. The members `knobs`, `objections`, `eot_registry`,
@@ -277,8 +277,10 @@ own documents. With `+define+HEXK_NO_CHECK_STATS` the check macros are not count
 // The top module has no initial block: the include installs the report server, calls
 // publish_interfaces(), which is named by HEXK_TB_PRE_RUN_TEST, and then run_test().
 // The block base test extends hexk_base_test: it adds a knob in define_knobs(), fetches the
-// interface and widens the watchdog limit. The test drives a few values and checks each
-// one, so the last line of the log is TEST PASSED with the number of checks.
+// interface and widens the watchdog limit. The smoke test returns its stimulus from
+// create_stimulus(): a sequence that sends a few values through the interface and checks each
+// one; hexk_base_test randomizes and starts it in its main phase under one objection. The last
+// line of the log is TEST PASSED with the number of checks.
 // Run it with +UVM_TESTNAME=hexk_example_smoke_test; try +num_items=0 to see a test that
 // fails because it checked nothing, and +hexk_knobs_help for the knobs.
 // Needs UVM and src/uvm/hexk_uvm.f.
@@ -291,6 +293,13 @@ interface hexk_example_dut_if (
    timeunit 1ns; timeprecision 1ps;
    logic [7:0] data_in;
    logic [7:0] data_out;
+
+   // Puts value on the input and returns the output at the next rising edge of clk.
+   task automatic apply(input logic [7:0] value, output logic [7:0] result);
+      data_in = value;
+      @(posedge clk);
+      result = data_out;
+   endtask : apply
 endinterface : hexk_example_dut_if
 
 module hexk_base_test_example;
@@ -320,7 +329,31 @@ module hexk_base_test_example;
       endfunction : build_phase
    endclass : hexk_example_block_base_test
 
-   // Sends values and checks that each comes out incremented.
+   // Sends num_items values through the interface and checks that each comes out incremented.
+   class hexk_example_smoke_seq extends uvm_sequence;
+      // The interface, set by the test before the start, and the number of values, a knob of the sequence.
+      virtual hexk_example_dut_if vif;
+      rand int unsigned           num_items;
+
+      // Without a value from the starter, a few values.
+      constraint num_items_cstr {soft num_items inside {[1 : 8]};}
+
+      `uvm_object_utils(hexk_example_smoke_seq)
+
+      function new(string name = "hexk_example_smoke_seq");
+         super.new(name);
+      endfunction : new
+
+      task body();
+         logic [7:0] result;
+         for (int unsigned i = 0; i < num_items; i++) begin
+            vif.apply(8'(10 * i), result);
+            `hexk_check_eq(result, 8'(10 * i + 1), "SMOKE_DATA")
+         end
+      endtask : body
+   endclass : hexk_example_smoke_seq
+
+   // Gives the smoke sequence as the stimulus of the main phase.
    class hexk_example_smoke_test extends hexk_example_block_base_test;
       `uvm_component_utils(hexk_example_smoke_test)
 
@@ -328,17 +361,14 @@ module hexk_base_test_example;
          super.new(name, parent);
       endfunction : new
 
-      task run_phase(uvm_phase phase);
-         int unsigned num_items = 32'(knobs.get_int("num_items"));
-         super.run_phase(phase);
-         phase.raise_objection(this, "stimulus");
-         for (int unsigned i = 0; i < num_items; i++) begin
-            vif.data_in = 8'(10 * i);
-            @(posedge vif.clk);
-            `hexk_check_eq(vif.data_out, 8'(10 * i + 1), "SMOKE_DATA")
-         end
-         phase.drop_objection(this, "stimulus");
-      endtask : run_phase
+      virtual function uvm_sequence_base create_stimulus();
+         hexk_example_smoke_seq seq = hexk_example_smoke_seq::type_id::create("seq");
+         seq.vif       = vif;
+         // hexk_base_test randomizes the stimulus: the knob of the test is pinned, not plainly assigned (CFG-10).
+         seq.num_items = 32'(knobs.get_int("num_items"));
+         seq.num_items.rand_mode(0);
+         return seq;
+      endfunction : create_stimulus
    endclass : hexk_example_smoke_test
 
    bit clk;

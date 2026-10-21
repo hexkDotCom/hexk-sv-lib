@@ -79,6 +79,15 @@ class hexk_delay_analysis_fifo #(
       super.new(name, parent);
    endfunction : new
 
+   // UVM callback: counts the clock events and moves the items into the FIFO when their delay is over.
+   task run_phase(uvm_phase phase);
+      super.run_phase(phase);
+      fork
+         count_cycles();
+         release_items();
+      join
+   endtask : run_phase
+
    // Gives the event whose triggers count as cycles for latency_cycles.
    function void set_clock(event clock_event);
       clock     = clock_event;
@@ -145,15 +154,6 @@ class hexk_delay_analysis_fifo #(
       return $sformatf("%0d items are waiting for the end of their delay, %0d are visible and not yet read",
                        waiting.size(), used());
    endfunction : busy_reason
-
-   // UVM callback: counts the clock events and moves the items into the FIFO when their delay is over.
-   task run_phase(uvm_phase phase);
-      super.run_phase(phase);
-      fork
-         count_cycles();
-         release_items();
-      join
-   endtask : run_phase
 
    // Counts the triggers of the clock event.
    // A trigger in the time step of a write must not count for that item, whichever of the two the simulator

@@ -57,6 +57,19 @@ class hexk_watchdog extends uvm_component;
       super.new(name, parent);
    endfunction : new
 
+   // UVM callback: reads +hexk_timeout and watches both limits until the run phase ends.
+   task run_phase(uvm_phase phase);
+      super.run_phase(phase);
+      apply_plusargs();
+      last_activity_ps = $time;
+      `uvm_info("HEXK_WATCHDOG_START", $sformatf("global timeout %s, inactivity limit %s", limit_text(global_timeout_ps
+                                                 ), limit_text(inactivity_limit_ps)), UVM_MEDIUM)
+      fork
+         watch_global();
+         watch_inactivity();
+      join
+   endtask : run_phase
+
    // Says that the source made progress; any component may call it, as often as it likes.
    function void heartbeat(string source);
       if (!beat_counts.exists(source)) begin
@@ -107,19 +120,6 @@ class hexk_watchdog extends uvm_component;
       timeout_ps = longint'(time_ps);
       return 1;
    endfunction : parse_timeout
-
-   // UVM callback: reads +hexk_timeout and watches both limits until the run phase ends.
-   task run_phase(uvm_phase phase);
-      super.run_phase(phase);
-      apply_plusargs();
-      last_activity_ps = $time;
-      `uvm_info("HEXK_WATCHDOG_START", $sformatf("global timeout %s, inactivity limit %s", limit_text(global_timeout_ps
-                                                 ), limit_text(inactivity_limit_ps)), UVM_MEDIUM)
-      fork
-         watch_global();
-         watch_inactivity();
-      join
-   endtask : run_phase
 
    // Takes global_timeout_ps from +hexk_timeout=<number><unit> when the plusarg is given; +hexk_timeout without a
    // value, or with an empty one, is an error like any other value that is not a time.

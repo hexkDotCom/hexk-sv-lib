@@ -58,6 +58,10 @@ static function real ps_per_unit(hexk_time_unit_e unit);
 function string convert2string();
 // UVM hook of copy() and clone(): copies every member.
 function void do_copy(uvm_object rhs);
+// UVM hook of compare(): compares every member.
+function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+// UVM hook of print() and sprint(): every member.
+function void do_print(uvm_printer printer);
 ```
 
 From `src/uvm/report/hexk_report_server.sv`:
@@ -264,7 +268,7 @@ A trigger given on the command line cannot contain a comma.
 | `HEXK_REPORT_CFG` | a plusarg value or a cfg field is not legal; the previous or default value is used |
 | `HEXK_REPORT_SUMMARY` | the summary table at the end of the test |
 | `HEXK_COPY_TYPE` | `copy()` of a `hexk_report_cfg` from an object of another class; nothing is copied |
-| `HEXK_REPORT_CLONE` | `set_cfg` or `get_cfg` could not clone the cfg as a `hexk_report_cfg` (a factory override that is not one) |
+| `HEXK_REPORT_CLONE` | `set_cfg` or `get_cfg` could not clone the cfg as a `hexk_report_cfg` (a factory override that is not one, or a `clone()` that returned null) |
 
 ## 7. Minimal example
 

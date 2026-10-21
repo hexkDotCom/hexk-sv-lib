@@ -17,6 +17,7 @@
 // register model gets UVM_NOT_OK. Tests let register accesses finish before they reset the DUT.
 // The driver is a hexk_objectable: busy from the moment it takes an item until it hands it back,
 // so that a wait until nothing is in flight sees an access that did not go through hexk_csr_util.
+// Its run_phase never returns: an extension replaces run_phase and does not call super.run_phase() (CMP-4).
 
 `ifndef HEXK_REF_BUS_DRIVER_SV
 `define HEXK_REF_BUS_DRIVER_SV

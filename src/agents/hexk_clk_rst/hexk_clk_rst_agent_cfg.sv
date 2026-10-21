@@ -190,6 +190,47 @@ class hexk_clk_rst_agent_cfg extends uvm_object;
       check_period   = other.check_period;
    endfunction : do_copy
 
+   // UVM hook of compare(): compares every member; the interfaces must be the same.
+   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      hexk_clk_rst_agent_cfg other;
+      bit same;
+      if (!$cast(other, rhs)) begin
+         return 0;
+      end
+      same = 1;
+      same &= comparer.compare_field_int("is_active", 64'(is_active), 64'(other.is_active), $bits(is_active));
+      if (vif != other.vif) begin
+         comparer.print_msg("vif: the two refer to different interfaces");
+         same = 0;
+      end
+      same &= comparer.compare_field_int("period_ps", period_ps, other.period_ps, 64);
+      same &= comparer.compare_field_int("duty_percent", 64'(duty_percent), 64'(other.duty_percent), 32);
+      same &= comparer.compare_field_int("jitter_ps", jitter_ps, other.jitter_ps, 64);
+      same &= comparer.compare_field_int("phase_ps", phase_ps, other.phase_ps, 64);
+      same &= comparer.compare_field_int("rst_active_low", 64'(rst_active_low), 64'(other.rst_active_low), 1);
+      same &= comparer.compare_field_int("start_clock", 64'(start_clock), 64'(other.start_clock), 1);
+      same &= comparer.compare_field_int("reset_at_start", 64'(reset_at_start), 64'(other.reset_at_start), 1);
+      same &= comparer.compare_field_int("jitter_seed", 64'(jitter_seed), 64'(other.jitter_seed), 32);
+      same &= comparer.compare_field_int("check_period", 64'(check_period), 64'(other.check_period), 1);
+      return same;
+   endfunction : do_compare
+
+   // UVM hook of print() and sprint(): every member; the interface as set or null.
+   function void do_print(uvm_printer printer);
+      super.do_print(printer);
+      printer.print_string("is_active", is_active.name());
+      printer.print_string("vif", (vif == null) ? "null" : "set");
+      printer.print_field_int("period_ps", period_ps, 64, UVM_DEC);
+      printer.print_field_int("duty_percent", 64'(duty_percent), 32, UVM_DEC);
+      printer.print_field_int("jitter_ps", jitter_ps, 64, UVM_DEC);
+      printer.print_field_int("phase_ps", phase_ps, 64, UVM_DEC);
+      printer.print_field_int("rst_active_low", 64'(rst_active_low), 1, UVM_BIN);
+      printer.print_field_int("start_clock", 64'(start_clock), 1, UVM_BIN);
+      printer.print_field_int("reset_at_start", 64'(reset_at_start), 1, UVM_BIN);
+      printer.print_field_int("jitter_seed", 64'(jitter_seed), 32, UVM_DEC);
+      printer.print_field_int("check_period", 64'(check_period), 1, UVM_BIN);
+   endfunction : do_print
+
 endclass : hexk_clk_rst_agent_cfg
 
 `endif  // HEXK_CLK_RST_AGENT_CFG_SV

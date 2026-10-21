@@ -34,8 +34,8 @@
 `define HEXK_SCOREBOARD_SV
 
 // The two imp classes of the scoreboard; a lint rule wants every class in a file of its own name.
-// TLM-4 waived: the imps carry the index of their stream, which uvm_analysis_imp_decl cannot.
 // verilator lint_off DECLFILENAME
+// TLM-4 waived: the imps carry the index of their stream, which uvm_analysis_imp_decl cannot.
 `hexk_analysis_imp_indexed_decl(expected_idx)
 `hexk_analysis_imp_indexed_decl(actual_idx)
 // verilator lint_on DECLFILENAME
@@ -110,6 +110,100 @@ class hexk_scoreboard #(
       default_comparer.show_max  = 0;
       default_comparer.verbosity = UVM_DEBUG;
    endfunction : new
+
+   // UVM callback: takes the cfg that was assigned, else the one in uvm_config_db under "cfg", else one with the
+   // defaults; then creates the streams and their exports.
+   function void build_phase(uvm_phase phase);
+      int unsigned count;
+      super.build_phase(phase);
+      if (cfg == null) begin
+         void'(uvm_config_db#(hexk_scoreboard_cfg)::get(this, "", "cfg", cfg));
+      end
+      if (cfg == null) begin
+         cfg = hexk_scoreboard_cfg::type_id::create("cfg");
+      end
+      mode        = cfg.mode;
+      max_wait_ps = cfg.max_wait_ps;
+      count       = cfg.num_streams;
+      if (count == 0) begin
+         `uvm_error("HEXK_SB_STREAM", "cfg.num_streams is 0; one stream is created")
+         count = 1;
+      end
+      for (int unsigned i = 0; i < count; i++) begin
+         stream_t stream = new(mode != HEXK_SB_IN_ORDER, max_wait_ps != 0);
+         hexk_analysis_imp_indexed_expected_idx #(
+             .T  (T),
+             .IMP(this_t)
+         ) expected_imp;
+         hexk_analysis_imp_indexed_actual_idx #(
+             .T  (T),
+             .IMP(this_t)
+         ) actual_imp;
+         expected_imp = new($sformatf("expected_export_%0d", i), this, int'(i));
+         actual_imp   = new($sformatf("actual_export_%0d", i), this, int'(i));
+         streams.push_back(stream);
+         expected_exports.push_back(expected_imp);
+         actual_exports.push_back(actual_imp);
+      end
+      expected_export = expected_exports[0];
+      actual_export   = actual_exports[0];
+   endfunction : build_phase
+
+   // UVM callback: registers with the aggregator when cfg.hold_objection is set.
+   function void end_of_elaboration_phase(uvm_phase phase);
+      super.end_of_elaboration_phase(phase);
+      if (!cfg.hold_objection) begin
+         return;
+      end
+      if (aggregator == null) begin
+         `uvm_warning("HEXK_SB_AGGREGATOR", {
+                      "cfg.hold_objection is set, but no aggregator was assigned: the scoreboard does not keep ",
+                      "the phase alive; assign the member aggregator or clear hold_objection"})
+         return;
+      end
+      aggregator.register(this, get_full_name());
+   endfunction : end_of_elaboration_phase
+
+   // UVM callback: with cfg.max_wait_ps, drops every item when it has waited that long for its partner, with an
+   // error. It sleeps until the oldest waiting item reaches the limit, or until an item starts to wait.
+   task run_phase(uvm_phase phase);
+      longint unsigned next_ps;
+      super.run_phase(phase);
+      if (max_wait_ps == 0) begin
+         return;
+      end
+      forever begin
+         if (drop_overdue(next_ps)) begin
+            hexk_wait_util::wait_ps(next_ps - hexk_wait_util::now_ps());
+         end else begin
+            @(item_stored);
+         end
+      end
+   endtask : run_phase
+
+   // UVM callback: reports the items that were left over on either side, and the summary.
+   function void check_phase(uvm_phase phase);
+      string lines[$];
+      super.check_phase(phase);
+      foreach (streams[i]) begin
+         report_leftovers(i);
+         lines.push_back($sformatf(
+                         "stream %0d: %s; latency min %s, mean %s, max %s",
+                         i,
+                         streams[i].stats.convert2string(),
+                         hexk_wait_util::format_ps(
+                             streams[i].stats.latency_min_ps
+                         ),
+                         hexk_wait_util::format_ps(
+                             streams[i].stats.latency_avg_ps()
+                         ),
+                         hexk_wait_util::format_ps(
+                             streams[i].stats.latency_max_ps
+                         )
+                         ));
+      end
+      `uvm_info("HEXK_SB_SUMMARY", {"\n", hexk_str::join_str(lines, "\n")}, UVM_LOW)
+   endfunction : check_phase
 
    // Hook: the key of an item for the modes that match by key; the default gives every item the same key.
    virtual function KEY get_key(T item);
@@ -192,24 +286,6 @@ class hexk_scoreboard #(
       end
       check_outstanding(stream, idx);
    endfunction : write_expected_idx
-
-   // The expected item that a stream keeps: the item itself, or a clone of it with cfg.clone_expected. An item
-   // whose class cannot be cloned is kept itself, after an error.
-   local function T kept_expected(T item);
-      T kept;
-      if (!cfg.clone_expected) begin
-         return item;
-      end
-      if (!$cast(kept, item.clone()) || kept == null) begin
-         `uvm_error("HEXK_SB_CLONE",
-                    $sformatf(
-                        "an expected item of class %s cannot be cloned, the scoreboard keeps the item itself: %s",
-                        item.get_type_name(),
-                        "register the class with the factory and give it a do_copy(), or clear cfg.clone_expected"))
-         return item;
-      end
-      return kept;
-   endfunction : kept_expected
 
    // Analysis write of an actual export: the item is compared with the expected item it belongs to.
    function void write_actual_idx(int idx, T t);
@@ -320,99 +396,23 @@ class hexk_scoreboard #(
       return hexk_str::join_str(lines, "\n");
    endfunction : busy_reason
 
-   // UVM callback: takes the cfg that was assigned, else the one in uvm_config_db under "cfg", else one with the
-   // defaults; then creates the streams and their exports.
-   function void build_phase(uvm_phase phase);
-      int unsigned count;
-      super.build_phase(phase);
-      if (cfg == null) begin
-         void'(uvm_config_db#(hexk_scoreboard_cfg)::get(this, "", "cfg", cfg));
+   // The expected item that a stream keeps: the item itself, or a clone of it with cfg.clone_expected. An item
+   // whose class cannot be cloned is kept itself, after an error.
+   local function T kept_expected(T item);
+      T kept;
+      if (!cfg.clone_expected) begin
+         return item;
       end
-      if (cfg == null) begin
-         cfg = hexk_scoreboard_cfg::type_id::create("cfg");
+      if (!$cast(kept, item.clone()) || kept == null) begin
+         `uvm_error("HEXK_SB_CLONE",
+                    $sformatf(
+                        "an expected item of class %s cannot be cloned, the scoreboard keeps the item itself: %s",
+                        item.get_type_name(),
+                        "register the class with the factory and give it a do_copy(), or clear cfg.clone_expected"))
+         return item;
       end
-      mode        = cfg.mode;
-      max_wait_ps = cfg.max_wait_ps;
-      count       = cfg.num_streams;
-      if (count == 0) begin
-         `uvm_error("HEXK_SB_STREAM", "cfg.num_streams is 0; one stream is created")
-         count = 1;
-      end
-      for (int unsigned i = 0; i < count; i++) begin
-         stream_t stream = new(mode != HEXK_SB_IN_ORDER, max_wait_ps != 0);
-         hexk_analysis_imp_indexed_expected_idx #(
-             .T  (T),
-             .IMP(this_t)
-         ) expected_imp;
-         hexk_analysis_imp_indexed_actual_idx #(
-             .T  (T),
-             .IMP(this_t)
-         ) actual_imp;
-         expected_imp = new($sformatf("expected_export_%0d", i), this, int'(i));
-         actual_imp   = new($sformatf("actual_export_%0d", i), this, int'(i));
-         streams.push_back(stream);
-         expected_exports.push_back(expected_imp);
-         actual_exports.push_back(actual_imp);
-      end
-      expected_export = expected_exports[0];
-      actual_export   = actual_exports[0];
-   endfunction : build_phase
-
-   // UVM callback: registers with the aggregator when cfg.hold_objection is set.
-   function void end_of_elaboration_phase(uvm_phase phase);
-      super.end_of_elaboration_phase(phase);
-      if (!cfg.hold_objection) begin
-         return;
-      end
-      if (aggregator == null) begin
-         `uvm_warning("HEXK_SB_AGGREGATOR", {
-                      "cfg.hold_objection is set, but no aggregator was assigned: the scoreboard does not keep ",
-                      "the phase alive; assign the member aggregator or clear hold_objection"})
-         return;
-      end
-      aggregator.register(this, get_full_name());
-   endfunction : end_of_elaboration_phase
-
-   // UVM callback: with cfg.max_wait_ps, drops every item when it has waited that long for its partner, with an
-   // error. It sleeps until the oldest waiting item reaches the limit, or until an item starts to wait.
-   task run_phase(uvm_phase phase);
-      longint unsigned next_ps;
-      super.run_phase(phase);
-      if (max_wait_ps == 0) begin
-         return;
-      end
-      forever begin
-         if (drop_overdue(next_ps)) begin
-            hexk_wait_util::wait_ps(next_ps - hexk_wait_util::now_ps());
-         end else begin
-            @(item_stored);
-         end
-      end
-   endtask : run_phase
-
-   // UVM callback: reports the items that were left over on either side, and the summary.
-   function void check_phase(uvm_phase phase);
-      string lines[$];
-      super.check_phase(phase);
-      foreach (streams[i]) begin
-         report_leftovers(i);
-         lines.push_back($sformatf(
-                         "stream %0d: %s; latency min %s, mean %s, max %s",
-                         i,
-                         streams[i].stats.convert2string(),
-                         hexk_wait_util::format_ps(
-                             streams[i].stats.latency_min_ps
-                         ),
-                         hexk_wait_util::format_ps(
-                             streams[i].stats.latency_avg_ps()
-                         ),
-                         hexk_wait_util::format_ps(
-                             streams[i].stats.latency_max_ps
-                         )
-                         ));
-      end
-      `uvm_info("HEXK_SB_SUMMARY", {"\n", hexk_str::join_str(lines, "\n")}, UVM_LOW)
-   endfunction : check_phase
+      return kept;
+   endfunction : kept_expected
 
    // The stream with this number, or null and an error.
    local function stream_t stream_of(int idx);

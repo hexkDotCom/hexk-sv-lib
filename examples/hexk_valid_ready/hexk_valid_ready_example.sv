@@ -94,6 +94,8 @@ module hexk_valid_ready_example;
 
       function void build_phase(uvm_phase phase);
          super.build_phase(phase);
+         // A run that hangs ends with a fatal of UVM after 100 us (guide OBJ-7); the words take far less.
+         uvm_root::get().set_timeout(100us, 0);
          in_cfg  = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("in_cfg");
          out_cfg = hexk_valid_ready_agent_cfg#(WIDTH)::type_id::create("out_cfg");
          `hexk_vif_get_or_fatal(hexk_valid_ready_if#(WIDTH), "in_vif", in_cfg.vif)

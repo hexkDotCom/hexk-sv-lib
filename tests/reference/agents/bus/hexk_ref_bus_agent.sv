@@ -54,11 +54,6 @@ class hexk_ref_bus_agent extends uvm_agent;
       end
    endfunction : build_phase
 
-   // UVM hook: the mode of the cfg.
-   function uvm_active_passive_enum get_is_active();
-      return cfg.is_active;
-   endfunction : get_is_active
-
    // UVM callback: takes the ports of the monitor and connects the driver to the sequencer of an active agent.
    function void connect_phase(uvm_phase phase);
       super.connect_phase(phase);
@@ -68,6 +63,11 @@ class hexk_ref_bus_agent extends uvm_agent;
          drv.seq_item_port.connect(sqr.seq_item_export);
       end
    endfunction : connect_phase
+
+   // UVM hook: the mode of the cfg.
+   function uvm_active_passive_enum get_is_active();
+      return cfg.is_active;
+   endfunction : get_is_active
 
 endclass : hexk_ref_bus_agent
 

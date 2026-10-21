@@ -22,6 +22,15 @@ class hexk_ref_regs_test extends hexk_ref_base_test;
       super.new(name, parent);
    endfunction : new
 
+   // UVM callback: the checks of the scenario ran (guide TST-6): the two writes with byte enables, and the unmapped
+   // addresses.
+   function void check_phase(uvm_phase phase);
+      super.check_phase(phase);
+      `hexk_check_eq(hexk_check_stats::num_passed("REF_REG_STROBE"), 2, "REF_REGS_CHECKED", "byte enable checks passed")
+      `hexk_check_ne(hexk_check_stats::num_passed("REF_REG_UNMAPPED"), 0, "REF_REGS_CHECKED",
+                     "unmapped address checks passed")
+   endfunction : check_phase
+
    // What the bit bash leaves out.
    virtual function void modify_randomized_cfg();
       super.modify_randomized_cfg();
@@ -35,15 +44,6 @@ class hexk_ref_regs_test extends hexk_ref_base_test;
    virtual function hexk_ref_vseq_base create_scenario();
       return hexk_ref_regs_vseq::type_id::create("regs_seq");
    endfunction : create_scenario
-
-   // UVM callback: the checks of the scenario ran (guide TST-6): the two writes with byte enables, and the unmapped
-   // addresses.
-   function void check_phase(uvm_phase phase);
-      super.check_phase(phase);
-      `hexk_check_eq(hexk_check_stats::num_passed("REF_REG_STROBE"), 2, "REF_REGS_CHECKED", "byte enable checks passed")
-      `hexk_check_ne(hexk_check_stats::num_passed("REF_REG_UNMAPPED"), 0, "REF_REGS_CHECKED",
-                     "unmapped address checks passed")
-   endfunction : check_phase
 
 endclass : hexk_ref_regs_test
 

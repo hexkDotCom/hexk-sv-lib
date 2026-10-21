@@ -616,7 +616,9 @@ module hexk_clk_rst_unit_test;
       item.op = HEXK_CLK_RST_START;
       texts.push_back(item.convert2string());
       item.op = HEXK_CLK_RST_CLOCK;
-      void'($cast(copy, item.clone()));
+      if (!$cast(copy, item.clone()) || copy == null) begin
+         return "not a clone";
+      end
       equal_before   = item.compare(copy);
       copy.period_ps = 2501;
       texts.push_back($sformatf("%0b %0b", equal_before, item.compare(copy)));
@@ -749,6 +751,22 @@ module hexk_clk_rst_unit_test;
       result = $sformatf("%0d %0d", catcher.get_count("^HEXK_CLK_RST_UNKNOWN$"), seen.used() - items_before);
    endtask : run_reset_without_level
 `endif
+
+   // compare() of a clone, and of the clone after a change, and whether print() names period_ps:
+   // "<equal> <equal after the change> <named>".
+   function automatic string compared_cfg();
+      hexk_clk_rst_agent_cfg original = hexk_clk_rst_agent_cfg::type_id::create("ut_compared");
+      hexk_clk_rst_agent_cfg copy;
+      bit equal_before;
+      if (!$cast(copy, original.clone()) || copy == null) begin
+         return "not a clone";
+      end
+      equal_before   = original.compare(copy);
+      copy.period_ps = 1234;
+      return $sformatf(
+          "%0b %0b %0b", equal_before, original.compare(copy), hexk_str::contains(original.sprint(), "period_ps")
+      );
+   endfunction : compared_cfg
 
    // The SVUnit macros open a task body that Verible cannot see, so the formatter would
    // lay the statements out as module items.
@@ -1250,6 +1268,10 @@ module hexk_clk_rst_unit_test;
       `FAIL_UNLESS_STR_EQUAL(result, "2 2")
    `SVTEST_END
 `endif
+
+   `SVTEST(compare_and_print_cover_every_member)
+      `FAIL_UNLESS_STR_EQUAL(compared_cfg(), "1 0 1")
+   `SVTEST_END
 
    `SVUNIT_TESTS_END
    // verilog_format: on

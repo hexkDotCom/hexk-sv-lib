@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 HEXK
+#
+# hexk_examples_expected.txt - the warnings, errors and fatals that the examples report on purpose.
+#
+# 'make examples' checks every run of an example against this list with
+# scripts/hexk_check_example.py: the run must report exactly what the list gives for that example
+# and simulator, and nothing else; an example that is not listed must report no warning, error or
+# fatal at all.
+#
+# Columns: example, simulators (all, or a comma-separated list of questa and vcs), severity
+# (UVM_WARNING, UVM_ERROR, UVM_FATAL, or NATIVE for an error of the simulator outside UVM, whose
+# ID is then a text of its line), message ID, count.
+
+# One prediction is left over at the end of the test.
+hexk_eot_registry_example    all     UVM_ERROR    MODEL_LEFTOVER         1
+
+# A path with a typing error: the macro reports it, and so does the simulator or the DPI code of UVM.
+hexk_hdl_macros_example      all     UVM_ERROR    EXAMPLE_HDL            1
+hexk_hdl_macros_example      questa  NATIVE       vsim-16132             1
+hexk_hdl_macros_example      vcs     UVM_ERROR    UVM/DPI/HDL_GET        1
+
+# A read of a byte that was never written, and a write outside the range.
+hexk_mem_model_example       all     UVM_ERROR    HEXK_MEM_UNINIT        1
+hexk_mem_model_example       all     UVM_ERROR    HEXK_MEM_RANGE         1
+
+# A cfg randomized a second time.
+hexk_rand_once_example       all     UVM_ERROR    HEXK_RAND_ONCE         1
+
+# The error of the static report macros.
+hexk_report_macros_example   all     UVM_ERROR    EXAMPLE_FIFO_OVERFLOW  1
+
+# A warning, in the compact layout of the report server.
+hexk_report_server_example   all     UVM_WARNING  EXAMPLE                1
+
+# A sample outside the tolerance.
+hexk_value_wrapper_example   all     UVM_ERROR    EXAMPLE                1
+
+# A handshake slower than its limit.
+hexk_wait_macros_example     all     UVM_ERROR    EXAMPLE_HANDSHAKE      1
+
+# The watchdog ends the test for inactivity.
+hexk_watchdog_example        all     UVM_FATAL    HEXK_WATCHDOG          1

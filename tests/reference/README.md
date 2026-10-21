@@ -25,7 +25,9 @@ map with the reset values.
 3. `tests/hexk_ref_base_test.sv`: the knobs, the cfg, the scoreboards' settings, the reset, the
    main phase that starts the test's virtual sequence, and what every test checks at the end.
 4. `env/hexk_ref_env.sv`: the agents, the register model, the predictor and the scoreboards, and
-   how they are connected.
+   how they are connected: every stream of an agent goes through an export of the environment,
+   so that a parent with an agent of its own can turn the environment's agent off
+   (`has_in_agent`, `has_bus_agent`) and connect its own.
 5. `sequences/hexk_ref_packet_vseq.sv` and `sequences/hexk_ref_vseq_base.sv`: one packet from
    programming the DUT to collecting its result; `sequences/hexk_ref_scenario_vseq.sv`: the steps
    that the scenarios of the tests share.
@@ -92,6 +94,7 @@ map with the reset values.
 | `hexk_ref_ecc_test` | errors injected through the DUT, and by HDL access at every one of the 39 positions alone and at every pair of neighbouring positions; the error counters driven to their limit | `TEST PASSED` |
 | `hexk_ref_corrupt_test` | every read corrupted; the test expects exactly one mismatch per packet, and checks that CRC and CYCLES are right and that every word differs in bit 0 only | `TEST PASSED` |
 | `hexk_ref_back_to_back_test` | bursts of packets without gaps, so that a packet is accepted while the one before it is still in the pipeline; the result registers against the last expected result, the RAM against the predictor; a burst of 260 packets takes STATUS.PKT_COUNT through 255 | `TEST PASSED` |
+| `hexk_ref_shared_bus_test` | the environment below a parent that has the bus agent: `has_bus_agent` of the cfg is 0, and the test builds the agent and connects it to the exports of the environment, the register map and the busy groups; random packets | `TEST PASSED` |
 | `hexk_ref_hang_test` | the DUT never finishes a packet | `TEST FAILED` with exactly `REF_DONE`, `HEXK_SB_TIMEOUT` and `REF_MATCHED` |
 | `hexk_ref_stall_test` | the DUT never takes a word | the fatal `HEXK_WATCHDOG` for inactivity, naming the busy input agent |
 

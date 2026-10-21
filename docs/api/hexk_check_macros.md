@@ -98,7 +98,7 @@ From `src/uvm/hexk_check_macros.svh`:
 `define hexk_std_randomize_or_fatal(VAR, ID)
 // Fatal if std::randomize(VAR) with the given constraints fails; CONSTRAINTS is written without braces.
 `define hexk_std_randomize_with_or_fatal(VAR, ID, CONSTRAINTS)
-// Fatal if SRC cannot be cast to DST.
+// Fatal if SRC cannot be cast to DST. A null SRC casts and leaves DST null: check DST when null is an error.
 `define hexk_cast_or_fatal(DST, SRC, ID)
 ```
 
@@ -285,6 +285,9 @@ static function void reset_for_test();
 - `hexk_check_obj_eq` treats two null handles as equal and a null and a non-null handle as
   different; otherwise the result is `EXP.compare(ACT)`, as in `hexk_scoreboard`: the expected
   object decides, for instance with the tolerance of a `hexk_value_wrapper`.
+- `hexk_cast_or_fatal` passes a null `SRC`: a cast of null succeeds and leaves `DST` null.
+  Where the result must exist, such as the result of `clone()` or `create_object()`, check
+  `DST` for null after the macro.
 - `hexk_check_aligned` fails for an alignment of 0.
 - Every check calls `hexk_check_stats::record_pass` or `record_fail` with its ID.
   `hexk_check_stats::num_checks()` is the number of checks executed so far and `summary()` a
